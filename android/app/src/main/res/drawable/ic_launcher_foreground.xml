@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 108dp のアダプティブアイコン前景。24 単位のグリフを 2 倍にして中央（安全領域 66dp 内）に置く -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2"
+        android:scaleY="2"
+        android:translateX="30"
+        android:translateY="30">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M10,12a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+        <path
+            android:pathData="M15.18,8.82A4.5,4.5 0 0,1 15.18,15.18M8.82,15.18A4.5,4.5 0 0,1 8.82,8.82"
+            android:strokeWidth="1.8"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M17.66,6.34A8,8 0 0,1 17.66,17.66M6.34,17.66A8,8 0 0,1 6.34,6.34"
+            android:strokeWidth="1.8"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

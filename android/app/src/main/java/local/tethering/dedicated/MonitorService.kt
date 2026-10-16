@@ -1,0 +1,186 @@
+package local.tethering.dedicated
+
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import android.telephony.PhoneStateListener
+import android.telephony.ServiceState
+import android.telephony.TelephonyManager
+
+/**
+ * 画面消灯中も監視を続けるフォアグラウンドサービス（仕様 設計目標 2）。
+ * 状態変化はイベント（ブロードキャスト・コールバック）で受け取り、定期チェックはアラームで低頻度に行う。
+ * OS 標準のテザリング機能には一切手を触れない（読むだけ）。
+ */
+class MonitorService : Service() {
+    companion object {
+        const val ACTION_START = "local.tethering.dedicated.START"
+        const val ACTION_BOOT = "local.tethering.dedicated.BOOT"
+        const val ACTION_ALARM = "local.tethering.dedicated.ALARM"
+        const val ACTION_CHECK_NOW = "local.tethering.dedicated.CHECK_NOW"
+        const val ACTION_SETTINGS = "local.tethering.dedicated.SETTINGS"
+        const val ACTION_MAINT = "local.tethering.dedicated.MAINT"
+        const val ACTION_STOP = "local.tethering.dedicated.STOP"
+        const val EXTRA_UNTIL = "until"
+
+        fun send(ctx: Context, action: String, until: Long? = null) {
+            val i = Intent(ctx, MonitorService::class.java).setAction(action)
+            if (until != null) i.putExtra(EXTRA_UNTIL, until)
+            ctx.startForegroundService(i)
+        }
+    }
+
+    private var monitor: Monitor? = null
+    private var receiverRegistered = false
+    private var phoneListener: PhoneStateListener? = null
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
+
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val m = monitor ?: return
+            when (intent.action) {
+                Intent.ACTION_BATTERY_CHANGED -> m.onBattery(intent)
+                Intent.ACTION_POWER_CONNECTED, Intent.ACTION_POWER_DISCONNECTED,
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED, PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> m.onBattery(null)
+                TetherProbe.ACTION_AP, TetherProbe.ACTION_TETHER -> m.onTetherBroadcast(intent)
+                Intent.ACTION_AIRPLANE_MODE_CHANGED -> m.onAirplane(intent.getBooleanExtra("state", false))
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        // startForegroundService() から 5 秒以内に呼ぶ必要があるので最初に行う
+        startForeground(Notifier.ID_ONGOING, Notifier.ongoing(this, StateStore.state.copy(running = true)))
+        val m = Monitor(this)
+        monitor = m
+        registerEvents(m)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val m = monitor ?: return START_NOT_STICKY
+        val prefs = Prefs(this)
+        if (intent?.action == ACTION_STOP) {
+            prefs.monitoring = false
+            m.stop()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!prefs.monitoring) {
+            // 利用者が停止中（アラームの取り残しや再起動の通知で起こされた場合）
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        Notifier.update(this, StateStore.state)
+        when (intent?.action) {
+            ACTION_BOOT -> m.ensureStarted(boot = true)
+            ACTION_ALARM -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.onAlarm()
+            }
+            ACTION_CHECK_NOW -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.requestCheck(Trigger.MANUAL)
+            }
+            ACTION_SETTINGS -> {
+                m.ensureStarted(boot = false)
+                m.onSettingsChanged()
+            }
+            ACTION_MAINT -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.setMaintenance(intent.getLongExtra(EXTRA_UNTIL, 0L))
+            }
+            // ACTION_START、またはシステムによる再起動（START_STICKY で intent が null）
+            else -> m.ensureStarted(boot = false)
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        unregisterEvents()
+        monitor?.close()
+        monitor = null
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    @Suppress("DEPRECATION")
+    private fun registerEvents(m: Monitor) {
+        val f = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+            addAction(TetherProbe.ACTION_AP)
+            addAction(TetherProbe.ACTION_TETHER)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+        }
+        runCatching {
+            registerReceiver(receiver, f)
+            receiverRegistered = true
+        }
+
+        getSystemService(TelephonyManager::class.java)?.let { tm ->
+            val l = object : PhoneStateListener() {
+                override fun onServiceStateChanged(serviceState: ServiceState?) = m.onServiceState(serviceState)
+                override fun onDataConnectionStateChanged(state: Int, networkType: Int) = m.onDataConnection(state)
+            }
+            runCatching {
+                tm.listen(l, PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_DATA_CONNECTION_STATE)
+                phoneListener = l
+            }
+        }
+
+        getSystemService(ConnectivityManager::class.java)?.let { cm ->
+            val req = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = m.onCellNetwork(true)
+                override fun onLost(network: Network) = m.onCellNetwork(false)
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) =
+                    m.onValidated(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            }
+            runCatching {
+                cm.registerNetworkCallback(req, cb, Handler(Looper.getMainLooper()))
+                netCallback = cb
+            }
+        }
+
+        getSystemService(PowerManager::class.java)?.let { pm ->
+            val tl = PowerManager.OnThermalStatusChangedListener { status -> m.onThermal(status) }
+            runCatching {
+                pm.addThermalStatusListener(mainExecutor, tl)
+                thermalListener = tl
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun unregisterEvents() {
+        if (receiverRegistered) runCatching { unregisterReceiver(receiver) }
+        receiverRegistered = false
+        phoneListener?.let { l -> runCatching { getSystemService(TelephonyManager::class.java)?.listen(l, PhoneStateListener.LISTEN_NONE) } }
+        phoneListener = null
+        netCallback?.let { cb -> runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
+        netCallback = null
+        thermalListener?.let { tl -> runCatching { getSystemService(PowerManager::class.java)?.removeThermalStatusListener(tl) } }
+        thermalListener = null
+    }
+}

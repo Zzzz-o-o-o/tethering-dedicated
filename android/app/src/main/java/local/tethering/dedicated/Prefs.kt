@@ -1,0 +1,110 @@
+package local.tethering.dedicated
+
+import android.content.Context
+import android.content.SharedPreferences
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/**
+ * 設定（バックアップ対象）と運用状態（対象外）の保存先。
+ * 値は読むたびに範囲へ丸めるので、壊れた値が残っていても動作がおかしくならない。
+ */
+class Prefs(context: Context) {
+    private val app = context.applicationContext
+    private val sp: SharedPreferences = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val state: SharedPreferences = app.getSharedPreferences("state", Context.MODE_PRIVATE)
+
+    fun int(d: IntDef): Int = sp.getInt(d.key, d.def).coerceIn(d.min, d.max)
+    fun bool(d: BoolDef): Boolean = sp.getBoolean(d.key, d.def)
+    fun text(d: TextDef): String = sp.getString(d.key, null)?.takeIf { d.check(it) == null } ?: d.def
+
+    fun put(d: IntDef, v: Int) = sp.edit().putInt(d.key, v.coerceIn(d.min, d.max)).apply()
+    fun put(d: BoolDef, v: Boolean) = sp.edit().putBoolean(d.key, v).apply()
+    fun put(d: TextDef, v: String) {
+        if (d.check(v) == null) sp.edit().putString(d.key, v.trim()).apply()
+    }
+
+    var mode: BaseMode
+        get() = BaseMode.of(sp.getString(Defs.MODE_KEY, null))
+        set(v) = sp.edit().putString(Defs.MODE_KEY, v.key).apply()
+
+    val recheckDelaysMin: List<Int> get() = Defs.parseRecheck(text(Defs.RECHECK)) ?: listOf(1, 3, 5)
+
+    val limits: AlertTracker.Limits
+        get() = AlertTracker.Limits(int(Defs.TEMP_WARN), int(Defs.TEMP_CRIT), int(Defs.THERMAL_WARN), int(Defs.BATT_LOW))
+
+    // ---- 運用状態（バックアップ・初期化の対象外） ----
+
+    /** 監視を続けるか（利用者が「停止」したら false。再起動後に自動で始めるかもこれで決まる） */
+    var monitoring: Boolean
+        get() = state.getBoolean("monitoring", true)
+        set(v) = state.edit().putBoolean("monitoring", v).apply()
+
+    /** メンテナンスモードの終了時刻（0 なら OFF） */
+    var maintUntil: Long
+        get() = state.getLong("maint_until", 0L)
+        set(v) = state.edit().putLong("maint_until", v).apply()
+
+    var nextCheckAt: Long
+        get() = state.getLong("next_check_at", 0L)
+        set(v) = state.edit().putLong("next_check_at", v).apply()
+
+    var lastBootCheckAt: Long
+        get() = state.getLong("last_boot_check_at", 0L)
+        set(v) = state.edit().putLong("last_boot_check_at", v).apply()
+
+    fun maintenanceActive(now: Long = System.currentTimeMillis()): Boolean = maintUntil > now
+
+    // ---- バックアップ・復元（仕様 F-21 / F-23） ----
+
+    /** 現在の設定値（既定値のままの項目も含む） */
+    fun values(): Map<String, Any> {
+        val m = LinkedHashMap<String, Any>()
+        m[Defs.MODE_KEY] = mode.key
+        Defs.ints.forEach { m[it.key] = int(it) }
+        Defs.bools.forEach { m[it.key] = bool(it) }
+        Defs.texts.forEach { m[it.key] = text(it) }
+        return m
+    }
+
+    fun apply(values: Map<String, Any>) {
+        val e = sp.edit()
+        for ((k, v) in values) {
+            when (v) {
+                is Int -> e.putInt(k, v)
+                is Boolean -> e.putBoolean(k, v)
+                is String -> e.putString(k, v)
+            }
+        }
+        e.apply()
+    }
+
+    fun resetToDefaults() = sp.edit().clear().apply()
+
+    fun toJson(): JSONObject {
+        val settings = JSONObject()
+        values().forEach { (k, v) -> settings.put(k, v) }
+        return JSONObject()
+            .put("app", app.packageName)
+            .put("schema", SettingsCodec.SCHEMA)
+            .put("version", BuildConfig.VERSION_NAME)
+            .put("exportedAt", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date()))
+            .put("settings", settings)
+    }
+
+    companion object {
+        /** バックアップファイルを読む。形式が違えば理由つきで例外 */
+        fun readBackup(json: JSONObject, packageName: String): Map<String, Any?> {
+            val appId = json.optString("app")
+            require(appId.isEmpty() || appId == packageName) { "別のアプリのバックアップです（$appId）" }
+            val schema = json.optInt("schema", 0)
+            require(schema in 1..SettingsCodec.SCHEMA) { "対応していない形式です（schema=$schema）" }
+            val s = json.optJSONObject("settings") ?: throw IllegalArgumentException("settings がありません")
+            val out = LinkedHashMap<String, Any?>()
+            s.keys().forEach { k -> out[k] = s.get(k) }
+            return out
+        }
+    }
+}

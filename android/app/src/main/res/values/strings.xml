@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">テザリング専用化</string>
+    <string name="title_settings">設定</string>
+    <string name="title_guide">設定ガイド</string>
+    <string name="title_apps">アプリの整理</string>
+    <string name="title_diagnostics">診断情報</string>
+    <string name="channel_monitor">監視中の表示</string>
+    <string name="channel_monitor_desc">監視サービスの常駐通知（音・振動なし）</string>
+    <string name="channel_alert">異常・警告</string>
+    <string name="channel_alert_desc">回線・インターネット・テザリングの異常、温度・電池の警告</string>
+    <string name="channel_info">お知らせ</string>
+    <string name="channel_info_desc">復旧のお知らせ、起動後チェックの結果</string>
+</resources>

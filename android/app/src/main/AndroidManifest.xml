@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 接続性チェック（DNS・HTTP）とネットワーク状態の取得 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- データ網の種類・回線の登録状態（実行時に利用者が許可。未許可でも動作し、該当項目は「取得不可」） -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- 画面消灯中も監視を続けるためのフォアグラウンドサービスと、チェック中だけの短いウェイクロック -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 再起動後の状態確認 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 電池の最適化から除外するよう、システムのダイアログで利用者に依頼する（Play では配布しない） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 設定ガイドで「自動同期」「Bluetooth」「NFC」の状態を読むため（読むだけで変更はしない） -->
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.NFC" />
+
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
+    <!--
+      usesCleartextTraffic: 到達確認の既定 URL（generate_204）は通信量を最小にするため http を使う。
+      targetSdk 28 以降は平文 HTTP が既定で禁止されるため明示的に許可する。
+    -->
+    <application
+        android:name=".App"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/title_settings"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".GuideActivity"
+            android:exported="false"
+            android:label="@string/title_guide"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".AppsActivity"
+            android:exported="false"
+            android:label="@string/title_apps"
+            android:parentActivityName=".GuideActivity" />
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:exported="false"
+            android:label="@string/title_diagnostics"
+            android:parentActivityName=".MainActivity" />
+
+        <service
+            android:name=".MonitorService"
+            android:exported="false" />
+
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
+
+        <!-- BOOT_COMPLETED / MY_PACKAGE_REPLACED は保護ブロードキャスト。QUICKBOOT_POWERON は一部メーカー用 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

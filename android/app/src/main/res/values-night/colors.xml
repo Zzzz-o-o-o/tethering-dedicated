@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#4DB6AC</color>
+    <color name="screen_background">#111416</color>
+    <color name="card_background">#1C2023</color>
+    <color name="card_stroke">#2C3236</color>
+    <color name="text_primary">#E6E9EB</color>
+    <color name="text_secondary">#A3ACB2</color>
+    <color name="status_ok">#81C784</color>
+    <color name="status_warn">#FFB74D</color>
+    <color name="status_error">#EF9A9A</color>
+    <color name="status_maint">#90CAF9</color>
+    <color name="status_off">#9AA3A8</color>
+    <color name="chip_text">#111416</color>
+</resources>
