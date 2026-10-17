@@ -16,7 +16,36 @@ object StateStore {
         val confirmed: Boolean,
     )
 
+    /** 消費電力の計測（仕様 F-25 / F-26） */
+    data class MeterView(
+        val onBattery: Boolean,
+        /** 直近の消費ペース。計測が足りなければ null */
+        val rateMa: Double?,
+        val rateMw: Double?,
+        val method: Method?,
+        val remainingMin: Int?,
+        val capacityMah: Int?,
+        val counterSupported: Boolean?,
+    )
+
+    /** 比較テストの進み具合（仕様 F-27） */
+    data class ExperimentView(
+        val title: String,
+        val labelA: String,
+        val labelB: String,
+        val index: Int,
+        val total: Int,
+        val condition: Char,
+        val measuredSec: Long,
+        val phaseSec: Long,
+        val waitingSwitch: Boolean,
+        val instruction: String,
+        val auto: Boolean,
+    )
+
     data class State(
+        val meter: MeterView? = null,
+        val experiment: ExperimentView? = null,
         val running: Boolean = false,
         val checking: Boolean = false,
         val power: PowerInfo? = null,

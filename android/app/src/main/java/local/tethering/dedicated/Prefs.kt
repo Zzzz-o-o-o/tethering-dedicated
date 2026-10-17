@@ -33,7 +33,16 @@ class Prefs(context: Context) {
     val recheckDelaysMin: List<Int> get() = Defs.parseRecheck(text(Defs.RECHECK)) ?: listOf(1, 3, 5)
 
     val limits: AlertTracker.Limits
-        get() = AlertTracker.Limits(int(Defs.TEMP_WARN), int(Defs.TEMP_CRIT), int(Defs.THERMAL_WARN), int(Defs.BATT_LOW))
+        get() = AlertTracker.Limits(int(Defs.TEMP_WARN), int(Defs.TEMP_CRIT), int(Defs.THERMAL_WARN), int(Defs.BATT_LOW), int(Defs.RUNTIME_ALERT))
+
+    /** 比較テストの状態（JSON）と結果の履歴。運用状態なのでバックアップの対象外 */
+    var experimentJson: String?
+        get() = state.getString("experiment", null)
+        set(v) = state.edit().apply { if (v == null) remove("experiment") else putString("experiment", v) }.apply()
+
+    var experimentHistoryJson: String?
+        get() = state.getString("experiment_history", null)
+        set(v) = state.edit().putString("experiment_history", v).apply()
 
     // ---- 運用状態（バックアップ・初期化の対象外） ----
 

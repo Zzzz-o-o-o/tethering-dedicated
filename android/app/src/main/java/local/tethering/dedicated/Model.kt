@@ -49,6 +49,7 @@ enum class DeviceAlert(val label: String) {
     TEMP_CRIT("電池温度が非常に高い"),
     THERMAL("端末の熱状態が高い"),
     BATT_LOW("電池残量が少ない"),
+    RUNTIME_LOW("推定残り時間が少ない"),
 }
 
 /** 画面上の総合状態 */
@@ -72,6 +73,8 @@ data class PowerInfo(
     val batteryOptExempt: Boolean?,
     /** データセーバー（ON のあいだテザリングは使えない） */
     val dataSaver: Boolean?,
+    /** 充電カウンタ（電池の残り容量 µAh。未対応なら null） */
+    val counterUah: Long? = null,
 )
 
 data class TetherInfo(

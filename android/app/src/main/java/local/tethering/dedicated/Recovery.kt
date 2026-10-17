@@ -98,9 +98,10 @@ class AlertTracker {
 
     data class Change(val alert: DeviceAlert, val entered: Boolean)
 
-    data class Limits(val tempWarnC: Int, val tempCritC: Int, val thermalWarn: Int, val battLowPct: Int)
+    data class Limits(val tempWarnC: Int, val tempCritC: Int, val thermalWarn: Int, val battLowPct: Int, val runtimeAlertMin: Int = 0)
 
-    fun evaluate(p: PowerInfo, l: Limits): List<Change> {
+    /** [remainingMin] は推定残り時間（計測データが足りなければ null で、そのときは通知しない） */
+    fun evaluate(p: PowerInfo, l: Limits, remainingMin: Int? = null): List<Change> {
         val changes = ArrayList<Change>()
         val crit = maxOf(l.tempCritC, l.tempWarnC)
         val t = p.tempC
@@ -116,6 +117,13 @@ class AlertTracker {
             DeviceAlert.BATT_LOW,
             pct != null && discharging && pct <= l.battLowPct,
             p.plug.powered == true || (pct != null && pct >= l.battLowPct + 5),
+            changes,
+        )
+        val rt = remainingMin
+        update(
+            DeviceAlert.RUNTIME_LOW,
+            l.runtimeAlertMin > 0 && discharging && rt != null && rt <= l.runtimeAlertMin,
+            p.plug.powered == true || l.runtimeAlertMin == 0 || (rt != null && rt >= l.runtimeAlertMin + 30),
             changes,
         )
         return changes

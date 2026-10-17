@@ -55,7 +55,9 @@ class SettingsActivity : Activity() {
             Ui.button(c, "通知の詳細（音・重要度）をOSの設定で変える") { SystemScreens.appNotifications(this) }
         }
         section(page, "起動後チェック", listOf(Defs.BOOT_DELAY))
-        section(page, "ログ", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
+        section(page, "消費電力の計測", listOf(Defs.BATT_CAPACITY, Defs.RUNTIME_ALERT))
+        section(page, "比較テスト", listOf(Defs.EXP_PHASE, Defs.EXP_REPEATS, Defs.EXP_MIN_GAIN))
+        section(page, "ログ（操作ログと電力の記録）", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
             logSize = Ui.small(c, "")
             Ui.button(c, "ログを消去") { confirmClearLogs() }
         }
@@ -124,7 +126,7 @@ class SettingsActivity : Activity() {
 
     private fun refreshFooter() {
         bg.execute {
-            val bytes = LogStore.totalBytes(this)
+            val bytes = LogStore.totalBytes(this) + PowerStore.totalBytes(this)
             val hasBefore = File(filesDir, BEFORE_FILE).exists()
             main.post {
                 logSize.text = "現在のログ: " + String.format(Locale.US, "%.1f KB", bytes / 1024.0)
@@ -299,10 +301,11 @@ class SettingsActivity : Activity() {
     private fun confirmClearLogs() {
         AlertDialog.Builder(this)
             .setTitle("ログを消去しますか？")
-            .setMessage("端末内のログ（CSV）をすべて削除します。必要ならメイン画面の「ログをCSVで保存」で先に書き出してください。")
+            .setMessage("端末内の操作ログと電力の記録（CSV）をすべて削除します。日次レポートも消えます。必要なら先に CSV で書き出してください。")
             .setPositiveButton("消去する") { _, _ ->
                 bg.execute {
                     runCatching { LogStore.clear(this) }
+                    runCatching { PowerStore.clear(this) }
                     main.post {
                         LogStore.write(this, Ev.SETTINGS, StateStore.state, result = "ログを消去")
                         toast("ログを消去しました")

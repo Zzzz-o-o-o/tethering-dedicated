@@ -72,6 +72,8 @@ class MainActivity : Activity() {
     private lateinit var vSaver: TextView
     private lateinit var vIdle: TextView
     private lateinit var vOpt: TextView
+    private lateinit var vConsumption: TextView
+    private lateinit var vRemaining: TextView
 
     private lateinit var vProfile: TextView
     private lateinit var vInterval: TextView
@@ -189,6 +191,8 @@ class MainActivity : Activity() {
 
         Ui.card(page).also { c ->
             Ui.heading(c, "電源・温度")
+            vConsumption = Ui.kv(c, "消費（直近）")
+            vRemaining = Ui.kv(c, "推定残り時間")
             vBattery = Ui.kv(c, "電池")
             vPlug = Ui.kv(c, "給電")
             vTemp = Ui.kv(c, "電池温度")
@@ -232,6 +236,11 @@ class MainActivity : Activity() {
 
         Ui.card(page).also { c ->
             Ui.heading(c, "操作")
+            Ui.buttonRow(
+                c,
+                "比較テスト" to { startActivity(Intent(this, ExperimentActivity::class.java)) },
+                "日次レポート" to { startActivity(Intent(this, ReportActivity::class.java)) },
+            )
             Ui.button(c, "ログをCSVで保存") { exportLog() }
             Ui.buttonRow(c, "設定" to { startActivity(Intent(this, SettingsActivity::class.java)) }, "設定ガイド" to { startActivity(Intent(this, GuideActivity::class.java)) })
             Ui.button(c, "診断情報") { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
@@ -335,7 +344,22 @@ class MainActivity : Activity() {
         vValidated.text = c?.let { tri(it.validated) } ?: "－"
         vDiag.text = c?.let { it.diagnosis + if (it.detail.isNotEmpty()) "\n${it.detail}" else "" } ?: ""
 
-        // 電源・温度
+        // 電源・温度（消費はバッテリー駆動中だけ計測し、データが足りない間は推測で出さない）
+        val m = s.meter
+        val onBattery = p?.plug == Plug.NONE
+        vConsumption.text = when {
+            m == null -> "－"
+            !onBattery -> "給電中は計測しません"
+            m.rateMa == null -> "計測中（バッテリー駆動で約10分後から表示）"
+            else -> (m.rateMw?.let { "${it.toInt()} mW（${m.rateMa.toInt()} mA）" } ?: "${m.rateMa.toInt()} mA") +
+                (m.method?.let { "・${it.label}" } ?: "")
+        }
+        vRemaining.text = when {
+            m == null || !onBattery -> "－"
+            m.rateMa == null -> "計測中"
+            m.remainingMin == null -> "計算できません（電池容量が不明。設定で指定できます）"
+            else -> "約" + Fmt.duration(m.remainingMin * 60_000L).removePrefix("約")
+        }
         vBattery.text = p?.let { "${Fmt.num(it.levelPct, "%")}" + if (it.charging == true) "・充電中" else "" } ?: Fmt.NA
         vPlug.text = p?.plug?.label ?: Fmt.NA
         vTemp.text = Fmt.temp(p?.tempC)

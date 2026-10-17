@@ -31,12 +31,25 @@ class MonitorService : Service() {
         const val ACTION_SETTINGS = "local.tethering.dedicated.SETTINGS"
         const val ACTION_MAINT = "local.tethering.dedicated.MAINT"
         const val ACTION_STOP = "local.tethering.dedicated.STOP"
+        const val ACTION_EXP_START = "local.tethering.dedicated.EXP_START"
+        const val ACTION_EXP_CONFIRM = "local.tethering.dedicated.EXP_CONFIRM"
+        const val ACTION_EXP_ABORT = "local.tethering.dedicated.EXP_ABORT"
         const val EXTRA_UNTIL = "until"
+        const val EXTRA_CANDIDATE = "candidate"
+        const val EXTRA_LABEL_A = "label_a"
+        const val EXTRA_LABEL_B = "label_b"
 
         fun send(ctx: Context, action: String, until: Long? = null) {
             val i = Intent(ctx, MonitorService::class.java).setAction(action)
             if (until != null) i.putExtra(EXTRA_UNTIL, until)
             ctx.startForegroundService(i)
+        }
+
+        fun startExperiment(ctx: Context, candidate: String, labelA: String?, labelB: String?) {
+            ctx.startForegroundService(
+                Intent(ctx, MonitorService::class.java).setAction(ACTION_EXP_START)
+                    .putExtra(EXTRA_CANDIDATE, candidate).putExtra(EXTRA_LABEL_A, labelA).putExtra(EXTRA_LABEL_B, labelB),
+            )
         }
     }
 
@@ -55,6 +68,8 @@ class MonitorService : Service() {
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED, PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> m.onBattery(null)
                 TetherProbe.ACTION_AP, TetherProbe.ACTION_TETHER -> m.onTetherBroadcast(intent)
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> m.onAirplane(intent.getBooleanExtra("state", false))
+                Intent.ACTION_SCREEN_ON -> m.onScreen(true)
+                Intent.ACTION_SCREEN_OFF -> m.onScreen(false)
             }
         }
     }
@@ -103,6 +118,20 @@ class MonitorService : Service() {
                 m.ensureStarted(boot = false, initialCheck = false)
                 m.setMaintenance(intent.getLongExtra(EXTRA_UNTIL, 0L))
             }
+            ACTION_EXP_START -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                intent.getStringExtra(EXTRA_CANDIDATE)?.let {
+                    m.startExperiment(it, intent.getStringExtra(EXTRA_LABEL_A), intent.getStringExtra(EXTRA_LABEL_B))
+                }
+            }
+            ACTION_EXP_CONFIRM -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.confirmExperimentSwitch()
+            }
+            ACTION_EXP_ABORT -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.abortExperiment()
+            }
             // ACTION_START、またはシステムによる再起動（START_STICKY で intent が null）
             else -> m.ensureStarted(boot = false)
         }
@@ -129,6 +158,9 @@ class MonitorService : Service() {
             addAction(TetherProbe.ACTION_AP)
             addAction(TetherProbe.ACTION_TETHER)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            // 画面の点灯時間を電力の記録に残すため（消費の大きな要因）
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
         }
         runCatching {
             registerReceiver(receiver, f)

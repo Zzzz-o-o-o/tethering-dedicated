@@ -38,6 +38,16 @@ object Defs {
     val LOG_DAYS = IntDef("log_days", "ログの保存期間", 30, 1, 365, "日")
     val LOG_MB = IntDef("log_mb", "ログの最大サイズ", 10, 1, 100, "MB")
 
+    // 第 1 段階（仕様 11.5 で決めること）
+    val BATT_CAPACITY = IntDef(
+        "battery_capacity_mah", "電池容量（0 = 自動で推定）", 0, 0, 30_000, "mAh",
+        "充電カウンタに対応した端末では自動で推定します。推定できない端末では仕様上の容量を入れてください",
+    )
+    val RUNTIME_ALERT = IntDef("runtime_alert_min", "推定残り時間の通知（0 = 通知しない）", 60, 0, 720, "分", "バッテリー駆動中に、推定残り時間がこれを下回ったら通知します")
+    val EXP_PHASE = IntDef("exp_phase_min", "比較テストの 1 条件あたりの計測時間", 30, 5, 240, "分", "バッテリー駆動中の時間だけを数えます")
+    val EXP_REPEATS = IntDef("exp_repeats", "比較テストの繰り返し（A→B を何回）", 2, 1, 4, "回", "2 回以上なら、毎回 B が少ないときだけ「効果あり」にします")
+    val EXP_MIN_GAIN = IntDef("exp_min_gain_pct", "「効果あり」とする最小の削減率", 3, 1, 50, "%")
+
     val HTTP = BoolDef("http_check", "外部サイトへの到達確認（HTTP）", true, "OFFにするとDNSまでの確認で判定する")
     val TETHER_EXPECTED = BoolDef("tether_expected", "Wi-Fiテザリングの停止を異常とする", true)
     val CLIENTS = BoolDef("count_clients", "接続端末数を数える（取得できる機種のみ）", true, "MACアドレスなどは記録せず、台数だけを数える")
@@ -54,7 +64,10 @@ object Defs {
         "この順に再確認し、すべて異常なら通知する（1〜5回）", ::checkRecheck,
     )
 
-    val ints = listOf(INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB)
+    val ints = listOf(
+        INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
+        BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
+    )
     val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT)
     val texts = listOf(URL, RECHECK)
 

@@ -5,6 +5,8 @@
     <string name="title_guide">設定ガイド</string>
     <string name="title_apps">アプリの整理</string>
     <string name="title_diagnostics">診断情報</string>
+    <string name="title_experiment">比較テスト</string>
+    <string name="title_report">日次レポート</string>
     <string name="channel_monitor">監視中の表示</string>
     <string name="channel_monitor_desc">監視サービスの常駐通知（音・振動なし）</string>
     <string name="channel_alert">異常・警告</string>

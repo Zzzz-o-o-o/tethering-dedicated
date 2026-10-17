@@ -74,6 +74,8 @@ object PowerProbe {
             batteryOptExempt = pm?.isIgnoringBatteryOptimizations(ctx.packageName),
             dataSaver = cm?.let { runCatching { it.restrictBackgroundStatus }.getOrNull() }
                 ?.let { it != ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED },
+            counterUah = bm?.let { runCatching { it.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) }.getOrNull() }
+                ?.let { PowerMath.normalizeCounter(it) },
         )
     }
 

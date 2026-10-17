@@ -116,6 +116,14 @@ object Diagnostics {
             appendLine("EARFCN: ${Fmt.num(l.earfcn)} / バンド: ${l.band ?: Fmt.NA} / 帯域幅: ${Fmt.bandwidths(l.bandwidthsMhz)}")
             appendLine("機内モード: ${Fmt.onOff(l.airplane)} / ローミング: ${Fmt.onOff(l.roaming)}")
             appendLine()
+            appendLine("## 消費電力の計測")
+            val m = s.meter
+            appendLine("充電カウンタ: ${p.counterUah?.let { "$it µAh" } ?: "未対応"}（区間の計算で使えたか: ${Fmt.onOff(m?.counterSupported, "使えた", "使えない")}）")
+            appendLine("電池容量: ${m?.capacityMah?.let { "$it mAh" } ?: Fmt.NA}（設定 ${prefs.int(Defs.BATT_CAPACITY).takeIf { it > 0 }?.let { "$it mAh" } ?: "自動"}）")
+            appendLine("直近の消費: ${m?.rateMa?.let { "%.0f mA".format(it) } ?: "－"}${m?.rateMw?.let { " / %.0f mW".format(it) } ?: ""}（${m?.method?.label ?: "－"}）")
+            appendLine("推定残り時間: ${m?.remainingMin?.let { Fmt.duration(it * 60_000L) } ?: "－"}")
+            s.experiment?.let { appendLine("比較テスト: ${it.title} / 条件 ${it.condition} ${it.measuredSec / 60}/${it.phaseSec / 60}分${if (it.waitingSwitch) "（切り替え待ち）" else ""}") }
+            appendLine()
             appendLine("## 直近の接続性チェック")
             if (c == null) {
                 appendLine("まだ実行していません")

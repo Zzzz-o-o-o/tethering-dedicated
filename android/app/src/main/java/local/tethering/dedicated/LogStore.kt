@@ -4,10 +4,8 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.io.File
-import java.io.FileOutputStream
 import java.io.OutputStream
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -33,12 +31,19 @@ object Ev {
     const val RESTORE = "設定の復元"
     const val BOOT_CHECK = "起動後チェック"
     const val EXPORT = "ログ出力"
+    const val EXP_START = "比較テスト開始"
+    const val EXP_SWITCH = "比較テストの切り替え"
+    const val EXP_END = "比較テスト終了"
 
     /** 画面の「直近の記録」に出すもの（定期チェックの行は出さない） */
     val recentKinds = setOf(
         START, STOP, BOOT, SUSPECT, RECHECK_BAD, CONFIRMED, CONTINUING, RECOVERED, BLIP, TETHER,
         POWER, PROFILE, ALERT, ALERT_CLEAR, MAINT_ON, MAINT_OFF, SETTINGS, RESTORE, BOOT_CHECK,
+        EXP_START, EXP_SWITCH, EXP_END,
     )
+
+    /** 接続性チェックの行（日次レポートの稼働率に使う） */
+    val checkKinds: Set<String> get() = Trigger.entries.map { it.label }.toSet()
 }
 
 /**
@@ -53,14 +58,21 @@ object LogStore {
         "Wi-Fiテザリング", "共有中", "接続端末", "回線登録", "IP", "DNS", "HTTP", "応答(ms)", "システム検証",
         "異常", "処置", "結果", "詳細",
     )
-    private val IDX_ANOMALY = HEADER.indexOf("異常")
-    private val IDX_ACTION = HEADER.indexOf("処置")
-    private val IDX_RESULT = HEADER.indexOf("結果")
-    private const val DAY_MS = 24 * 60 * 60 * 1000L
+    val IDX_EVENT = HEADER.indexOf("イベント")
+    val IDX_TEMP = HEADER.indexOf("電池温度℃")
+    val IDX_RSRP = HEADER.indexOf("RSRP(dBm)")
+    val IDX_ANOMALY = HEADER.indexOf("異常")
+    val IDX_ACTION = HEADER.indexOf("処置")
+    val IDX_RESULT = HEADER.indexOf("結果")
 
     private val io = Executors.newSingleThreadExecutor()
-    private var prunedDay: String? = null
-    private var appendsSincePrune = 0
+
+    @Volatile
+    private var csv: DailyCsv? = null
+
+    private fun csv(ctx: Context): DailyCsv = csv ?: synchronized(this) {
+        csv ?: DailyCsv(File(ctx.applicationContext.filesDir, "logs"), "log-", HEADER).also { csv = it }
+    }
 
     fun write(
         ctx: Context,
@@ -76,8 +88,9 @@ object LogStore {
         val prefs = Prefs(app)
         val days = prefs.int(Defs.LOG_DAYS)
         val maxBytes = prefs.int(Defs.LOG_MB) * 1024L * 1024L
-        val line = Csv.line(fields(System.currentTimeMillis(), event, s, includeCheck, anomaly, action, result, detail))
-        io.execute { runCatching { append(app, line, days, maxBytes) } }
+        val now = System.currentTimeMillis()
+        val line = Csv.line(fields(now, event, s, includeCheck, anomaly, action, result, detail))
+        io.execute { runCatching { csv(app).append(line, now, days, maxBytes) } }
     }
 
     fun fields(
@@ -116,77 +129,22 @@ object LogStore {
 
     private fun f1(v: Double) = String.format(Locale.US, "%.1f", v)
 
-    private fun dir(ctx: Context) = File(ctx.filesDir, "logs").apply { mkdirs() }
-
-    private fun dayName(ms: Long) = "log-" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(ms)) + ".csv"
-
-    private fun logFiles(ctx: Context): List<File> =
-        dir(ctx).listFiles { f -> f.name.startsWith("log-") && f.name.endsWith(".csv") }?.sortedBy { it.name }.orEmpty()
-
-    private fun append(ctx: Context, line: String, days: Int, maxBytes: Long) {
-        val now = System.currentTimeMillis()
-        val day = dayName(now)
-        val f = File(dir(ctx), day)
-        val isNew = !f.exists()
-        FileOutputStream(f, true).bufferedWriter(Charsets.UTF_8).use { w ->
-            if (isNew) {
-                w.write(Csv.line(HEADER))
-                w.write("\n")
-            }
-            w.write(line)
-            w.write("\n")
-        }
-        appendsSincePrune++
-        if (prunedDay != day || appendsSincePrune >= 200) {
-            prune(ctx, days, maxBytes, now)
-            prunedDay = day
-            appendsSincePrune = 0
-        }
-    }
-
-    private fun prune(ctx: Context, days: Int, maxBytes: Long, now: Long) {
-        val keepFrom = dayName(now - (days - 1) * DAY_MS)
-        logFiles(ctx).filter { it.name < keepFrom }.forEach { it.delete() }
-        val remain = logFiles(ctx).toMutableList()
-        var total = remain.sumOf { it.length() }
-        while (total > maxBytes && remain.size > 1) {
-            val oldest = remain.removeAt(0)
-            total -= oldest.length()
-            oldest.delete()
-        }
-    }
-
-    /** すべてのログを 1 つの CSV に書き出す（Excel で文字化けしないよう BOM 付き UTF-8）。戻り値は行数。UI スレッド以外で呼ぶ */
-    fun export(ctx: Context, out: OutputStream): Int {
-        val app = ctx.applicationContext
-        return io.submit<Int> {
-            var rows = 0
-            out.bufferedWriter(Charsets.UTF_8).use { w ->
-                w.write("\uFEFF")
-                w.write(Csv.line(HEADER))
-                w.write("\n")
-                for (file in logFiles(app)) {
-                    file.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                        lines.forEachIndexed { i, s ->
-                            if (s.isBlank() || (i == 0 && s.startsWith(HEADER[0] + ","))) return@forEachIndexed
-                            w.write(s)
-                            w.write("\n")
-                            rows++
-                        }
-                    }
-                }
-            }
-            rows
-        }.get()
-    }
+    /** すべてのログを 1 つの CSV に書き出す（BOM 付き UTF-8）。戻り値は行数。UI スレッド以外で呼ぶ */
+    fun export(ctx: Context, out: OutputStream): Int = io.submit<Int> { csv(ctx).export(out) }.get()
 
     /** ログを全部消す。UI スレッド以外で呼ぶ */
     fun clear(ctx: Context) {
-        val app = ctx.applicationContext
-        io.submit { logFiles(app).forEach { it.delete() } }.get()
+        io.submit { csv(ctx).clear() }.get()
     }
 
-    fun totalBytes(ctx: Context): Long = logFiles(ctx.applicationContext).sumOf { it.length() }
+    fun totalBytes(ctx: Context): Long = csv(ctx).totalBytes()
+
+    /** 記録のある日付（yyyyMMdd、新しい順）。UI スレッド以外で呼ぶ */
+    fun days(ctx: Context): List<String> =
+        io.submit<List<String>> { csv(ctx).files().map { it.name.removePrefix("log-").removeSuffix(".csv") }.reversed() }.get()
+
+    /** ある日（yyyyMMdd）の行。UI スレッド以外で呼ぶ */
+    fun rowsOfDay(ctx: Context, yyyyMMdd: String): List<List<String>> = io.submit<List<List<String>>> { csv(ctx).rowsOfDay(yyyyMMdd) }.get()
 
     /** 直近 2 日分のログから、画面に出す記録を新しい順に読む */
     fun loadRecent(ctx: Context, max: Int, cb: (List<RecentEvent>) -> Unit) {
@@ -194,15 +152,13 @@ object LogStore {
         io.execute {
             val out = ArrayList<RecentEvent>()
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.JAPAN)
-            loop@ for (f in logFiles(app).takeLast(2).reversed()) {
-                val lines = runCatching { f.readLines(Charsets.UTF_8) }.getOrDefault(emptyList())
-                for (s in lines.asReversed()) {
-                    if (s.isBlank() || s.startsWith(HEADER[0] + ",")) continue
-                    val c = Csv.parseLine(s)
-                    if (c.size < HEADER.size || c[1] !in Ev.recentKinds) continue
+            val store = csv(app)
+            loop@ for (f in store.files().takeLast(2).reversed()) {
+                for (c in store.rowsOf(f).asReversed()) {
+                    if (c[IDX_EVENT] !in Ev.recentKinds) continue
                     val at = runCatching { fmt.parse(c[0])?.time }.getOrNull() ?: continue
                     val text = listOf(c[IDX_ANOMALY], c[IDX_RESULT], c[IDX_ACTION]).filter { it.isNotBlank() }.joinToString(" · ")
-                    out.add(RecentEvent(at, c[1], text))
+                    out.add(RecentEvent(at, c[IDX_EVENT], text))
                     if (out.size >= max) break@loop
                 }
             }
@@ -211,11 +167,5 @@ object LogStore {
     }
 
     /** 診断情報用に、最新ファイルの末尾を返す。UI スレッド以外で呼ぶ */
-    fun tail(ctx: Context, n: Int): List<String> {
-        val app = ctx.applicationContext
-        return io.submit<List<String>> {
-            val f = logFiles(app).lastOrNull() ?: return@submit emptyList()
-            runCatching { f.readLines(Charsets.UTF_8) }.getOrDefault(emptyList()).filter { it.isNotBlank() }.takeLast(n)
-        }.get()
-    }
+    fun tail(ctx: Context, n: Int): List<String> = io.submit<List<String>> { csv(ctx).tail(n) }.get()
 }

@@ -48,6 +48,15 @@ class Monitor(private val ctx: Context) {
     private var lastBase: Effective? = null
     private var lastNotified: Pair<String, String>? = null
 
+    /** 消費電力の計測（仕様 F-25 / F-26） */
+    private val meter = PowerMeter(ctx, prefs)
+
+    /** 実行中の比較テスト（仕様 F-27） */
+    private var exp: ExperimentRun? = null
+
+    /** 比較テスト（本アプリのチェック間隔）で一時的に掛ける倍率。メモリにだけ持つので、アプリが止まれば自然に元に戻る */
+    private var intervalFactor = 1
+
     // ---- 開始・停止 ----
 
     fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
@@ -55,6 +64,10 @@ class Monitor(private val ctx: Context) {
             started = true
             StateStore.update { it.copy(running = true) }
             publish()
+            val s = StateStore.state
+            meter.begin(s.power, s.tether?.wifiOn, s.effective.label, null, null)
+            // 保存された比較テストが残っている＝前回は途中で止まった。中断として扱い、元の設定に戻すよう知らせる
+            ExperimentStore.load(prefs)?.let { interrupted(it) }
             LogStore.loadRecent(ctx, 20) { list ->
                 StateStore.update { s ->
                     s.copy(recent = (s.recent + list).distinctBy { it.at to it.kind }.sortedByDescending { it.at }.take(30))
@@ -70,6 +83,8 @@ class Monitor(private val ctx: Context) {
 
     /** 利用者が監視を止めた */
     fun stop() {
+        val s = StateStore.state
+        recordSegment(s.power, s.line, s.tether, transition = { if (exp != null) finishExperiment(aborted = true) })
         log(Ev.STOP)
         Scheduler.cancel(ctx)
         for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT)) Notifier.cancel(ctx, id)
@@ -81,6 +96,8 @@ class Monitor(private val ctx: Context) {
     fun close() {
         if (closed) return
         closed = true
+        // 計測中の区間をできるだけ残す（比較テストの保存はそのまま残し、次の起動時に中断として扱う）
+        runCatching { StateStore.state.let { meter.close(it.power, it.line, it.tether?.clients) } }
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
         WakeLocks.release(eventLock)
@@ -175,6 +192,7 @@ class Monitor(private val ctx: Context) {
         noteProfileChange(pr.power.plug)
         publish() // ログの「プロファイル」欄が、取得したばかりの給電状態を反映するように
         log(trigger.label, includeCheck = true, anomaly = r.failure?.label, result = r.diagnosis, detail = r.detail.ifEmpty { null })
+        recordSegment(pr.power, pr.line, pr.tether, check = r)
         if (!prefs.maintenanceActive(r.at)) {
             handleUpstream(r)
             handleTether(r.at, pr.tether)
@@ -286,6 +304,13 @@ class Monitor(private val ctx: Context) {
         StateStore.update { it.copy(tether = t) }
         if (!prefs.bool(Defs.TETHER_EXPECTED) && prev != null && prev != t.wifiOn) {
             log(Ev.TETHER, result = "Wi-Fiテザリング ${Fmt.ap(t.apState)}")
+        }
+        // テザリングの ON/OFF で消費が大きく変わるので、区間を分ける
+        if (prev != null && t.wifiOn != null && prev != t.wifiOn) {
+            val s = StateStore.state
+            recordSegment(s.power, s.line, t)
+        } else {
+            meter.noteClients(t.clients)
         }
         if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), t)
         publish()
@@ -402,10 +427,23 @@ class Monitor(private val ctx: Context) {
         val prev = StateStore.state.power
         val merged = p.copy(socTempC = prev?.socTempC, socZone = prev?.socZone)
         StateStore.update { it.copy(power = merged) }
+        if (prev != null && prev.plug.powered != merged.plug.powered) {
+            // 給電の有無が変わったら区間を分ける（区間はバッテリー駆動か給電中のどちらか一方になる）
+            val s = StateStore.state
+            recordSegment(merged, s.line, s.tether)
+        } else {
+            meter.addCurrent(merged)
+        }
         noteProfileChange(merged.plug)
         handleAlerts(merged)
         publish()
+        scheduleNext()
         refreshNotification()
+    }
+
+    fun onScreen(on: Boolean) {
+        if (!started || closed) return
+        meter.onScreen(on)
     }
 
     fun onThermal(status: Int) {
@@ -419,12 +457,14 @@ class Monitor(private val ctx: Context) {
     }
 
     private fun handleAlerts(p: PowerInfo) {
-        for (c in alerts.evaluate(p, prefs.limits)) {
+        val remainingMin = meter.view(p).remainingMin
+        for (c in alerts.evaluate(p, prefs.limits, remainingMin)) {
             val a = c.alert
             val value = when (a) {
                 DeviceAlert.TEMP_WARN, DeviceAlert.TEMP_CRIT -> Fmt.temp(p.tempC)
                 DeviceAlert.THERMAL -> Fmt.thermal(p.thermalStatus)
                 DeviceAlert.BATT_LOW -> Fmt.num(p.levelPct, "%")
+                DeviceAlert.RUNTIME_LOW -> remainingMin?.let { "残り" + Fmt.duration(it * 60_000L) } ?: Fmt.NA
             }
             if (c.entered) {
                 log(Ev.ALERT, anomaly = a.label, result = value)
@@ -444,6 +484,7 @@ class Monitor(private val ctx: Context) {
         DeviceAlert.TEMP_CRIT -> "高温が続くと電池の劣化や膨張、端末の停止につながります。給電を一時的に外す・涼しい場所へ移すなどしてください。"
         DeviceAlert.THERMAL -> "端末が熱による制限をかけています。速度低下やテザリング停止が起きることがあります。"
         DeviceAlert.BATT_LOW -> "給電してください。電池が切れるとテザリングが止まります。"
+        DeviceAlert.RUNTIME_LOW -> "今の消費ペースが続くと、まもなく電池が切れてテザリングが止まります。給電してください。"
     }
 
     // ---- 起動後の状態確認（仕様 F-14） ----
@@ -534,7 +575,11 @@ class Monitor(private val ctx: Context) {
         } else {
             val interval = StateStore.state.intervalMin * 60_000L
             val base = if (lastCheckElapsed == 0L) 5_000L else lastCheckElapsed + interval - nowEl
-            listOfNotNull(base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl)).min()
+            // 比較テストの条件の終わり（バッテリー駆動中だけ時間を数えるので、そのときだけ予約する）
+            val expDelay = exp?.takeIf { it.measuring && StateStore.state.power?.plug == Plug.NONE }?.let { e ->
+                (e.remainingSec - meter.openBatterySec(e.condition)).coerceAtLeast(0) * 1000L + 5_000L
+            }
+            listOfNotNull(base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl), expDelay).min()
         }
         val at = Scheduler.schedule(ctx, delay)
         StateStore.update { it.copy(nextCheckAt = at) }
@@ -566,15 +611,167 @@ class Monitor(private val ctx: Context) {
         val base = Profiles.base(mode, plug.powered)
         val maintUntil = prefs.maintUntil
         val eff = Profiles.effective(base, maintUntil > System.currentTimeMillis(), upstream.rechecking || tether.rechecking)
-        val interval = Profiles.intervalMin(base, prefs.int(Defs.INTERVAL_NORMAL), prefs.int(Defs.INTERVAL_SAVER))
+        val interval = Profiles.intervalMin(base, prefs.int(Defs.INTERVAL_NORMAL), prefs.int(Defs.INTERVAL_SAVER)) * intervalFactor
         val total = prefs.recheckDelaysMin.size
         val up = upstream.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, minOf(it.rechecks + 1, total), total, it.confirmed) }
         val te = tether.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, 1, 1, it.confirmed) }
+        val meterView = meter.view(StateStore.state.power)
+        val expView = exp?.let { e ->
+            val cond = e.condition ?: 'A'
+            StateStore.ExperimentView(
+                title = e.candidate.title, labelA = e.candidate.labelA, labelB = e.candidate.labelB,
+                index = e.index, total = e.phases.size, condition = cond,
+                measuredSec = (e.current?.sec ?: 0) + meter.openBatterySec(e.condition), phaseSec = e.phaseSec,
+                waitingSwitch = e.waitingSwitch, instruction = if (cond == 'B') e.candidate.toB else e.candidate.toA, auto = e.candidate.auto,
+            )
+        }
         StateStore.update {
             it.copy(
                 mode = mode, base = base, effective = eff, intervalMin = interval, maintUntil = maintUntil,
-                upstream = up, tetherIssue = te, alerts = alerts.active.toSet(),
+                upstream = up, tetherIssue = te, alerts = alerts.active.toSet(), meter = meterView, experiment = expView,
             )
+        }
+    }
+
+    // ---- 消費電力の区間と比較テスト（仕様 F-25 / F-27） ----
+
+    /**
+     * 今の区間を閉じて記録し、比較テストに反映してから、次の区間を始める。
+     * [transition] は区間の境目で行う状態の変更（比較テストの開始・切り替え・中止）。閉じた区間は変更前の状態として数える。
+     */
+    private fun recordSegment(
+        p: PowerInfo?,
+        line: LineInfo?,
+        t: TetherInfo?,
+        check: CheckResult? = null,
+        transition: (() -> Unit)? = null,
+    ) {
+        val closedSeg = meter.close(p, line, t?.clients)
+        val e = exp
+        if (closedSeg != null && e != null && e.measuring && closedSeg.onBattery && closedSeg.condition == e.condition &&
+            !prefs.maintenanceActive()
+        ) {
+            closedSeg.consumption?.let { e.addSegment(it, closedSeg.bytes, closedSeg.clientsMax, closedSeg.rsrp) }
+            if (check != null) e.addCheck(check.failure == null)
+            if (e.phaseComplete) advanceExperiment()
+            ExperimentStore.save(prefs, exp)
+        }
+        transition?.invoke()
+        val next = exp
+        meter.begin(p, t?.wifiOn, StateStore.state.effective.label, next?.candidate?.title, next?.takeIf { it.measuring }?.condition)
+    }
+
+    fun startExperiment(key: String, customA: String?, customB: String?) {
+        if (!started || closed || exp != null) return
+        val base = Candidates.of(key) ?: return
+        val cand = if (key == Candidates.KEY_CUSTOM) {
+            val a = customA?.trim()?.ifEmpty { null } ?: base.labelA
+            val b = customB?.trim()?.ifEmpty { null } ?: base.labelB
+            base.copy(title = "$a → $b", labelA = a, labelB = b, toB = "「$b」に切り替えてください。", toA = "「$a」に戻してください。")
+        } else {
+            base
+        }
+        val run = ExperimentRun(cand, prefs.int(Defs.EXP_PHASE) * 60L, prefs.int(Defs.EXP_REPEATS), prefs.int(Defs.EXP_MIN_GAIN), System.currentTimeMillis())
+        val s = StateStore.state
+        // ここまでの区間は比較テストの外。ここから条件 A（今の設定）として数える
+        recordSegment(s.power, s.line, s.tether, transition = {
+            exp = run
+            intervalFactor = 1
+            ExperimentStore.save(prefs, run)
+        })
+        log(Ev.EXP_START, result = cand.title, detail = "1条件 ${run.phaseSec / 60}分 × ${run.repeats}回（バッテリー駆動中だけ計測）")
+        recent(Ev.EXP_START, cand.title)
+        publish()
+        scheduleNext()
+        refreshNotification()
+    }
+
+    /** 手動の切り替えが済んだ（利用者が「切り替えた」を押した） */
+    fun confirmExperimentSwitch() {
+        val e = exp ?: return
+        if (!e.waitingSwitch) return
+        val s = StateStore.state
+        recordSegment(s.power, s.line, s.tether, transition = {
+            e.confirmSwitch()
+            ExperimentStore.save(prefs, e)
+        })
+        val cond = e.condition ?: return
+        log(Ev.EXP_SWITCH, result = "条件$cond（${label(e, cond)}）の計測を開始")
+        Notifier.cancel(ctx, Notifier.ID_EXPERIMENT)
+        publish()
+        scheduleNext()
+        refreshNotification()
+    }
+
+    fun abortExperiment() {
+        if (exp == null) return
+        val s = StateStore.state
+        recordSegment(s.power, s.line, s.tether, transition = { finishExperiment(aborted = true) })
+        publish()
+        scheduleNext()
+        refreshNotification()
+    }
+
+    private fun label(e: ExperimentRun, cond: Char) = if (cond == 'B') e.candidate.labelB else e.candidate.labelA
+
+    /** 条件の計測が終わった。次の条件へ進むか、最後なら結果を出す（状態の変更だけ。区間の区切りは呼び出し側） */
+    private fun advanceExperiment() {
+        val e = exp ?: return
+        val next = e.advance()
+        if (next == null) {
+            finishExperiment(aborted = false)
+            return
+        }
+        if (e.candidate.auto) {
+            intervalFactor = if (next == 'B') Candidates.INTERVAL_FACTOR else 1
+            log(Ev.EXP_SWITCH, result = "条件$next（${label(e, next)}）を自動で開始")
+        } else {
+            log(Ev.EXP_SWITCH, result = "条件$next（${label(e, next)}）への切り替え待ち")
+            Notifier.experiment(
+                ctx, "比較テスト：条件$next に切り替えてください",
+                "${if (next == 'B') e.candidate.toB else e.candidate.toA}\n切り替えたら「切り替えた」を押してください（押すまで計測しません）。",
+                confirm = true,
+            )
+        }
+    }
+
+    private fun finishExperiment(aborted: Boolean) {
+        val e = exp ?: return
+        val settingIsB = e.settingIsB
+        val o = e.outcome(aborted)
+        exp = null
+        intervalFactor = 1
+        ExperimentStore.addHistory(prefs, e, o, System.currentTimeMillis())
+        ExperimentStore.save(prefs, null)
+        val summary = experimentSummary(o)
+        log(Ev.EXP_END, anomaly = e.candidate.title, result = o.decision.label, detail = summary)
+        recent(Ev.EXP_END, "${e.candidate.title}：${o.decision.label}")
+        val text = when {
+            e.candidate.auto -> "$summary\nチェック間隔は元に戻しました。"
+            o.decision == Decision.ADOPT -> "$summary\nこの設定（${e.candidate.labelB}）のままにしてください。"
+            settingIsB -> "$summary\n${e.candidate.toA}"
+            else -> "$summary\n設定は元のままです。"
+        }
+        Notifier.experiment(ctx, "比較テストの結果：${o.decision.label}", text, confirm = false)
+    }
+
+    private fun experimentSummary(o: Outcome): String {
+        fun v(x: Double?) = x?.let { "%.0f %s".format(it, o.unit) } ?: Fmt.NA
+        val saving = o.savingPct?.let { "（%+.1f%%）".format(-it) } ?: ""
+        return (listOf("A ${v(o.avgA)} → B ${v(o.avgB)}$saving") + o.notes).joinToString("\n")
+    }
+
+    /** 前回、比較テストの途中でアプリが止まった */
+    private fun interrupted(run: ExperimentRun) {
+        val o = run.outcome(aborted = true)
+        ExperimentStore.addHistory(prefs, run, o, System.currentTimeMillis())
+        ExperimentStore.save(prefs, null)
+        log(Ev.EXP_END, anomaly = run.candidate.title, result = o.decision.label, detail = "アプリの再起動で中断")
+        recent(Ev.EXP_END, "中断：${run.candidate.title}")
+        // 本アプリのチェック間隔はメモリにだけ持っていたので、すでに元に戻っている
+        if (!run.candidate.auto) {
+            val text = if (run.settingIsB) run.candidate.toA else "設定は元のままです。"
+            Notifier.experiment(ctx, "比較テストを中断しました", "アプリが再起動したため「${run.candidate.title}」を中止しました。\n$text", confirm = false)
         }
     }
 

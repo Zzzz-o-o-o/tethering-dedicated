@@ -18,6 +18,7 @@ object Notifier {
     const val ID_UPSTREAM = 10
     const val ID_TETHER = 11
     const val ID_BOOT = 12
+    const val ID_EXPERIMENT = 13
     private const val ID_DEVICE_BASE = 20
 
     fun createChannels(ctx: Context) {
@@ -53,9 +54,38 @@ object Notifier {
         if (l != null) parts.add(Fmt.signalSummary(l))
         s.check?.let { parts.add(if (it.failure == null) "ネット✓" else "ネット✗") }
         s.tether?.clients?.let { parts.add("端末${it}台") }
+        s.meter?.remainingMin?.let { parts.add("残り" + Fmt.duration(it * 60_000L)) }
+        s.experiment?.let { e ->
+            parts.add(if (e.waitingSwitch) "比較テスト：切り替え待ち" else "比較テスト ${e.condition} ${e.measuredSec / 60}/${e.phaseSec / 60}分")
+        }
         if (s.nextCheckAt > 0 && o != Overall.MAINT) parts.add("次回 ${Fmt.hm(s.nextCheckAt)}")
         return title to parts.joinToString(" · ").ifEmpty { "状態を確認しています" }
     }
+
+    /** 比較テストの案内。[confirm] なら「切り替えた」「中止」のボタンを付ける */
+    fun experiment(ctx: Context, title: String, text: String, confirm: Boolean) {
+        val b = Notification.Builder(ctx, CH_INFO)
+            .setSmallIcon(R.drawable.ic_stat_hotspot)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setColor(ctx.getColor(R.color.brand))
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    ctx, 3, Intent(ctx, ExperimentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), FLAGS,
+                ),
+            )
+            .setAutoCancel(!confirm)
+            .setOngoing(confirm)
+        if (confirm) {
+            b.addAction(action(ctx, "切り替えた", service(ctx, 4, MonitorService.ACTION_EXP_CONFIRM)))
+            b.addAction(action(ctx, "中止して元に戻す", service(ctx, 5, MonitorService.ACTION_EXP_ABORT)))
+        }
+        ctx.getSystemService(NotificationManager::class.java)?.notify(ID_EXPERIMENT, b.build())
+    }
+
+    private fun service(ctx: Context, req: Int, action: String): PendingIntent =
+        PendingIntent.getForegroundService(ctx, req, Intent(ctx, MonitorService::class.java).setAction(action), FLAGS)
 
     fun ongoing(ctx: Context, s: StateStore.State): Notification {
         val (title, text) = ongoingText(s)
