@@ -131,6 +131,13 @@ object Diagnostics {
             // 管理画面の URL はこの端末のアクセスポイントのアドレス（接続端末の情報ではない）
             appendLine("管理画面: ${if (!prefs.bool(Defs.WEB)) "OFF" else s.web?.let { it.url ?: it.message } ?: "－"}")
             appendLine()
+            appendLine("## 自動化（第 3 段階）")
+            appendLine("自動切り替え: バッテリーセーバー ${Fmt.onOff(prefs.bool(Defs.AUTO_SAVER), "使う", "使わない")}（残量 ${prefs.int(Defs.AUTO_SAVER_PCT)}% 以下） / Doze を早める ${Fmt.onOff(prefs.bool(Defs.AUTO_DOZE), "使う", "使わない")}")
+            appendLine("設定変更の権限: ${if (AutoSwitch.permitted(ctx)) "付与済み" else "なし"} / 自動で変えている: バッテリーセーバー ${Fmt.onOff(prefs.autoSaverApplied)}・Doze ${Fmt.onOff(prefs.autoDozeApplied)}")
+            appendLine("global low_power = ${Os.global(ctx, AutoSwitch.KEY_SAVER) ?: "未設定"} / device_idle_constants = ${Os.global(ctx, AutoSwitch.KEY_DOZE) ?: "未設定"}")
+            appendLine("待機: ${s.idleReason ?: "していない"}（設定 ${prefs.int(Defs.IDLE_INTERVAL)}分・残量 ${prefs.int(Defs.IDLE_BATT)}%） / 到達確認の省略: ${Fmt.onOff(prefs.bool(Defs.SKIP_PROBE), "使う", "使わない")}${if (s.check?.probeSkipped == true) "（直近のチェックで省略）" else ""}")
+            appendLine("使用状況へのアクセス: ${if (AppUsageProbe.hasAccess(ctx)) "許可" else "未許可"} / 優先ネットワーク: ${Os.preferredNetworkMode(ctx)?.let { "${NetworkModes.label(it)}（$it）" } ?: Fmt.NA}")
+            appendLine()
             appendLine("## 直近の接続性チェック")
             if (c == null) {
                 appendLine("まだ実行していません")

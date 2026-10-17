@@ -27,6 +27,9 @@ object Candidates {
     const val KEY_INTERVAL = "app_interval"
     const val KEY_CUSTOM = "custom"
 
+    /** 接続 0 台のときにテザリングを止めた場合の待機電力を測る（仕様 F-36）。この比較テストの間はテザリングの停止を異常としない */
+    const val KEY_TETHER_OFF = "tether_off"
+
     /** 自動で試すときのチェック間隔の倍率 */
     const val INTERVAL_FACTOR = 4
 
@@ -54,6 +57,11 @@ object Candidates {
         Candidate(
             "sync", "自動同期を OFF", "自動同期 ON", "自動同期 OFF",
             "設定 → アカウント →「アプリデータを自動的に同期する」を OFF にしてください。", "自動同期を ON に戻してください。",
+        ),
+        Candidate(
+            KEY_TETHER_OFF, "使わないときにテザリングを止める（待機電力の測定）", "テザリング ON（接続 0 台）", "テザリング OFF",
+            "接続端末をすべて切断してから、Wi-Fi テザリングを OFF にしてください（このテストの間は停止の通知を出しません）。",
+            "Wi-Fi テザリングを ON に戻してください。",
         ),
         Candidate(
             KEY_INTERVAL, "このアプリのチェック間隔（自動）", "今の間隔", "間隔を ${INTERVAL_FACTOR} 倍",

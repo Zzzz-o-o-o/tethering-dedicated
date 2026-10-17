@@ -116,6 +116,8 @@ object WebPages {
                         listOfNotNull(
                             s.check?.let { "最終チェック ${Fmt.time(it.at)}（${it.trigger.label}）" },
                             if (s.running && s.nextCheckAt > 0) "次回 ${Fmt.hm(s.nextCheckAt)}" else null,
+                            s.idleReason?.let { "待機中（$it）" },
+                            s.auto?.takeIf { it.saverOn || it.dozeOn }?.let { "自動でバッテリーセーバー・Doze を調整中" },
                         ).joinToString(" · "),
                     ) + "</p>" +
                     if (s.alerts.isNotEmpty()) "<p>⚠ " + esc(s.alerts.joinToString("・") { it.label }) + "</p>" else "",

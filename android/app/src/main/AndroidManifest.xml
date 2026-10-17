@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 接続性チェック（DNS・HTTP）とネットワーク状態の取得 -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -18,6 +19,17 @@
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.NFC" />
+    <!--
+      第 3 段階。どちらも通常のアプリには付かず、利用者が PC から ADB で付けたときだけ使える（付けなければその機能が動かないだけ）。
+      WRITE_SECURE_SETTINGS: 自動切り替え（F-42）でバッテリーセーバー（global low_power）と Doze（global device_idle_constants）だけを変える
+      PACKAGE_USAGE_STATS: アプリ別の通信量（F-35）を読む（使用状況へのアクセス。読むだけ）
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.telephony"
@@ -103,6 +115,11 @@
             android:exported="false"
             android:label="@string/title_client_guide"
             android:launchMode="singleTop"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".AnalysisActivity"
+            android:exported="false"
+            android:label="@string/title_analysis"
             android:parentActivityName=".MainActivity" />
 
         <service

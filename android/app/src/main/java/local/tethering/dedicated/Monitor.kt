@@ -3,6 +3,7 @@ package local.tethering.dedicated
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.TrafficStats
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -69,6 +70,17 @@ class Monitor(private val ctx: Context) {
     private val web = LocalServer(ctx) { path -> WebPages.route(path) { WebData.collect(ctx) } }
     private var webRetries = 0
 
+    /** 自動切り替え（仕様 F-42） */
+    private val auto = AutoSwitch(ctx, prefs)
+
+    /** 接続 0 台（またはテザリング OFF）になった時刻（経過時間）と直近の区間の通信量。待機（仕様 F-32）の判断に使う */
+    private var zeroSince: Long? = null
+    private var lastSegKbPerHour: Double? = null
+    private var idleReason: IdleMode.Reason? = null
+
+    /** 前回のチェックのときのモバイル回線の受信量（通信が流れているかを見る。仕様 F-32） */
+    private var lastRx: Long? = null
+
     // ---- 開始・停止 ----
 
     fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
@@ -77,7 +89,7 @@ class Monitor(private val ctx: Context) {
             StateStore.update { it.copy(running = true) }
             publish()
             val s = StateStore.state
-            meter.begin(s.power, s.tether?.wifiOn, s.effective.label, null, null)
+            meter.begin(s.power, s.tether?.wifiOn, s.effective.label, null, null, s.tether?.clients)
             // 保存された比較テストが残っている＝前回は途中で止まった。中断として扱い、元の設定に戻すよう知らせる
             ExperimentStore.load(prefs)?.let { interrupted(it) }
             LogStore.loadRecent(ctx, 20) { list ->
@@ -162,12 +174,19 @@ class Monitor(private val ctx: Context) {
         val wl = WakeLocks.acquire(ctx, "check", 3 * 60_000L)
         val svc = serviceState
         val countClients = prefs.bool(Defs.CLIENTS)
+        // 異常の確認中は省かない（仕様 F-32）
+        val troubled = upstream.episode != null || tether.episode != null
+        val skipEnabled = prefs.bool(Defs.SKIP_PROBE)
+        val prevRx = lastRx
         worker.execute {
             val result = runCatching {
                 val p = PowerProbe.read(ctx)
                 val t = TetherProbe.read(ctx, countClients)
                 val l = LineProbe.read(ctx, svc)
-                Probe(p, t, l, ConnectivityProbe.run(ctx, prefs, l, trigger))
+                val rx = mobileRx()
+                val delta = if (prevRx != null && rx != null && rx >= prevRx) rx - prevRx else null
+                val skip = ProbeSkip.should(skipEnabled, trigger, troubled, t.clients, delta)
+                Probe(p, t, l, ConnectivityProbe.run(ctx, prefs, l, trigger, skipReach = skip), rx)
             }
             main.post {
                 checking = false
@@ -187,7 +206,9 @@ class Monitor(private val ctx: Context) {
         }
     }
 
-    private class Probe(val power: PowerInfo, val tether: TetherInfo, val line: LineInfo, val check: CheckResult)
+    private class Probe(val power: PowerInfo, val tether: TetherInfo, val line: LineInfo, val check: CheckResult, val rx: Long?)
+
+    private fun mobileRx(): Long? = TrafficStats.getMobileRxBytes().takeIf { it != TrafficStats.UNSUPPORTED.toLong() }
 
     private fun priority(t: Trigger) = when (t) {
         Trigger.BOOT -> 5
@@ -201,7 +222,10 @@ class Monitor(private val ctx: Context) {
     private fun handle(trigger: Trigger, pr: Probe) {
         val r = pr.check
         lastCheckElapsed = SystemClock.elapsedRealtime()
+        lastRx = pr.rx
         StateStore.update { it.copy(checking = false, power = pr.power, tether = pr.tether, line = pr.line, check = r) }
+        noteZero(pr.tether)
+        autoEvaluate(pr.power)
         noteProfileChange(pr.power.plug)
         publish() // ログの「プロファイル」欄が、取得したばかりの給電状態を反映するように
         log(trigger.label, includeCheck = true, anomaly = r.failure?.label, result = r.diagnosis, detail = r.detail.ifEmpty { null })
@@ -317,6 +341,7 @@ class Monitor(private val ctx: Context) {
         if (closed) return
         val prev = StateStore.state.tether?.wifiOn
         StateStore.update { it.copy(tether = t) }
+        noteZero(t)
         if (!prefs.bool(Defs.TETHER_EXPECTED) && prev != null && prev != t.wifiOn) {
             log(Ev.TETHER, result = "Wi-Fiテザリング ${Fmt.ap(t.apState)}")
         }
@@ -335,7 +360,9 @@ class Monitor(private val ctx: Context) {
     }
 
     private fun handleTether(now: Long, t: TetherInfo) {
-        if (!prefs.bool(Defs.TETHER_EXPECTED)) {
+        // 比較テスト「使わないときはテザリングを止める」の間は、テザリングの停止を異常としない（利用者が止めるため）
+        val testingOff = exp?.candidate?.key == Candidates.KEY_TETHER_OFF
+        if (!prefs.bool(Defs.TETHER_EXPECTED) || testingOff) {
             if (tether.episode != null) {
                 tether.reset()
                 tetherDue = null
@@ -450,11 +477,47 @@ class Monitor(private val ctx: Context) {
         } else {
             meter.addCurrent(merged)
         }
+        autoEvaluate(merged)
         noteProfileChange(merged.plug)
         handleAlerts(merged)
         publish()
         scheduleNext()
         refreshNotification()
+    }
+
+    // ---- 自動切り替え（仕様 F-42）。給電の有無・残量が変わったときに見直す ----
+
+    private fun autoEvaluate(p: PowerInfo?) {
+        // 比較テストの間は変えない（条件をそろえるため）
+        for (c in auto.evaluate(p, hold = exp != null)) {
+            val why = when {
+                p?.plug == Plug.NONE -> "バッテリー駆動・残量 ${Fmt.num(p.levelPct, "%")}"
+                else -> p?.plug?.label ?: Fmt.NA
+            }
+            log(Ev.AUTO, result = c, detail = why)
+            recent(Ev.AUTO, c)
+        }
+    }
+
+    /** 自動で変えた OS の設定をすべて元に戻し、自動切り替えを OFF にする（設定画面の「すべて元に戻す」） */
+    fun autoRestoreAll() {
+        prefs.put(Defs.AUTO_SAVER, false)
+        prefs.put(Defs.AUTO_DOZE, false)
+        val done = auto.restoreAll()
+        log(Ev.AUTO, result = "すべて元に戻した", detail = done.joinToString(" / ").ifEmpty { "変えていた設定はなし" })
+        recent(Ev.AUTO, "すべて元に戻した")
+        publish()
+    }
+
+    // ---- 待機（仕様 F-32）。接続 0 台が続いたか ----
+
+    private fun noteZero(t: TetherInfo?) {
+        t ?: return
+        val now = SystemClock.elapsedRealtime()
+        zeroSince = when {
+            t.wifiOn == false || t.clients == 0 -> zeroSince ?: now
+            else -> null // 接続あり、または台数が分からない（待機にしない）
+        }
     }
 
     fun onScreen(on: Boolean) {
@@ -652,6 +715,8 @@ class Monitor(private val ctx: Context) {
             signal.reset()
             Notifier.cancel(ctx, Notifier.deviceId(DeviceAlert.SIGNAL_WEAK))
         }
+        // 自動切り替えを OFF にしたら、自動で変えていた設定を元に戻す
+        autoEvaluate(StateStore.state.power)
         updateWeb(StateStore.state.tether)
         publish()
         scheduleNext()
@@ -729,12 +794,34 @@ class Monitor(private val ctx: Context) {
     }
 
     private fun publish() {
-        val plug = StateStore.state.power?.plug ?: Plug.UNKNOWN
+        val power = StateStore.state.power
+        val plug = power?.plug ?: Plug.UNKNOWN
         val mode = prefs.mode
         val base = Profiles.base(mode, plug.powered)
         val maintUntil = prefs.maintUntil
-        val eff = Profiles.effective(base, maintUntil > System.currentTimeMillis(), upstream.rechecking || tether.rechecking)
-        val interval = Profiles.intervalMin(base, prefs.int(Defs.INTERVAL_NORMAL), prefs.int(Defs.INTERVAL_SAVER)) * intervalFactor
+        val maintenance = maintUntil > System.currentTimeMillis()
+        val eff = Profiles.effective(base, maintenance, upstream.rechecking || tether.rechecking)
+        var interval = Profiles.intervalMin(base, prefs.int(Defs.INTERVAL_NORMAL), prefs.int(Defs.INTERVAL_SAVER)) * intervalFactor
+        // 待機（仕様 F-32）。比較テスト中・メンテナンス中は使わない（条件と作業を乱さないため）
+        val reason = if (exp == null && !maintenance) {
+            IdleMode.reason(prefs.int(Defs.IDLE_INTERVAL), zeroSince, SystemClock.elapsedRealtime(), power, prefs.int(Defs.IDLE_BATT), lastSegKbPerHour)
+        } else {
+            null
+        }
+        if (reason != null) interval = maxOf(interval, prefs.int(Defs.IDLE_INTERVAL))
+        if (reason != idleReason) {
+            val prevReason = idleReason
+            idleReason = reason
+            val text = if (reason != null) "待機（${reason.label}）：チェック間隔 ${interval}分" else "待機を終了（${prevReason?.label ?: ""}）"
+            log(Ev.PROFILE, result = text)
+            recent(Ev.PROFILE, text)
+        }
+        val autoView = StateStore.AutoView(
+            enabled = prefs.bool(Defs.AUTO_SAVER) || prefs.bool(Defs.AUTO_DOZE),
+            permitted = AutoSwitch.permitted(ctx),
+            saverOn = prefs.autoSaverApplied,
+            dozeOn = prefs.autoDozeApplied,
+        )
         val total = prefs.recheckDelaysMin.size
         val up = upstream.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, minOf(it.rechecks + 1, total), total, it.confirmed) }
         val te = tether.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, 1, 1, it.confirmed) }
@@ -753,6 +840,7 @@ class Monitor(private val ctx: Context) {
                 mode = mode, base = base, effective = eff, intervalMin = interval, maintUntil = maintUntil,
                 upstream = up, tetherIssue = te, meter = meterView, experiment = expView,
                 alerts = alerts.active.toSet() + listOfNotNull(DeviceAlert.SIGNAL_WEAK.takeIf { signal.active }),
+                auto = autoView, idleReason = reason?.label,
             )
         }
     }
@@ -771,7 +859,12 @@ class Monitor(private val ctx: Context) {
         transition: (() -> Unit)? = null,
     ) {
         val closedSeg = meter.close(p, line, t?.clients)
-        closedSeg?.let { feedTraffic(it) }
+        closedSeg?.let { seg ->
+            feedTraffic(seg)
+            // 待機（仕様 F-32）の判断用に、直近の区間の通信量（KB/時）を覚えておく（短すぎる区間は使わない）
+            val b = seg.bytes
+            if (b != null && seg.durationSec >= 300) lastSegKbPerHour = b / 1024.0 / (seg.durationSec / 3600.0)
+        }
         val e = exp
         if (closedSeg != null && e != null && e.measuring && closedSeg.onBattery && closedSeg.condition == e.condition &&
             !prefs.maintenanceActive()
@@ -783,7 +876,7 @@ class Monitor(private val ctx: Context) {
         }
         transition?.invoke()
         val next = exp
-        meter.begin(p, t?.wifiOn, StateStore.state.effective.label, next?.candidate?.title, next?.takeIf { it.measuring }?.condition)
+        meter.begin(p, t?.wifiOn, StateStore.state.effective.label, next?.candidate?.title, next?.takeIf { it.measuring }?.condition, t?.clients)
     }
 
     fun startExperiment(key: String, customA: String?, customB: String?) {

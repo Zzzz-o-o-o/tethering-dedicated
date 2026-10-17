@@ -34,6 +34,7 @@ class MonitorService : Service() {
         const val ACTION_EXP_START = "local.tethering.dedicated.EXP_START"
         const val ACTION_EXP_CONFIRM = "local.tethering.dedicated.EXP_CONFIRM"
         const val ACTION_EXP_ABORT = "local.tethering.dedicated.EXP_ABORT"
+        const val ACTION_AUTO_RESTORE = "local.tethering.dedicated.AUTO_RESTORE"
         const val EXTRA_UNTIL = "until"
         const val EXTRA_CANDIDATE = "candidate"
         const val EXTRA_LABEL_A = "label_a"
@@ -131,6 +132,10 @@ class MonitorService : Service() {
             ACTION_EXP_ABORT -> {
                 m.ensureStarted(boot = false, initialCheck = false)
                 m.abortExperiment()
+            }
+            ACTION_AUTO_RESTORE -> {
+                m.ensureStarted(boot = false, initialCheck = false)
+                m.autoRestoreAll()
             }
             // ACTION_START、またはシステムによる再起動（START_STICKY で intent が null）
             else -> m.ensureStarted(boot = false)

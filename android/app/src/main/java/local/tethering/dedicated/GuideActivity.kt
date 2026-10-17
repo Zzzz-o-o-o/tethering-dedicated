@@ -21,7 +21,7 @@ import android.widget.TextView
 import java.util.concurrent.Executors
 
 /**
- * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05、第 2 段階の F-34 / F-39 / F-40 / F-41）。
+ * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05、第 2 段階の F-34 / F-39 / F-40 / F-41、第 3 段階の F-31 / F-35 / F-42）。
  * 現在の値を読んで推奨値と並べ、OS の設定画面へ案内する。OS の設定はこの画面からは一切変更しない。
  * 区分: APK（このアプリで行う）／ADB事前設定（PC から tools/adb-setup.ps1 で行う）／手動設定／要検証。
  */
@@ -250,6 +250,27 @@ class GuideActivity : Activity() {
                 listOf("バッテリーセーバーの設定を開く" to { a -> SystemScreens.batterySaver(a) }),
             ),
             Item(
+                "バッテリー駆動中の自動切り替え", "APK・ADB事前設定",
+                { c ->
+                    val prefs = Prefs(c)
+                    val on = prefs.bool(Defs.AUTO_SAVER) || prefs.bool(Defs.AUTO_DOZE)
+                    val permitted = AutoSwitch.permitted(c)
+                    when {
+                        !on -> "使わない" + (if (permitted) "（権限は付与済み）" else "") to Level.INFO
+                        !permitted -> "ON だが設定変更の権限がない（ADB で付与が必要）" to Level.WARN
+                        else -> listOfNotNull(
+                            "バッテリーセーバー".takeIf { prefs.bool(Defs.AUTO_SAVER) },
+                            "Doze を早める".takeIf { prefs.bool(Defs.AUTO_DOZE) },
+                        ).joinToString("・") + " を自動で切り替え" to Level.OK
+                    }
+                },
+                "バッテリー駆動で長く使うなら ON",
+                "バッテリー駆動中（または残量が設定以下のとき）にバッテリーセーバーを ON にし、Doze（省電力待機）を早めます。給電すると元に戻します。" +
+                    "データセーバー・機内モード・モバイルデータは変えません。使うには PC から設定変更の権限を付けてから、設定の「自動切り替え」を ON にします。",
+                listOf("設定を開く" to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) }),
+                "tools\\adb-setup.bat -Apply -AllowAutoSwitch\n（個別に: adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.WRITE_SECURE_SETTINGS）",
+            ),
+            Item(
                 "充電上限・バイパス充電", "手動確認・要検証",
                 { _ -> "非対応として扱う（Android 10 標準に設定なし）" to Level.INFO },
                 "メーカーの機能があれば使う",
@@ -332,6 +353,34 @@ class GuideActivity : Activity() {
                 "adb shell settings put global ble_scan_always_enabled 0",
             ),
         ),
+        "回線方式の見直し" to listOf(
+            Item(
+                "優先ネットワークの種類（5G／4G）", "手動設定・要検証",
+                { c ->
+                    val mode = Os.preferredNetworkMode(c)
+                    when {
+                        mode == null -> Fmt.NA to Level.INFO
+                        NetworkModes.hasNr(mode) -> NetworkModes.label(mode) to Level.WARN
+                        else -> "${NetworkModes.label(mode)}（5G を使わない設定なので変更不要）" to Level.OK
+                    }
+                },
+                "5G 対応の端末は 4G（LTE）に固定",
+                "5G の電波を探したり 4G と行き来したりする電力を減らせる可能性があります（エリアによっては速度が落ちます）。" +
+                    "設定 → ネットワークとインターネット → モバイル ネットワーク → 詳細設定 → 優先ネットワークの種類 で「4G」や「LTE」を選びます。効果は比較テストで確かめてください。",
+                listOf("モバイル ネットワークの設定を開く" to { a -> SystemScreens.mobileNetwork(a) }),
+            ),
+            Item(
+                "VoLTE（データ専用 SIM）", "手動設定・要検証",
+                { _ -> "取得不可（SIM ごとの設定のため、設定画面で確認してください）" to Level.INFO },
+                "データ専用 SIM では OFF",
+                "通話をしないデータ専用 SIM では、VoLTE（4G での音声）を OFF にすると、使わない IMS の登録を保つための通信と電力が減る可能性があります。" +
+                    "設定 → ネットワークとインターネット → モバイル ネットワーク の「VoLTE」「4G 通話」「拡張 4G LTE モード」などを OFF にします。効果は比較テスト「VoLTE を OFF」で確かめてください。",
+                listOf(
+                    "モバイル ネットワークの設定を開く" to { a -> SystemScreens.mobileNetwork(a) },
+                    "比較テストを開く" to { a -> a.startActivity(Intent(a, ExperimentActivity::class.java)) },
+                ),
+            ),
+        ),
         "同期・通知・通話" to listOf(
             Item(
                 "自動同期", "手動設定",
@@ -393,6 +442,17 @@ class GuideActivity : Activity() {
                 listOf("アプリの一覧を開く" to { a -> a.startActivity(Intent(a, AppsActivity::class.java)) }),
                 "tools\\adb-setup.bat -Apply -RestrictApps\n（除外: -KeepApps パッケージ名,…　戻す: -Restore）\n" +
                     "個別に:\nadb shell cmd appops set <パッケージ名> RUN_ANY_IN_BACKGROUND ignore\nadb shell am set-standby-bucket <パッケージ名> rare",
+            ),
+            Item(
+                "使用状況へのアクセス（アプリ別の通信量）", "APK・ADB事前設定",
+                { c -> onOff(AppUsageProbe.hasAccess(c), okWhenOff = false, onText = "許可", offText = "未許可") },
+                "許可（読むだけ）",
+                "「省電力の分析」で、アプリ別のモバイル通信量と、テザリング（接続端末）の通信量を分けて見るために使います。ほかのアプリには何もしません。",
+                listOf(
+                    "使用状況へのアクセスを開く" to { a -> SystemScreens.usageAccess(a) },
+                    "省電力の分析を開く" to { a -> a.startActivity(Intent(a, AnalysisActivity::class.java)) },
+                ),
+                "adb shell appops set ${BuildConfig.APPLICATION_ID} GET_USAGE_STATS allow\n（tools\\adb-setup.bat -Apply でも許可します）",
             ),
             Item(
                 "接続端末の「従量制」設定", "手動設定（接続端末）",

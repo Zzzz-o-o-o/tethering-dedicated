@@ -74,6 +74,16 @@ object SystemScreens {
 
     fun appDetails(pkg: String): Intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
 
+    fun usageAccess(ctx: Context) = open(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), Intent(Settings.ACTION_SECURITY_SETTINGS))
+
+    /** モバイル ネットワークの設定（優先ネットワークの種類・VoLTE がある画面） */
+    fun mobileNetwork(ctx: Context) = open(
+        ctx,
+        Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
+        Intent(Settings.ACTION_DATA_ROAMING_SETTINGS),
+        Intent(Settings.ACTION_WIRELESS_SETTINGS),
+    )
+
     fun playStore(ctx: Context): Boolean {
         val i = ctx.packageManager.getLaunchIntentForPackage("com.android.vending") ?: return open(ctx)
         return open(ctx, i)

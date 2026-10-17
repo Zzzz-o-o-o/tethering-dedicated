@@ -43,8 +43,21 @@ object StateStore {
         val auto: Boolean,
     )
 
+    /** 自動切り替え（仕様 F-42）の状態 */
+    data class AutoView(
+        /** 設定で自動切り替えを使う */
+        val enabled: Boolean,
+        /** ADB で設定変更の権限が付いている */
+        val permitted: Boolean,
+        val saverOn: Boolean,
+        val dozeOn: Boolean,
+    )
+
     data class State(
         val meter: MeterView? = null,
+        val auto: AutoView? = null,
+        /** 待機中（チェック間隔を長くしている）の理由（仕様 F-32）。待機していなければ null */
+        val idleReason: String? = null,
         val experiment: ExperimentView? = null,
         val running: Boolean = false,
         val checking: Boolean = false,

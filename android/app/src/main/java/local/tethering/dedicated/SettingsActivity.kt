@@ -40,6 +40,7 @@ class SettingsActivity : Activity() {
     private val textFields = LinkedHashMap<TextDef, EditText>()
     private lateinit var logSize: TextView
     private lateinit var undoButton: Button
+    private lateinit var autoStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +61,11 @@ class SettingsActivity : Activity() {
         section(page, "電波の悪化（設置場所）", listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true)
         section(page, "待機中の通信", listOf(Defs.IDLE_TRAFFIC_MB, Defs.QUIET_TRAFFIC_MB), texts = listOf(Defs.QUIET_HOURS))
         section(page, "ローカル管理画面", listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
+        section(page, "自動切り替え（バッテリー駆動中）", listOf(Defs.AUTO_SAVER_PCT), bools = listOf(Defs.AUTO_SAVER, Defs.AUTO_DOZE), boolsFirst = true).also { c ->
+            autoStatus = Ui.small(c, "")
+            Ui.button(c, "自動で変えた設定をすべて元に戻す") { confirmAutoRestore() }
+        }
+        section(page, "監視の通信を減らす", listOf(Defs.IDLE_INTERVAL, Defs.IDLE_BATT), bools = listOf(Defs.SKIP_PROBE), boolsFirst = true)
         section(page, "ログ（操作ログと電力の記録）", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
             logSize = Ui.small(c, "")
             Ui.button(c, "ログを消去") { confirmClearLogs() }
@@ -127,7 +133,36 @@ class SettingsActivity : Activity() {
         boolFields[d] = s
     }
 
+    private fun refreshAuto() {
+        val permitted = AutoSwitch.permitted(this)
+        val applied = listOfNotNull("バッテリーセーバー".takeIf { prefs.autoSaverApplied }, "Doze".takeIf { prefs.autoDozeApplied })
+        autoStatus.text = (if (permitted) "設定変更の権限: 付与済み" else "設定変更の権限: なし（PC から tools\\adb-setup.bat -Apply -AllowAutoSwitch で付与すると動きます）") +
+            "\nいま自動で変えているもの: " + applied.ifEmpty { listOf("なし") }.joinToString("・")
+    }
+
+    private fun confirmAutoRestore() {
+        AlertDialog.Builder(this)
+            .setTitle("自動で変えた設定をすべて元に戻しますか？")
+            .setMessage("バッテリーセーバーと Doze の設定を、自動で変える前の値に戻し、自動切り替えを OFF にします。")
+            .setPositiveButton("元に戻す") { _, _ ->
+                if (prefs.monitoring) {
+                    MonitorService.send(this, MonitorService.ACTION_AUTO_RESTORE)
+                } else {
+                    prefs.put(Defs.AUTO_SAVER, false)
+                    prefs.put(Defs.AUTO_DOZE, false)
+                    AutoSwitch(this, prefs).restoreAll()
+                }
+                boolFields[Defs.AUTO_SAVER]?.isChecked = false
+                boolFields[Defs.AUTO_DOZE]?.isChecked = false
+                toast("元に戻しました")
+                main.postDelayed({ refreshAuto() }, 500L)
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
+    }
+
     private fun refreshFooter() {
+        refreshAuto()
         bg.execute {
             val bytes = LogStore.totalBytes(this) + PowerStore.totalBytes(this)
             val hasBefore = File(filesDir, BEFORE_FILE).exists()

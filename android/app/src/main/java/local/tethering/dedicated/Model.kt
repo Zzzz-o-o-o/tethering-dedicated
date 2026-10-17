@@ -169,6 +169,8 @@ data class CheckResult(
     val failure: Anomaly?,
     val diagnosis: String,
     val detail: String,
+    /** 接続端末の通信が流れていたので、到達確認（DNS・HTTP）を省いた（仕様 F-32） */
+    val probeSkipped: Boolean = false,
 )
 
 /** 画面に出す直近の記録 */

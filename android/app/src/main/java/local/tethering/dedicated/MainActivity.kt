@@ -79,6 +79,7 @@ class MainActivity : Activity() {
     private lateinit var vProfile: TextView
     private lateinit var vInterval: TextView
     private lateinit var vNext: TextView
+    private lateinit var vAuto: TextView
     private lateinit var modeGroup: RadioGroup
     private val modeIds = HashMap<BaseMode, Int>()
     private lateinit var vMaint: TextView
@@ -215,6 +216,7 @@ class MainActivity : Activity() {
             vProfile = Ui.kv(c, "現在")
             vInterval = Ui.kv(c, "チェック間隔")
             vNext = Ui.kv(c, "次回チェック")
+            vAuto = Ui.kv(c, "自動切り替え")
             modeGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
             val labels = mapOf(
                 BaseMode.AUTO to "自動（給電中は通常・バッテリー駆動中は省電力）",
@@ -252,6 +254,7 @@ class MainActivity : Activity() {
                 "通信量（時間帯別）" to { startActivity(Intent(this, TrafficActivity::class.java)) },
                 "接続端末の設定" to { startActivity(Intent(this, ClientGuideActivity::class.java)) },
             )
+            Ui.button(c, "省電力の分析") { startActivity(Intent(this, AnalysisActivity::class.java)) }
             Ui.button(c, "ログをCSVで保存") { exportLog() }
             Ui.buttonRow(c, "設定" to { startActivity(Intent(this, SettingsActivity::class.java)) }, "設定ガイド" to { startActivity(Intent(this, GuideActivity::class.java)) })
             Ui.button(c, "診断情報") { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
@@ -353,7 +356,11 @@ class MainActivity : Activity() {
             when (it.http) {
                 Tri.OK -> "✓（${it.httpCode}・${it.httpMs} ms）"
                 Tri.NG -> "✗" + (it.httpCode?.let { code -> "（HTTP $code）" } ?: "")
-                Tri.SKIP -> if (prefs.bool(Defs.HTTP)) "－（前の段階で停止）" else "－（確認しない設定）"
+                Tri.SKIP -> when {
+                    it.probeSkipped -> "－（通信が流れているため省略）"
+                    prefs.bool(Defs.HTTP) -> "－（前の段階で停止）"
+                    else -> "－（確認しない設定）"
+                }
                 Tri.UNKNOWN -> Fmt.NA
             }
         } ?: "－"
@@ -388,11 +395,20 @@ class MainActivity : Activity() {
 
         // プロファイル
         vProfile.text = "${s.effective.label}（モード: ${s.mode.label}）"
-        vInterval.text = when (s.base) {
-            Effective.SAVER -> "${s.intervalMin}分（省電力）"
+        vInterval.text = when {
+            s.idleReason != null -> "${s.intervalMin}分（待機：${s.idleReason}）"
+            s.base == Effective.SAVER -> "${s.intervalMin}分（省電力）"
             else -> "${s.intervalMin}分（通常）"
         }
         vNext.text = if (monitoring && s.nextCheckAt > 0) Fmt.time(s.nextCheckAt) else "－"
+        vAuto.text = s.auto?.let { a ->
+            when {
+                !a.enabled -> "使わない"
+                !a.permitted -> "権限がありません（ADB で付与）"
+                a.saverOn || a.dozeOn -> listOfNotNull("バッテリーセーバー ON".takeIf { a.saverOn }, "Doze を早めている".takeIf { a.dozeOn }).joinToString("・") + "（自動）"
+                else -> "待機中（バッテリー駆動で切り替え）"
+            }
+        } ?: "－"
         // 選択の正はサービスの状態ではなく保存値（サービスの反映待ちの間に選択が戻らないように）
         modeIds[prefs.mode]?.let { id -> if (modeGroup.checkedRadioButtonId != id) modeGroup.check(id) }
         val maint = s.maintUntil > System.currentTimeMillis()
@@ -426,6 +442,10 @@ class MainActivity : Activity() {
         }
         if (t?.autoOff == true) {
             items.add(Triple("アクセスポイントの自動OFFが有効です。接続がないとテザリングが止まります。", "設定を開く") { SystemScreens.hotspot(this) })
+        }
+        val auto = StateStore.state.auto
+        if (auto != null && auto.enabled && !auto.permitted) {
+            items.add(Triple("自動切り替えが ON ですが、設定変更の権限がないため動きません（PC から ADB で付与してください）。", "設定ガイドを開く") { startActivity(Intent(this, GuideActivity::class.java)) })
         }
         if (DeviceAlert.SIGNAL_WEAK in StateStore.state.alerts) {
             items.add(Triple("電波が悪化しています。置き場所を見直すと消費と発熱が減ります。", "設置場所アシスト") { startActivity(Intent(this, PlacementActivity::class.java)) })

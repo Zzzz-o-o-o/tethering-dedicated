@@ -162,6 +162,14 @@ object Os {
 
     fun secure(ctx: Context, key: String): String? =
         runCatching { Settings.Secure.getString(ctx.contentResolver, key) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** 優先ネットワークの種類（仕様 F-31）。データ通信の SIM の値（preferred_network_mode<subId>）を優先し、なければ全体の値 */
+    fun preferredNetworkMode(ctx: Context): Int? {
+        val sub = runCatching { android.telephony.SubscriptionManager.getDefaultDataSubscriptionId() }.getOrDefault(-1)
+        val keys = listOfNotNull(sub.takeIf { it >= 0 }?.let { "preferred_network_mode$it" }, "preferred_network_mode")
+        for (k in keys) NetworkModes.parse(global(ctx, k))?.let { return it }
+        return null
+    }
 }
 
 /** モバイル回線（仕様 F-11） */
@@ -293,7 +301,11 @@ object ConnectivityProbe {
         else -> "その他"
     }
 
-    fun run(ctx: Context, prefs: Prefs, line: LineInfo?, trigger: Trigger): CheckResult {
+    /**
+     * [skipReach] なら、OS の接続検証が OK で IP 通信もできているときに限り、DNS・HTTP の確認を省く（仕様 F-32。
+     * 接続端末の通信が流れていて、インターネットに届いているのが明らかなとき）
+     */
+    fun run(ctx: Context, prefs: Prefs, line: LineInfo?, trigger: Trigger, skipReach: Boolean = false): CheckResult {
         val now = System.currentTimeMillis()
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val timeoutMs = prefs.int(Defs.TIMEOUT) * 1000
@@ -322,6 +334,14 @@ object ConnectivityProbe {
             caps == null -> Tri.UNKNOWN
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> Tri.OK
             else -> Tri.NG
+        }
+        val viaCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+
+        if (skipReach && ip == Tri.OK && validated == Tri.OK && Diagnosis.failure(line?.simReady, registered, ip, Tri.SKIP, Tri.SKIP) == null) {
+            return CheckResult(
+                now, trigger, registered, ip, Tri.SKIP, Tri.SKIP, validated, null, null, viaCellular, route, null,
+                "インターネットに正常に到達できます（接続端末の通信が流れているため、到達確認は省略）", "", probeSkipped = true,
+            )
         }
 
         val url = runCatching { URL(prefs.text(Defs.URL)) }.getOrNull()
@@ -374,7 +394,6 @@ object ConnectivityProbe {
         val failure = Diagnosis.failure(line?.simReady, registered, ip, dns, http)
         var diagnosis = Diagnosis.text(failure, line, if (http == Tri.NG) code else null, httpReason)
         if (failure == null && route != null && route != "モバイル回線") diagnosis += "（経路: $route）"
-        val viaCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
         return CheckResult(now, trigger, registered, ip, dns, http, validated, code, httpMs, viaCellular, route, failure, diagnosis, details.joinToString(" / "))
     }
 

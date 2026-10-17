@@ -1,5 +1,6 @@
 package local.tethering.dedicated
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONObject
@@ -58,6 +59,36 @@ class Prefs(context: Context) {
     var trafficIdleAlertAt: Long
         get() = state.getLong("traffic_idle_alert_at", 0L)
         set(v) = state.edit().putLong("traffic_idle_alert_at", v).apply()
+
+    // 自動切り替え（仕様 F-42）。いま自動で変えているかと、変える前の値。
+    // OS の設定を変えた直後にアプリが止まっても元に戻せるよう、すぐにファイルへ書く（commit）
+    @set:SuppressLint("ApplySharedPref")
+    var autoSaverApplied: Boolean
+        get() = state.getBoolean("auto_saver_applied", false)
+        set(v) {
+            state.edit().putBoolean("auto_saver_applied", v).commit()
+        }
+
+    @set:SuppressLint("ApplySharedPref")
+    var autoSaverOriginal: String?
+        get() = state.getString("auto_saver_original", null)
+        set(v) {
+            state.edit().putString("auto_saver_original", v).commit()
+        }
+
+    @set:SuppressLint("ApplySharedPref")
+    var autoDozeApplied: Boolean
+        get() = state.getBoolean("auto_doze_applied", false)
+        set(v) {
+            state.edit().putBoolean("auto_doze_applied", v).commit()
+        }
+
+    @set:SuppressLint("ApplySharedPref")
+    var autoDozeOriginal: String?
+        get() = state.getString("auto_doze_original", null)
+        set(v) {
+            state.edit().putString("auto_doze_original", v).commit()
+        }
 
     // ---- 運用状態（バックアップ・初期化の対象外） ----
 

@@ -37,12 +37,13 @@ object Ev {
     const val PLACE = "設置場所"
     const val TRAFFIC = "待機中の通信"
     const val WEB = "管理画面"
+    const val AUTO = "自動切り替え"
 
     /** 画面の「直近の記録」に出すもの（定期チェックの行は出さない） */
     val recentKinds = setOf(
         START, STOP, BOOT, SUSPECT, RECHECK_BAD, CONFIRMED, CONTINUING, RECOVERED, BLIP, TETHER,
         POWER, PROFILE, ALERT, ALERT_CLEAR, MAINT_ON, MAINT_OFF, SETTINGS, RESTORE, BOOT_CHECK,
-        EXP_START, EXP_SWITCH, EXP_END, PLACE, TRAFFIC, WEB,
+        EXP_START, EXP_SWITCH, EXP_END, PLACE, TRAFFIC, WEB, AUTO,
     )
 
     /** 接続性チェックの行（日次レポートの稼働率に使う） */

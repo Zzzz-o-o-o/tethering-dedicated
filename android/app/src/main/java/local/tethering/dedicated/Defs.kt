@@ -67,6 +67,30 @@ object Defs {
     val SIGNAL_ALERT = BoolDef("signal_alert", "電波の悪化を通知する", true, "定期チェックのときに判定します（判定のために端末を起こしません）")
     val WEB = BoolDef("web_enabled", "ローカル管理画面（読み取り専用）", true, "テザリングのアクセスポイント側だけで待ち受けます。モバイル回線側からは見えません")
 
+    // 第 3 段階
+    val AUTO_SAVER_PCT = IntDef(
+        "auto_saver_pct", "自動で ON にする電池残量（100 = バッテリー駆動中は常に）", 100, 5, 100, "%",
+        "これ以下になったら ON にします（戻すのは 5% 上がったとき、または給電したとき）",
+    )
+    val IDLE_INTERVAL = IntDef(
+        "idle_interval_min", "待機中のチェック間隔（0 = 使わない）", 180, 0, 720, "分",
+        "バッテリー駆動中に、接続 0 台が 30 分続いたとき、または下の残量以下のとき。状態の変化はこれまでどおりすぐ確認します",
+    )
+    val IDLE_BATT = IntDef("idle_batt_pct", "待機にする電池残量", 30, 5, 100, "%")
+
+    val AUTO_SAVER = BoolDef(
+        "auto_saver", "バッテリー駆動中はバッテリーセーバーを自動で ON", false,
+        "給電すると元に戻します。ADB で「設定変更の権限」を付けたときだけ動きます（データセーバー・機内モード・モバイルデータは変えません）",
+    )
+    val AUTO_DOZE = BoolDef(
+        "auto_doze", "バッテリー駆動中は Doze（省電力待機）を早める", false,
+        "画面消灯・静止から約 10 分で深い省電力待機に入るようにします（標準は約 1 時間）。給電すると元に戻します",
+    )
+    val SKIP_PROBE = BoolDef(
+        "skip_probe_busy", "接続端末の通信が流れているときは到達確認を省く", true,
+        "OS の接続検証が OK で、前回のチェックから 256 KB 以上受信していれば、DNS・HTTP の確認を省きます",
+    )
+
     val HTTP = BoolDef("http_check", "外部サイトへの到達確認（HTTP）", true, "OFFにするとDNSまでの確認で判定する")
     val TETHER_EXPECTED = BoolDef("tether_expected", "Wi-Fiテザリングの停止を異常とする", true)
     val CLIENTS = BoolDef("count_clients", "接続端末数を数える（取得できる機種のみ）", true, "MACアドレスなどは記録せず、台数だけを数える")
@@ -91,8 +115,9 @@ object Defs {
         INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
         SIGNAL_WEAK_RSRP, SIGNAL_DROP_DB, IDLE_TRAFFIC_MB, QUIET_TRAFFIC_MB, WEB_PORT,
+        AUTO_SAVER_PCT, IDLE_INTERVAL, IDLE_BATT,
     )
-    val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB)
+    val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE)
     val texts = listOf(URL, RECHECK, QUIET_HOURS)
 
     fun checkUrl(s: String): String? {

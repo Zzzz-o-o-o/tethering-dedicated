@@ -66,10 +66,13 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
         return if (rx == TrafficStats.UNSUPPORTED.toLong() || tx == TrafficStats.UNSUPPORTED.toLong()) null else rx + tx
     }
 
-    /** 区間を始める（監視の開始時や、区間を閉じた直後） */
-    fun begin(p: PowerInfo?, tetherOn: Boolean?, profile: String, experiment: String?, condition: Char?) {
+    /**
+     * 区間を始める（監視の開始時や、区間を閉じた直後）。[clients] は始めた時点の接続端末数
+     * （区間の始めと終わりの両方で数えて「接続端末なし」を判定するため）
+     */
+    fun begin(p: PowerInfo?, tetherOn: Boolean?, profile: String, experiment: String?, condition: Char?, clients: Int? = null) {
         val onBattery = p?.plug == Plug.NONE
-        open = Open(reading(p, onBattery), System.currentTimeMillis(), mobileBytes(), profile, tetherOn, experiment, condition)
+        open = Open(reading(p, onBattery), System.currentTimeMillis(), mobileBytes(), profile, tetherOn, experiment, condition).also { it.clientsMax = clients }
         currents.clear()
         screenOn = runCatching { ctx.getSystemService(PowerManager::class.java)?.isInteractive }.getOrNull() ?: false
         screenSince = now()
