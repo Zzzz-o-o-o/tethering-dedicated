@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private lateinit var vShared: TextView
     private lateinit var vClients: TextView
     private lateinit var vAutoOff: TextView
+    private lateinit var vWeb: TextView
 
     private lateinit var vSim: TextView
     private lateinit var vOperator: TextView
@@ -162,6 +163,7 @@ class MainActivity : Activity() {
             vShared = Ui.kv(c, "共有中")
             vClients = Ui.kv(c, "接続端末")
             vAutoOff = Ui.kv(c, "自動OFF設定")
+            vWeb = Ui.kv(c, "管理画面（接続端末から）")
             Ui.button(c, "テザリング設定を開く") { SystemScreens.tether(this) }
         }
 
@@ -176,7 +178,11 @@ class MainActivity : Activity() {
             vBand = Ui.kv(c, "バンド")
             vBandwidth = Ui.kv(c, "帯域幅")
             vRoaming = Ui.kv(c, "ローミング・機内モード")
-            Ui.button(c, "APN設定を開く") { SystemScreens.apn(this) }
+            Ui.buttonRow(
+                c,
+                "設置場所アシスト" to { startActivity(Intent(this, PlacementActivity::class.java)) },
+                "APN設定を開く" to { SystemScreens.apn(this) },
+            )
         }
 
         Ui.card(page).also { c ->
@@ -241,6 +247,11 @@ class MainActivity : Activity() {
                 "比較テスト" to { startActivity(Intent(this, ExperimentActivity::class.java)) },
                 "日次レポート" to { startActivity(Intent(this, ReportActivity::class.java)) },
             )
+            Ui.buttonRow(
+                c,
+                "通信量（時間帯別）" to { startActivity(Intent(this, TrafficActivity::class.java)) },
+                "接続端末の設定" to { startActivity(Intent(this, ClientGuideActivity::class.java)) },
+            )
             Ui.button(c, "ログをCSVで保存") { exportLog() }
             Ui.buttonRow(c, "設定" to { startActivity(Intent(this, SettingsActivity::class.java)) }, "設定ガイド" to { startActivity(Intent(this, GuideActivity::class.java)) })
             Ui.button(c, "診断情報") { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
@@ -298,6 +309,11 @@ class MainActivity : Activity() {
             false -> "OFF ✓"
             true -> "ON（接続がないと停止）⚠"
             null -> "未設定（AOSPの既定はON）"
+        }
+        vWeb.text = when {
+            !prefs.bool(Defs.WEB) -> "OFF（設定）"
+            s.web == null -> "－"
+            else -> s.web.url ?: s.web.message
         }
 
         // モバイル回線
@@ -410,6 +426,9 @@ class MainActivity : Activity() {
         }
         if (t?.autoOff == true) {
             items.add(Triple("アクセスポイントの自動OFFが有効です。接続がないとテザリングが止まります。", "設定を開く") { SystemScreens.hotspot(this) })
+        }
+        if (DeviceAlert.SIGNAL_WEAK in StateStore.state.alerts) {
+            items.add(Triple("電波が悪化しています。置き場所を見直すと消費と発熱が減ります。", "設置場所アシスト") { startActivity(Intent(this, PlacementActivity::class.java)) })
         }
         val key = items.joinToString("|") { it.first }
         if (key == bannerKey) return

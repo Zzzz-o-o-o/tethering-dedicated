@@ -44,6 +44,21 @@ class Prefs(context: Context) {
         get() = state.getString("experiment_history", null)
         set(v) = state.edit().putString("experiment_history", v).apply()
 
+    /** 設置場所の記録（仕様 F-29）。1 行 1 件 */
+    var placesText: String?
+        get() = state.getString("places", null)
+        set(v) = state.edit().putString("places", v).apply()
+
+    /** 「ここに設置した」場所の記録時刻（0 = 未設定） */
+    var placeBaselineAt: Long
+        get() = state.getLong("place_baseline", 0L)
+        set(v) = state.edit().putLong("place_baseline", v).apply()
+
+    /** 待機中の通信（仕様 F-33）を最後に通知した時刻（再起動しても通知が続けて出ないように残す） */
+    var trafficIdleAlertAt: Long
+        get() = state.getLong("traffic_idle_alert_at", 0L)
+        set(v) = state.edit().putLong("traffic_idle_alert_at", v).apply()
+
     // ---- 運用状態（バックアップ・初期化の対象外） ----
 
     /** 監視を続けるか（利用者が「停止」したら false。再起動後に自動で始めるかもこれで決まる） */

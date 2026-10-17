@@ -153,9 +153,10 @@ object Ui {
             setTextIsSelectable(true)
         }
 
-    fun numberField(parent: LinearLayout, value: Int): EditText {
+    /** [signed] なら負の数も入力できる（RSRP のしきい値など） */
+    fun numberField(parent: LinearLayout, value: Int, signed: Boolean = false): EditText {
         val e = EditText(parent.context).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
+            inputType = InputType.TYPE_CLASS_NUMBER or if (signed) InputType.TYPE_NUMBER_FLAG_SIGNED else 0
             setText(value.toString())
             setSelectAllOnFocus(true)
         }

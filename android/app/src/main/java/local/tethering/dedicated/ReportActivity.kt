@@ -2,6 +2,7 @@ package local.tethering.dedicated
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -12,6 +13,20 @@ import android.widget.Toast
 import java.io.OutputStream
 import java.util.Locale
 import java.util.concurrent.Executors
+
+/** 1 日分の日次レポートを記録から作る（画面とローカル管理画面で共通）。UI スレッド以外で呼ぶ */
+object DailyReports {
+    fun of(ctx: Context, day: String, power: List<PowerRow> = PowerStore.rowsOfDay(ctx, day), logRows: List<List<String>> = LogStore.rowsOfDay(ctx, day)): DailyReport {
+        val capacity = Prefs(ctx).int(Defs.BATT_CAPACITY).takeIf { it > 0 } ?: StateStore.state.meter?.capacityMah
+        val checks = logRows.filter { it[LogStore.IDX_EVENT] in Ev.checkKinds }.map {
+            CheckRow(it[LogStore.IDX_ANOMALY].isEmpty(), it[LogStore.IDX_TEMP].toDoubleOrNull(), it[LogStore.IDX_RSRP].toIntOrNull())
+        }
+        val anomalies = logRows.count {
+            it[LogStore.IDX_EVENT] == Ev.CONFIRMED || (it[LogStore.IDX_EVENT] == Ev.TETHER && it[LogStore.IDX_ACTION] == "通知")
+        }
+        return Reports.daily(day, power, checks, anomalies, capacity)
+    }
+}
 
 /** 日次レポート（仕様 F-28）。記録から集計して表示する（集計のための常駐処理はない） */
 class ReportActivity : Activity() {
@@ -63,17 +78,7 @@ class ReportActivity : Activity() {
     /** 記録のある日を新しい順に集計する。UI スレッド以外で呼ぶ */
     private fun build(maxDays: Int?): List<DailyReport> {
         val days = (PowerStore.days(this) + LogStore.days(this)).distinct().sortedDescending().let { if (maxDays != null) it.take(maxDays) else it }
-        val capacity = Prefs(this).int(Defs.BATT_CAPACITY).takeIf { it > 0 } ?: StateStore.state.meter?.capacityMah
-        return days.map { day ->
-            val logRows = LogStore.rowsOfDay(this, day)
-            val checks = logRows.filter { it[LogStore.IDX_EVENT] in Ev.checkKinds }.map {
-                CheckRow(it[LogStore.IDX_ANOMALY].isEmpty(), it[LogStore.IDX_TEMP].toDoubleOrNull(), it[LogStore.IDX_RSRP].toIntOrNull())
-            }
-            val anomalies = logRows.count {
-                it[LogStore.IDX_EVENT] == Ev.CONFIRMED || (it[LogStore.IDX_EVENT] == Ev.TETHER && it[LogStore.IDX_ACTION] == "通知")
-            }
-            Reports.daily(day, PowerStore.rowsOfDay(this, day), checks, anomalies, capacity)
-        }
+        return days.map { DailyReports.of(this, it) }
     }
 
     private fun render(reports: List<DailyReport>) {

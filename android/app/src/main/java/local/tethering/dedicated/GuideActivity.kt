@@ -21,7 +21,7 @@ import android.widget.TextView
 import java.util.concurrent.Executors
 
 /**
- * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05）。
+ * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05、第 2 段階の F-34 / F-39 / F-40 / F-41）。
  * 現在の値を読んで推奨値と並べ、OS の設定画面へ案内する。OS の設定はこの画面からは一切変更しない。
  * 区分: APK（このアプリで行う）／ADB事前設定（PC から tools/adb-setup.ps1 で行う）／手動設定／要検証。
  */
@@ -108,6 +108,24 @@ class GuideActivity : Activity() {
         null -> "未設定（既定値）" to Level.INFO
         "0" -> "OFF" to if (onWarn) Level.OK else Level.INFO
         else -> "ON" to if (onWarn) Level.WARN else Level.INFO
+    }
+
+    /** Secure の ON/OFF の設定をまとめて表示する（未設定は機種の既定。機能自体がない機種も多い） */
+    private fun secureFlags(c: Context, items: List<Pair<String, String>>): Pair<String, Level> {
+        val values = items.map { (label, key) -> label to Os.secure(c, key) }
+        val text = values.joinToString("\n") { (label, v) ->
+            "$label: " + when (v) {
+                null -> "未設定"
+                "0" -> "OFF"
+                else -> "ON"
+            }
+        }
+        val level = when {
+            values.any { it.second != null && it.second != "0" } -> Level.WARN
+            values.all { it.second == null } -> Level.INFO
+            else -> Level.OK
+        }
+        return "\n$text" to level
     }
 
     private fun sections(): List<Pair<String, List<Item>>> = listOf(
@@ -198,6 +216,33 @@ class GuideActivity : Activity() {
                 "adb shell settings put global stay_on_while_plugged_in 0",
             ),
             Item(
+                "通知で画面が点く（アンビエント表示）", "ADB事前設定・手動設定",
+                { c -> secureFlags(c, listOf("通知で点灯" to "doze_enabled", "常に表示" to "doze_always_on")) },
+                "OFF",
+                "新しい通知のたびに画面が点く機能です（機種によって「アンビエント表示」「新しい通知で画面をオン」など）。運用中の不意な点灯は電力の無駄になります。未設定は機種の既定で、この機能がない機種も多いです。",
+                listOf("画面の設定を開く" to { a -> SystemScreens.display(a) }),
+                "adb shell settings put secure doze_enabled 0\nadb shell settings put secure doze_always_on 0\n（まとめて: tools\\adb-setup.bat -Apply　戻す: -Restore）",
+            ),
+            Item(
+                "持ち上げ・タップで画面が点く", "ADB事前設定・手動設定",
+                { c ->
+                    secureFlags(
+                        c,
+                        listOf(
+                            "持ち上げて点灯" to "wake_gesture_enabled",
+                            "ダブルタップで点灯" to "double_tap_to_wake",
+                            "持ち上げて通知を確認" to "doze_pulse_on_pick_up",
+                            "ダブルタップで通知を確認" to "doze_pulse_on_double_tap",
+                            "タップで通知を確認" to "doze_tap_gesture",
+                        ),
+                    )
+                },
+                "OFF",
+                "端末を動かしたり触れたりしたときに画面が点く機能です。置いたまま使うなら不要です。メーカー独自のジェスチャー（画面オフ時のジェスチャーなど）は、設定アプリの「ジェスチャー」などから手動で OFF にしてください。",
+                listOf("画面の設定を開く" to { a -> SystemScreens.display(a) }),
+                "adb shell settings put secure wake_gesture_enabled 0\nadb shell settings put secure double_tap_to_wake 0\n（まとめて: tools\\adb-setup.bat -Apply　戻す: -Restore）",
+            ),
+            Item(
                 "バッテリーセーバー", "手動設定・要検証",
                 { c -> onOff(c.getSystemService(PowerManager::class.java)?.isPowerSaveMode, okWhenOff = true) },
                 "給電運用ではOFF",
@@ -243,17 +288,32 @@ class GuideActivity : Activity() {
                 listOf("NFCの設定を開く" to { a -> SystemScreens.nfc(a) }),
             ),
             Item(
-                "位置情報", "手動設定",
+                "位置情報", "手動設定・ADB事前設定",
                 { c ->
                     when (c.getSystemService(LocationManager::class.java)?.isLocationEnabled) {
                         null -> Fmt.NA to Level.INFO
-                        true -> "ON" to Level.INFO
+                        true -> "ON" to Level.WARN
                         false -> "OFF" to Level.OK
                     }
                 },
                 "OFF（このアプリは使いません）",
-                "このアプリは位置情報を使いません。他のアプリの位置取得による電力消費を抑えられます。",
+                "このアプリは位置情報を使いません。他のアプリの位置取得（GPS・Wi-Fi・モバイル網）による電力消費を抑えられます。",
                 listOf("位置情報の設定を開く" to { a -> SystemScreens.location(a) }),
+                "adb shell settings put secure location_mode 0\n（まとめて: tools\\adb-setup.bat -Apply　戻す: -Restore）",
+            ),
+            Item(
+                "モバイルデータを常に ON", "ADB事前設定（開発者向けオプション）",
+                { c ->
+                    when (Os.global(c, "mobile_data_always_on")) {
+                        "0" -> "OFF" to Level.OK
+                        null -> "未設定（既定は ON の機種が多い）" to Level.WARN
+                        else -> "ON" to Level.WARN
+                    }
+                },
+                "OFF",
+                "Wi-Fi に接続しているあいだもモバイル回線を待機させておく機能です。テザリング専用機ではモバイル回線が常に主回線なので不要で、OFF にしてもテザリングには影響しません。",
+                listOf("開発者向けオプションを開く" to { a -> SystemScreens.developer(a) }),
+                "adb shell settings put global mobile_data_always_on 0",
             ),
             Item(
                 "Wi-Fiスキャン（常時）", "手動設定・ADB事前設定",
@@ -320,6 +380,29 @@ class GuideActivity : Activity() {
                 "ユーザーが入れたアプリだけを一覧にします（システムアプリの一括無効化はしません）。アンインストール・無効化はアプリ情報の画面から行います。",
                 listOf("アプリの一覧を開く" to { a -> a.startActivity(Intent(a, AppsActivity::class.java)) }),
                 "adb shell pm disable-user --user 0 <パッケージ名>\n（戻す: adb shell pm enable <パッケージ名>）",
+            ),
+            Item(
+                "アプリのバックグラウンド制限", "ADB事前設定",
+                { c ->
+                    val n = c.packageManager.getInstalledApplications(0).count { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 && it.packageName != c.packageName }
+                    "ユーザーアプリ ${n}個（制限の状態は PC の adb-setup で確認できます）" to Level.INFO
+                },
+                "このアプリ以外をまとめて制限（必要なアプリは除外）",
+                "このアプリ以外のユーザーアプリを「バックグラウンドでの動作を制限」し、使用頻度を「低い」（rare）にして、裏での動作と通信を減らします。" +
+                    "アプリを開けば普通に使えます。裏で動いてほしいアプリ（VPN・遠隔操作・通知が必要なものなど）は除外してください。",
+                listOf("アプリの一覧を開く" to { a -> a.startActivity(Intent(a, AppsActivity::class.java)) }),
+                "tools\\adb-setup.bat -Apply -RestrictApps\n（除外: -KeepApps パッケージ名,…　戻す: -Restore）\n" +
+                    "個別に:\nadb shell cmd appops set <パッケージ名> RUN_ANY_IN_BACKGROUND ignore\nadb shell am set-standby-bucket <パッケージ名> rare",
+            ),
+            Item(
+                "接続端末の「従量制」設定", "手動設定（接続端末）",
+                null,
+                "接続端末を「従量制」「省データモード」に",
+                "接続端末の OS 更新・クラウド同期は、テザリングの通信量と消費の大きな原因です。Windows・Mac・iPhone・Android の手順をまとめています。",
+                listOf(
+                    "接続端末の設定ガイドを開く" to { a -> a.startActivity(Intent(a, ClientGuideActivity::class.java)) },
+                    "通信量（時間帯別）を開く" to { a -> a.startActivity(Intent(a, TrafficActivity::class.java)) },
+                ),
             ),
         ),
         "更新管理" to listOf(

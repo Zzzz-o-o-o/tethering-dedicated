@@ -124,6 +124,13 @@ object Diagnostics {
             appendLine("推定残り時間: ${m?.remainingMin?.let { Fmt.duration(it * 60_000L) } ?: "－"}")
             s.experiment?.let { appendLine("比較テスト: ${it.title} / 条件 ${it.condition} ${it.measuredSec / 60}/${it.phaseSec / 60}分${if (it.waitingSwitch) "（切り替え待ち）" else ""}") }
             appendLine()
+            appendLine("## 設置場所・通信量・管理画面")
+            val base = PlaceStore.baseline(prefs)
+            appendLine("電波の点数: ${SignalQuality.score(l.rsrp ?: l.dbm, l.sinr)?.let { "$it 点" } ?: Fmt.NA} / 設置場所の記録: ${PlaceStore.list(prefs).size}件（基準: ${base?.let { "${it.name} RSRP ${Fmt.num(it.rsrp)}" } ?: "なし"}）")
+            appendLine("待機中の通信の通知: 接続端末なし ${prefs.int(Defs.IDLE_TRAFFIC_MB)} MB/時 / 使わない時間帯 ${QuietHours.parse(prefs.text(Defs.QUIET_HOURS))?.label ?: "未設定"}（${prefs.int(Defs.QUIET_TRAFFIC_MB)} MB）")
+            // 管理画面の URL はこの端末のアクセスポイントのアドレス（接続端末の情報ではない）
+            appendLine("管理画面: ${if (!prefs.bool(Defs.WEB)) "OFF" else s.web?.let { it.url ?: it.message } ?: "－"}")
+            appendLine()
             appendLine("## 直近の接続性チェック")
             if (c == null) {
                 appendLine("まだ実行していません")
@@ -135,8 +142,21 @@ object Diagnostics {
             }
             appendLine()
             appendLine("## OS の設定値（読み取りのみ）")
-            for (key in listOf("wifi_scan_always_enabled", "ble_scan_always_enabled", "stay_on_while_plugged_in", "ota_disable_automatic_update", Settings.Global.AIRPLANE_MODE_ON)) {
+            for (
+                key in listOf(
+                    "wifi_scan_always_enabled", "ble_scan_always_enabled", "stay_on_while_plugged_in", "ota_disable_automatic_update",
+                    "mobile_data_always_on", "tether_offload_disabled", Settings.Global.AIRPLANE_MODE_ON,
+                )
+            ) {
                 appendLine("global $key = ${Os.global(ctx, key) ?: "未設定"}")
+            }
+            for (
+                key in listOf(
+                    "doze_enabled", "doze_always_on", "doze_pulse_on_pick_up", "doze_pulse_on_double_tap", "doze_tap_gesture",
+                    "wake_gesture_enabled", "double_tap_to_wake", "location_mode",
+                )
+            ) {
+                appendLine("secure $key = ${Os.secure(ctx, key) ?: "未設定"}")
             }
             appendLine("system screen_off_timeout = ${Os.system(ctx, Settings.System.SCREEN_OFF_TIMEOUT) ?: "未設定"}")
             appendLine()

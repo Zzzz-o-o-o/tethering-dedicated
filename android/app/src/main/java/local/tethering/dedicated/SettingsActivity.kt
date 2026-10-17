@@ -57,6 +57,9 @@ class SettingsActivity : Activity() {
         section(page, "起動後チェック", listOf(Defs.BOOT_DELAY))
         section(page, "消費電力の計測", listOf(Defs.BATT_CAPACITY, Defs.RUNTIME_ALERT))
         section(page, "比較テスト", listOf(Defs.EXP_PHASE, Defs.EXP_REPEATS, Defs.EXP_MIN_GAIN))
+        section(page, "電波の悪化（設置場所）", listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true)
+        section(page, "待機中の通信", listOf(Defs.IDLE_TRAFFIC_MB, Defs.QUIET_TRAFFIC_MB), texts = listOf(Defs.QUIET_HOURS))
+        section(page, "ローカル管理画面", listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
         section(page, "ログ（操作ログと電力の記録）", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
             logSize = Ui.small(c, "")
             Ui.button(c, "ログを消去") { confirmClearLogs() }
@@ -103,7 +106,7 @@ class SettingsActivity : Activity() {
         for (d in ints) {
             Ui.text(c, "${d.label}（${d.min}〜${d.max}${d.unit}）", 14f)
             if (d.help.isNotEmpty()) Ui.small(c, d.help)
-            intFields[d] = Ui.numberField(c, prefs.int(d))
+            intFields[d] = Ui.numberField(c, prefs.int(d), signed = d.min < 0)
         }
         for (d in texts) {
             Ui.text(c, d.label, 14f)
@@ -147,7 +150,8 @@ class SettingsActivity : Activity() {
         }
         for ((d, s) in boolFields) values[d.key] = s.isChecked
         for ((d, e) in textFields) {
-            val v = e.text.toString().trim()
+            // 全角の数字・記号でも受け付ける（例: １－６）
+            val v = Fmt.halfWidth(e.text.toString()).trim()
             val reason = d.check(v)
             if (reason != null) errors.add("${d.label}: $reason") else values[d.key] = v
         }

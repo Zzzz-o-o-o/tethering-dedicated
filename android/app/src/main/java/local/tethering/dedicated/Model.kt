@@ -50,7 +50,11 @@ enum class DeviceAlert(val label: String) {
     THERMAL("端末の熱状態が高い"),
     BATT_LOW("電池残量が少ない"),
     RUNTIME_LOW("推定残り時間が少ない"),
+    SIGNAL_WEAK("電波の悪化"),
 }
+
+/** ローカル管理画面（仕様 F-43）の待ち受けの状態。[url] は待ち受け中だけ。[retry] はアドレスの割り当て待ち */
+data class WebStatus(val url: String?, val message: String, val retry: Boolean = false)
 
 /** 画面上の総合状態 */
 enum class Overall(val label: String) {

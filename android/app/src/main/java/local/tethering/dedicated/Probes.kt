@@ -159,6 +159,9 @@ object Os {
 
     fun system(ctx: Context, key: String): String? =
         runCatching { Settings.System.getString(ctx.contentResolver, key) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+
+    fun secure(ctx: Context, key: String): String? =
+        runCatching { Settings.Secure.getString(ctx.contentResolver, key) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 /** モバイル回線（仕様 F-11） */

@@ -9,6 +9,8 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.telephony.ServiceState
 import android.telephony.TelephonyManager
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.Executors
 
 /**
@@ -57,6 +59,16 @@ class Monitor(private val ctx: Context) {
     /** 比較テスト（本アプリのチェック間隔）で一時的に掛ける倍率。メモリにだけ持つので、アプリが止まれば自然に元に戻る */
     private var intervalFactor = 1
 
+    /** 運用中の電波の悪化（仕様 F-29） */
+    private val signal = SignalWatch()
+
+    /** 待機中の通信の検知（仕様 F-33） */
+    private val traffic = TrafficWatch().apply { lastIdleAlertAt = prefs.trafficIdleAlertAt }
+
+    /** ローカル管理画面（仕様 F-43） */
+    private val web = LocalServer(ctx) { path -> WebPages.route(path) { WebData.collect(ctx) } }
+    private var webRetries = 0
+
     // ---- 開始・停止 ----
 
     fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
@@ -100,8 +112,9 @@ class Monitor(private val ctx: Context) {
         runCatching { StateStore.state.let { meter.close(it.power, it.line, it.tether?.clients) } }
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
+        web.stop()
         WakeLocks.release(eventLock)
-        StateStore.update { it.copy(running = false, checking = false, nextCheckAt = 0L) }
+        StateStore.update { it.copy(running = false, checking = false, nextCheckAt = 0L, web = null) }
     }
 
     private fun markBoot() {
@@ -198,7 +211,9 @@ class Monitor(private val ctx: Context) {
             handleTether(r.at, pr.tether)
         }
         handleAlerts(pr.power)
+        if (!prefs.maintenanceActive(r.at)) handleSignal(pr.line)
         if (trigger == Trigger.BOOT) bootSummary(pr)
+        updateWeb(pr.tether)
         publish()
         scheduleNext()
         refreshNotification()
@@ -313,6 +328,7 @@ class Monitor(private val ctx: Context) {
             meter.noteClients(t.clients)
         }
         if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), t)
+        updateWeb(t)
         publish()
         scheduleNext()
         refreshNotification()
@@ -465,6 +481,8 @@ class Monitor(private val ctx: Context) {
                 DeviceAlert.THERMAL -> Fmt.thermal(p.thermalStatus)
                 DeviceAlert.BATT_LOW -> Fmt.num(p.levelPct, "%")
                 DeviceAlert.RUNTIME_LOW -> remainingMin?.let { "残り" + Fmt.duration(it * 60_000L) } ?: Fmt.NA
+                // 電波は handleSignal で扱う（ここには来ない）
+                DeviceAlert.SIGNAL_WEAK -> Fmt.NA
             }
             if (c.entered) {
                 log(Ev.ALERT, anomaly = a.label, result = value)
@@ -485,6 +503,106 @@ class Monitor(private val ctx: Context) {
         DeviceAlert.THERMAL -> "端末が熱による制限をかけています。速度低下やテザリング停止が起きることがあります。"
         DeviceAlert.BATT_LOW -> "給電してください。電池が切れるとテザリングが止まります。"
         DeviceAlert.RUNTIME_LOW -> "今の消費ペースが続くと、まもなく電池が切れてテザリングが止まります。給電してください。"
+        DeviceAlert.SIGNAL_WEAK -> "電波が弱いと端末の送信電力が上がり、消費と発熱が増え、速度も落ちます。置き場所を見直してください（設置場所アシストで比べられます）。"
+    }
+
+    // ---- 電波の悪化（仕様 F-29）。定期チェックのときだけ判定する ----
+
+    private fun handleSignal(l: LineInfo) {
+        // 設置場所アシストで端末を動かしている間は判定しない
+        if (PlacementActivity.visible) return
+        val base = PlaceStore.baseline(prefs)
+        val lim = SignalWatch.Limits(prefs.bool(Defs.SIGNAL_ALERT), prefs.int(Defs.SIGNAL_WEAK_RSRP), prefs.int(Defs.SIGNAL_DROP_DB), base?.rsrp)
+        val entered = signal.evaluate(l.rsrp, lim) ?: return
+        val a = DeviceAlert.SIGNAL_WEAK
+        val value = (l.rsrp?.let { "RSRP $it dBm" } ?: Fmt.NA) + (base?.rsrp?.let { "・設置時 $it dBm" } ?: "")
+        if (entered) {
+            log(Ev.ALERT, anomaly = a.label, result = value, detail = l.band)
+            recent(Ev.ALERT, "${a.label}（$value）")
+            if (prefs.bool(Defs.NOTIFY_ALERT)) {
+                Notifier.alert(ctx, Notifier.deviceId(a), "${a.label}（$value）", advice(a), extra = Notifier.placementAction(ctx))
+            }
+        } else {
+            log(Ev.ALERT_CLEAR, anomaly = a.label, result = value)
+            recent(Ev.ALERT_CLEAR, a.label)
+            Notifier.cancel(ctx, Notifier.deviceId(a))
+        }
+    }
+
+    // ---- 待機中の通信（仕様 F-33）。閉じた区間の通信量で判定する ----
+
+    private fun feedTraffic(seg: PowerMeter.Closed) {
+        val bytes = seg.bytes ?: return
+        val lim = TrafficWatch.Limits(prefs.int(Defs.IDLE_TRAFFIC_MB), prefs.int(Defs.QUIET_TRAFFIC_MB), QuietHours.parse(prefs.text(Defs.QUIET_HOURS)))
+        val idle = seg.tether == false || seg.clientsMax == 0
+        val found = traffic.add(TrafficWatch.Seg(seg.startWall, seg.endWall, bytes / 1024, idle), lim, TimeZone.getDefault())
+        for (f in found) {
+            when (f) {
+                is TrafficWatch.Finding.Idle -> {
+                    prefs.trafficIdleAlertAt = traffic.lastIdleAlertAt
+                    val text = "${Fmt.hm(f.fromMs)}〜${Fmt.hm(f.toMs)} に約 ${mb(f.mb)}（1 時間あたり約 ${mb(f.mbPerHour)}）"
+                    log(Ev.TRAFFIC, anomaly = "接続端末なしの通信", result = text)
+                    recent(Ev.TRAFFIC, "接続端末なしで ${mb(f.mb)}")
+                    // メンテナンス中（更新作業など）の通信は知らせない
+                    if (!prefs.maintenanceActive() && prefs.bool(Defs.NOTIFY_ALERT)) {
+                        Notifier.info(
+                            ctx, Notifier.ID_TRAFFIC_IDLE, "接続端末がないのに通信しています（${mb(f.mb)}）",
+                            "${text}の通信がありました。この端末自身のアプリ・OS の通信です（自動更新・同期など）。" +
+                                "設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。",
+                            Notifier.trafficAction(ctx),
+                        )
+                    }
+                }
+                is TrafficWatch.Finding.Quiet -> {
+                    val text = "使わない時間帯（${f.quiet.label}）に約 ${mb(f.mb)}" + if (f.idleMb >= 1) "（うち接続端末なし ${mb(f.idleMb)}）" else ""
+                    log(Ev.TRAFFIC, anomaly = "使わない時間帯の通信", result = text)
+                    recent(Ev.TRAFFIC, text)
+                    if (prefs.bool(Defs.NOTIFY_ALERT)) {
+                        // ほとんどが接続端末なしの通信なら、原因はこの端末自身（接続端末の設定では減らない）
+                        val own = f.idleMb >= f.mb * 0.8
+                        Notifier.info(
+                            ctx, Notifier.ID_TRAFFIC_QUIET, "使わない時間帯の通信：${mb(f.mb)}",
+                            "${text}の通信がありました。" + if (own) {
+                                "ほとんどがこの端末自身のアプリ・OS の通信です。設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。"
+                            } else {
+                                "接続端末の OS 更新・クラウド同期の可能性があります。接続端末で「従量制」にすると減らせます。"
+                            },
+                            if (own) Notifier.trafficAction(ctx) else Notifier.clientGuideAction(ctx),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mb(v: Double) = String.format(Locale.US, "%.1f MB", v)
+
+    // ---- ローカル管理画面（仕様 F-43） ----
+
+    private fun updateWeb(t: TetherInfo?) {
+        if (closed) return
+        val iface = if (t?.wifiOn == true) t.apIface ?: t.tethered?.firstOrNull { Ifaces.isWifi(it) } else null
+        web.update(prefs.bool(Defs.WEB), iface, prefs.int(Defs.WEB_PORT)) { st -> main.post { onWebStatus(st) } }
+    }
+
+    private fun onWebStatus(st: WebStatus) {
+        if (closed) return
+        val prev = StateStore.state.web
+        if (prev == st) return
+        StateStore.update { it.copy(web = st) }
+        // 記録には IP アドレスを残さない（ログの方針）
+        if ((prev?.url != null) != (st.url != null)) {
+            val text = if (st.url != null) "待ち受け開始（ポート ${prefs.int(Defs.WEB_PORT)}）" else "停止（${st.message}）"
+            log(Ev.WEB, result = text)
+            recent(Ev.WEB, text)
+        }
+        // アクセスポイントが ON になった直後はアドレスがまだないことがあるので、少し待ってやり直す（回数に上限あり）
+        if (st.retry && webRetries < 4) {
+            webRetries++
+            main.postDelayed({ updateWeb(StateStore.state.tether) }, 15_000L)
+        } else if (!st.retry) {
+            webRetries = 0
+        }
     }
 
     // ---- 起動後の状態確認（仕様 F-14） ----
@@ -530,6 +648,11 @@ class Monitor(private val ctx: Context) {
             Notifier.cancel(ctx, Notifier.ID_TETHER)
         }
         noteProfileChange(StateStore.state.power?.plug ?: Plug.UNKNOWN)
+        if (!prefs.bool(Defs.SIGNAL_ALERT) && signal.active) {
+            signal.reset()
+            Notifier.cancel(ctx, Notifier.deviceId(DeviceAlert.SIGNAL_WEAK))
+        }
+        updateWeb(StateStore.state.tether)
         publish()
         scheduleNext()
         refreshNotification()
@@ -628,7 +751,8 @@ class Monitor(private val ctx: Context) {
         StateStore.update {
             it.copy(
                 mode = mode, base = base, effective = eff, intervalMin = interval, maintUntil = maintUntil,
-                upstream = up, tetherIssue = te, alerts = alerts.active.toSet(), meter = meterView, experiment = expView,
+                upstream = up, tetherIssue = te, meter = meterView, experiment = expView,
+                alerts = alerts.active.toSet() + listOfNotNull(DeviceAlert.SIGNAL_WEAK.takeIf { signal.active }),
             )
         }
     }
@@ -647,6 +771,7 @@ class Monitor(private val ctx: Context) {
         transition: (() -> Unit)? = null,
     ) {
         val closedSeg = meter.close(p, line, t?.clients)
+        closedSeg?.let { feedTraffic(it) }
         val e = exp
         if (closedSeg != null && e != null && e.measuring && closedSeg.onBattery && closedSeg.condition == e.condition &&
             !prefs.maintenanceActive()

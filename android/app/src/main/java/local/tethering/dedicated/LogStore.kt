@@ -34,12 +34,15 @@ object Ev {
     const val EXP_START = "比較テスト開始"
     const val EXP_SWITCH = "比較テストの切り替え"
     const val EXP_END = "比較テスト終了"
+    const val PLACE = "設置場所"
+    const val TRAFFIC = "待機中の通信"
+    const val WEB = "管理画面"
 
     /** 画面の「直近の記録」に出すもの（定期チェックの行は出さない） */
     val recentKinds = setOf(
         START, STOP, BOOT, SUSPECT, RECHECK_BAD, CONFIRMED, CONTINUING, RECOVERED, BLIP, TETHER,
         POWER, PROFILE, ALERT, ALERT_CLEAR, MAINT_ON, MAINT_OFF, SETTINGS, RESTORE, BOOT_CHECK,
-        EXP_START, EXP_SWITCH, EXP_END,
+        EXP_START, EXP_SWITCH, EXP_END, PLACE, TRAFFIC, WEB,
     )
 
     /** 接続性チェックの行（日次レポートの稼働率に使う） */

@@ -128,6 +128,19 @@ object Fmt {
     private fun fmtMhz(v: Double): String =
         if (v % 1.0 == 0.0) "${v.toInt()} MHz" else String.format(Locale.US, "%.1f MHz", v)
 
+    /** 全角の英数字・記号と全角スペースを半角にする（入力欄用） */
+    fun halfWidth(s: String): String = buildString(s.length) {
+        for (ch in s) {
+            append(
+                when (ch.code) {
+                    in 0xFF01..0xFF5E -> (ch.code - 0xFEE0).toChar()
+                    0x3000 -> ' '
+                    else -> ch
+                },
+            )
+        }
+    }
+
     /** 電波の要約（例: LTE B3（1.7GHz帯） · RSRP −95 dBm） */
     fun signalSummary(l: LineInfo?): String {
         if (l == null) return NA

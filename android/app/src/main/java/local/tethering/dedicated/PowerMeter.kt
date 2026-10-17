@@ -23,6 +23,10 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
         val rsrp: Int?,
         /** 区間中の比較テストの条件（切り替え待ち・テストなしなら null） */
         val condition: Char?,
+        val startWall: Long,
+        val endWall: Long,
+        /** 区間中のテザリングの ON/OFF（ON/OFF が変わると区間を分けるので一定） */
+        val tether: Boolean?,
     )
 
     private class Open(
@@ -125,11 +129,12 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
             while (history.isNotEmpty() && end.atMs - history.first().first > 2 * 3_600_000L) history.removeFirst()
         }
         val bytes = mobileBytes()?.let { b -> o.startBytes?.let { s -> (b - s).takeIf { it >= 0 } } }
+        val endWall = System.currentTimeMillis()
         if (durSec > 0) {
             PowerStore.append(
                 ctx,
                 PowerRow(
-                    start = Fmt.dateTime(o.startWall), end = Fmt.dateTime(System.currentTimeMillis()), sec = durSec,
+                    start = Fmt.dateTime(o.startWall), end = Fmt.dateTime(endWall), sec = durSec,
                     onBattery = o.start.onBattery, method = c?.method, levelStart = o.start.levelPct, levelEnd = end.levelPct,
                     mah = c?.mah, avgMa = c?.avgMa, avgMv = listOfNotNull(o.start.voltageMv, end.voltageMv).takeIf { it.isNotEmpty() }?.average()?.toInt(),
                     avgMw = c?.avgMw, tempC = p?.tempC, screenSec = o.screenMs / 1000, tether = o.tether, clientsMax = o.clientsMax,
@@ -139,7 +144,7 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
             )
         }
         open = null
-        return Closed(o.start.onBattery, durSec, c, bytes, o.clientsMax, line?.rsrp, o.condition)
+        return Closed(o.start.onBattery, durSec, c, bytes, o.clientsMax, line?.rsrp, o.condition, o.startWall, endWall, o.tether)
     }
 
     private fun learnCapacity(p: PowerInfo) {

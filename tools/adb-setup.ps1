@@ -9,10 +9,18 @@
   変更するのは、通信を止めるおそれのない「省電力・常時運用」向けの設定だけです。
   キャリアのテザリング制限やプロビジョニングに関わる設定は扱いません。
 
+  第 2 段階（仕様 11 章）で追加した項目:
+  - 画面の不意な点灯を防ぐ（通知・持ち上げ・タップでの点灯を OFF）… -Apply に含む
+  - 位置情報と「モバイルデータを常に ON」を OFF … -Apply に含む（-KeepLocation なら位置情報は変えない）
+  - このアプリ以外のユーザーアプリのバックグラウンド制限 … -RestrictApps を付けたときだけ（-KeepApps で除外）
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない）
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.1.0.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.3.0.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
+  .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
+  .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
+  .\adb-setup.ps1 -Apply -KeepLocation              # 位置情報は変えない
   .\adb-setup.ps1 -Apply -IncludeOta                # システムの自動更新も止める（手動更新が前提）
   .\adb-setup.ps1 -Apply -ScreenOffSec 30           # PIN 等の画面ロックがあっても画面消灯を 30 秒にする
   .\adb-setup.ps1 -Restore                          # 元に戻す
@@ -23,6 +31,9 @@ param(
     [switch]$Restore,
     [string]$Install,
     [switch]$IncludeOta,
+    [switch]$RestrictApps,
+    [string[]]$KeepApps = @(),
+    [switch]$KeepLocation,
     [ValidateRange(15, 1800)][int]$ScreenOffSec = 30,
     [string]$Serial,
     [string]$Adb
@@ -31,6 +42,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $Package = 'local.tethering.dedicated'
 $BackupDir = Join-Path $PSScriptRoot 'backup'
+# .bat から「-KeepApps a,b」と渡すと 1 つの文字列になるので、カンマで分ける
+$Keep = @($KeepApps | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+# アプリの使用頻度（App Standby のバケット）。adb から設定できるのは active / working_set / frequent / rare
+$BucketNames = @{ 5 = 'exempted'; 10 = 'active'; 20 = 'working_set'; 30 = 'frequent'; 40 = 'rare'; 45 = 'restricted'; 50 = 'never' }
 
 function Find-Adb {
     if ($Adb) {
@@ -116,6 +131,32 @@ function Test-PhoneGranted {
     return ($d -match 'android\.permission\.READ_PHONE_STATE: granted=true')
 }
 
+# ---- このアプリ以外のユーザーアプリ（仕様 F-40）。システムアプリは対象にしない ----
+
+function Get-UserApps {
+    $out = Invoke-Adb -Arguments @('shell', 'pm', 'list', 'packages', '-3')
+    return @($out -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like 'package:*' } |
+        ForEach-Object { $_.Substring(8) } | Where-Object { $_ -ne $Package } | Sort-Object)
+}
+
+function Get-BgMode([string]$Pkg) {
+    $r = Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'get', $Pkg, 'RUN_ANY_IN_BACKGROUND') -AllowFail
+    if ($r -match 'RUN_ANY_IN_BACKGROUND:\s*(\w+)') { return $Matches[1] }
+    return $null  # 未設定（＝許可）
+}
+
+function Get-Bucket([string]$Pkg) {
+    $r = Invoke-Adb -Arguments @('shell', 'am', 'get-standby-bucket', $Pkg) -AllowFail
+    if ($r -match '^\s*(\d+)\s*$') { return [int]$Matches[1] }
+    return $null
+}
+
+function Format-Bucket($b) {
+    if ($null -eq $b) { return '取得不可' }
+    if ($BucketNames.ContainsKey([int]$b)) { return "$($BucketNames[[int]$b])（$b）" }
+    return "$b"
+}
+
 function Show-Table($rows) {
     $rows | Format-Table -AutoSize -Property 項目, 現在, 推奨, 状態 | Out-String -Width 200 | Write-Host
 }
@@ -143,7 +184,21 @@ $items = @(
     [pscustomobject]@{ Name = 'Bluetoothスキャン（常時）'; Ns = 'global'; Key = 'ble_scan_always_enabled'; Want = '0' }
     [pscustomobject]@{ Name = '充電中は画面をスリープしない'; Ns = 'global'; Key = 'stay_on_while_plugged_in'; Want = '0' }
     [pscustomobject]@{ Name = '画面消灯までの時間（ミリ秒）'; Ns = 'system'; Key = 'screen_off_timeout'; Want = "$($ScreenOffSec * 1000)" }
+    # 画面の不意な点灯を防ぐ（仕様 F-39）。未設定（機種の既定で ON のことがある）でも 0 にする。-Restore で未設定に戻る
+    [pscustomobject]@{ Name = '通知で画面を点灯（アンビエント表示）'; Ns = 'secure'; Key = 'doze_enabled'; Want = '0' }
+    [pscustomobject]@{ Name = '常に表示（アンビエント表示）'; Ns = 'secure'; Key = 'doze_always_on'; Want = '0' }
+    [pscustomobject]@{ Name = '持ち上げて通知を確認'; Ns = 'secure'; Key = 'doze_pulse_on_pick_up'; Want = '0' }
+    [pscustomobject]@{ Name = 'ダブルタップで通知を確認'; Ns = 'secure'; Key = 'doze_pulse_on_double_tap'; Want = '0' }
+    [pscustomobject]@{ Name = 'タップで通知を確認'; Ns = 'secure'; Key = 'doze_tap_gesture'; Want = '0' }
+    [pscustomobject]@{ Name = '持ち上げて画面を点灯'; Ns = 'secure'; Key = 'wake_gesture_enabled'; Want = '0' }
+    [pscustomobject]@{ Name = 'ダブルタップで画面を点灯'; Ns = 'secure'; Key = 'double_tap_to_wake'; Want = '0' }
+    # 「モバイルデータを常に ON」（仕様 F-41。Wi-Fi 接続中もモバイル回線を待機させる機能で、テザリングには使わない）
+    [pscustomobject]@{ Name = 'モバイルデータを常にON'; Ns = 'global'; Key = 'mobile_data_always_on'; Want = '0' }
 )
+if (-not $KeepLocation) {
+    # 位置情報（仕様 F-41）。このアプリは使わない。Android 10 では location_mode が位置情報の ON/OFF そのもの
+    $items += [pscustomobject]@{ Name = '位置情報（0 = OFF）'; Ns = 'secure'; Key = 'location_mode'; Want = '0' }
+}
 if ((Test-SecureLock) -and -not $PSBoundParameters.ContainsKey('ScreenOffSec')) {
     # 画面ロックがあると、消灯を短くするたびに PIN 入力が必要になり操作しづらいため、明示されたときだけ変える
     Write-Warning '画面ロック（PIN 等）があるため、画面消灯までの時間は変更しません（短くすると消灯のたびにロックがかかります）。変える場合は -ScreenOffSec 30 のように指定してください。'
@@ -160,6 +215,7 @@ if ($sdk -gt 29) {
 $installed = Test-Installed
 $safeSerial = ($script:DeviceSerial -replace '[^A-Za-z0-9._-]', '_')
 $backupPath = Join-Path $BackupDir "adb-setup-backup-$safeSerial.json"
+$userApps = Get-UserApps
 
 if ($Restore) {
     if (-not (Test-Path $backupPath)) { throw "この端末の保存データがありません: $backupPath" }
@@ -167,6 +223,19 @@ if ($Restore) {
     foreach ($s in $b.settings) {
         Set-Setting $s.ns $s.key $s.value
         Write-Host "戻しました: $($s.ns) $($s.key) = $(if ($null -eq $s.value) { '(未設定)' } else { $s.value })"
+    }
+    foreach ($a in @($b.apps)) {
+        if (-not $a) { continue }
+        if ((Invoke-Adb -Arguments @('shell', 'pm', 'path', $a.pkg) -AllowFail) -notmatch '^package:') {
+            Write-Host "スキップ（アンインストール済み）: $($a.pkg)"
+            continue
+        }
+        # 未設定だったものは「許可」に戻す（未設定と同じ動作。ignore 以外は制限とみなされるため default にはしない）
+        $mode = if ($a.bg) { $a.bg } else { 'allow' }
+        Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $a.pkg, 'RUN_ANY_IN_BACKGROUND', $mode) -AllowFail | Out-Null
+        $bucket = if ($null -ne $a.bucket -and @(10, 20, 30, 40) -contains [int]$a.bucket) { $BucketNames[[int]$a.bucket] } else { 'active' }
+        Invoke-Adb -Arguments @('shell', 'am', 'set-standby-bucket', $a.pkg, $bucket) -AllowFail | Out-Null
+        Write-Host "戻しました: $($a.pkg)（バックグラウンド $mode / 使用頻度 $bucket）"
     }
     if ($installed -and $null -ne $b.deviceIdleWhitelisted -and -not $b.deviceIdleWhitelisted -and (Test-Whitelisted)) {
         Invoke-Adb -Arguments @('shell', 'dumpsys', 'deviceidle', 'whitelist', "-$Package") | Out-Null
@@ -193,6 +262,17 @@ if ($Apply) {
             [void]$saved.Add([ordered]@{ ns = $i.Ns; key = $i.Key; value = (Get-Setting $i.Ns $i.Key) })
         }
     }
+    $savedApps = [System.Collections.ArrayList]@()
+    if ($old -and $old.apps) { foreach ($a in @($old.apps)) { if ($a) { [void]$savedApps.Add([ordered]@{ pkg = $a.pkg; bg = $a.bg; bucket = $a.bucket }) } } }
+    $targets = @()
+    if ($RestrictApps) {
+        $targets = @($userApps | Where-Object { $Keep -notcontains $_ })
+        foreach ($p in $targets) {
+            if (-not ($savedApps | Where-Object { $_.pkg -eq $p })) {
+                [void]$savedApps.Add([ordered]@{ pkg = $p; bg = (Get-BgMode $p); bucket = (Get-Bucket $p) })
+            }
+        }
+    }
     $wl = if ($old -and $null -ne $old.deviceIdleWhitelisted) { $old.deviceIdleWhitelisted } elseif ($installed) { Test-Whitelisted } else { $null }
     $ph = if ($old -and $null -ne $old.phoneStateGranted) { $old.phoneStateGranted } elseif ($installed) { Test-PhoneGranted } else { $null }
     $backup = [ordered]@{
@@ -201,6 +281,7 @@ if ($Apply) {
         model                 = $model
         sdk                   = $sdk
         settings              = $saved
+        apps                  = $savedApps
         deviceIdleWhitelisted = $wl
         phoneStateGranted     = $ph
     }
@@ -209,6 +290,11 @@ if ($Apply) {
     Write-Host "変更前の値を保存しました: $backupPath"
 
     foreach ($i in $items) { Set-Setting $i.Ns $i.Key $i.Want }
+    foreach ($p in $targets) {
+        Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $p, 'RUN_ANY_IN_BACKGROUND', 'ignore') | Out-Null
+        Invoke-Adb -Arguments @('shell', 'am', 'set-standby-bucket', $p, 'rare') -AllowFail | Out-Null
+    }
+    if ($targets.Count -gt 0) { Write-Host "バックグラウンドを制限しました: $($targets -join ', ')" }
     if ($installed) {
         Invoke-Adb -Arguments @('shell', 'dumpsys', 'deviceidle', 'whitelist', "+$Package") | Out-Null
         Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.READ_PHONE_STATE') -AllowFail | Out-Null
@@ -235,6 +321,22 @@ if ($installed) {
     Write-Host 'アプリは未インストールです（-Install でインストールできます）。'
 }
 Show-Table $rows
+
+if ($userApps.Count -gt 0) {
+    Write-Host 'このアプリ以外のユーザーアプリ（バックグラウンド制限。システムアプリは対象外）:'
+    $appRows = foreach ($p in $userApps) {
+        $bg = Get-BgMode $p
+        $bk = Get-Bucket $p
+        [pscustomobject]@{
+            パッケージ   = $p
+            バックグラウンド = if ($bg -eq 'ignore') { '制限' } elseif ($null -eq $bg) { '許可（未設定）' } else { $bg }
+            使用頻度     = Format-Bucket $bk
+            状態       = if ($Keep -contains $p) { '除外' } elseif ($bg -eq 'ignore' -and $null -ne $bk -and $bk -ge 40) { 'OK' } else { '未制限' }
+        }
+    }
+    $appRows | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+    if (-not ($Apply -and $RestrictApps)) { Write-Host 'まとめて制限するには -Apply -RestrictApps（裏で動いてほしいアプリは -KeepApps で除外）。戻すのは -Restore。' }
+}
 
 if ($Install) {
     # 権限の付与（-Apply）が済んでから起動する。一度起動しておかないと、再起動後の自動開始（BOOT_COMPLETED）が届かない

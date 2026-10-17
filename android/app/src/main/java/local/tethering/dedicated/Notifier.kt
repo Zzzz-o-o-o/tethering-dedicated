@@ -19,6 +19,8 @@ object Notifier {
     const val ID_TETHER = 11
     const val ID_BOOT = 12
     const val ID_EXPERIMENT = 13
+    const val ID_TRAFFIC_IDLE = 14
+    const val ID_TRAFFIC_QUIET = 15
     private const val ID_DEVICE_BASE = 20
 
     fun createChannels(ctx: Context) {
@@ -107,10 +109,11 @@ object Notifier {
         ctx.getSystemService(NotificationManager::class.java)?.notify(ID_ONGOING, ongoing(ctx, s))
     }
 
-    fun alert(ctx: Context, id: Int, title: String, text: String, openTether: Boolean = false) =
-        post(ctx, CH_ALERT, id, title, text, openTether)
+    /** [extra] は通知に付けるボタン（例: 設置場所アシストを開く） */
+    fun alert(ctx: Context, id: Int, title: String, text: String, openTether: Boolean = false, extra: Notification.Action? = null) =
+        post(ctx, CH_ALERT, id, title, text, openTether, extra)
 
-    fun info(ctx: Context, id: Int, title: String, text: String) = post(ctx, CH_INFO, id, title, text, false)
+    fun info(ctx: Context, id: Int, title: String, text: String, extra: Notification.Action? = null) = post(ctx, CH_INFO, id, title, text, false, extra)
 
     fun deviceId(a: DeviceAlert) = ID_DEVICE_BASE + a.ordinal
 
@@ -118,7 +121,17 @@ object Notifier {
         ctx.getSystemService(NotificationManager::class.java)?.cancel(id)
     }
 
-    private fun post(ctx: Context, channel: String, id: Int, title: String, text: String, openTether: Boolean) {
+    /** このアプリの画面を開くボタン */
+    fun openScreen(ctx: Context, label: String, cls: Class<*>, req: Int): Notification.Action = action(
+        ctx, label,
+        PendingIntent.getActivity(ctx, req, Intent(ctx, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), FLAGS),
+    )
+
+    fun placementAction(ctx: Context) = openScreen(ctx, "設置場所アシストを開く", PlacementActivity::class.java, 6)
+    fun trafficAction(ctx: Context) = openScreen(ctx, "通信量を見る", TrafficActivity::class.java, 7)
+    fun clientGuideAction(ctx: Context) = openScreen(ctx, "接続端末の設定ガイド", ClientGuideActivity::class.java, 8)
+
+    private fun post(ctx: Context, channel: String, id: Int, title: String, text: String, openTether: Boolean, extra: Notification.Action?) {
         val b = Notification.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_hotspot)
             .setContentTitle(title)
@@ -128,6 +141,7 @@ object Notifier {
             .setContentIntent(openApp(ctx))
             .setAutoCancel(true)
         if (openTether) b.addAction(action(ctx, "テザリング設定を開く", openTetherSettings(ctx)))
+        if (extra != null) b.addAction(extra)
         ctx.getSystemService(NotificationManager::class.java)?.notify(id, b.build())
     }
 

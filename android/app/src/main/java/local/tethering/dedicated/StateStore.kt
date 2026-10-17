@@ -62,6 +62,8 @@ object StateStore {
         val tetherIssue: EpisodeView? = null,
         val alerts: Set<DeviceAlert> = emptySet(),
         val recent: List<RecentEvent> = emptyList(),
+        /** ローカル管理画面（仕様 F-43）の待ち受けの状態 */
+        val web: WebStatus? = null,
     ) {
         fun overall(now: Long = System.currentTimeMillis()): Overall = when {
             !running -> Overall.STOPPED

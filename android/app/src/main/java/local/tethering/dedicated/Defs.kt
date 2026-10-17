@@ -48,6 +48,25 @@ object Defs {
     val EXP_REPEATS = IntDef("exp_repeats", "比較テストの繰り返し（A→B を何回）", 2, 1, 4, "回", "2 回以上なら、毎回 B が少ないときだけ「効果あり」にします")
     val EXP_MIN_GAIN = IntDef("exp_min_gain_pct", "「効果あり」とする最小の削減率", 3, 1, 50, "%")
 
+    // 第 2 段階
+    val SIGNAL_WEAK_RSRP = IntDef("signal_weak_rsrp", "電波が弱いとみなす RSRP", -110, -140, -80, "dBm", "定期チェックで 2 回続けてこれを下回ったら通知します")
+    val SIGNAL_DROP_DB = IntDef(
+        "signal_drop_db", "設置時の記録からの悪化（0 = 比べない）", 10, 0, 40, "dB",
+        "設置場所アシストで「ここに設置した」場所の RSRP より、これ以上悪い状態が 2 回続いたら通知します",
+    )
+    val IDLE_TRAFFIC_MB = IntDef(
+        "idle_traffic_mb_h", "接続端末がないときの通信（0 = 通知しない）", 5, 0, 1000, "MB/時",
+        "テザリング OFF、またはチェック時点で接続 0 台なのに、これを超える通信があったら通知します（この端末自身のアプリ・OS の通信）",
+    )
+    val QUIET_TRAFFIC_MB = IntDef(
+        "quiet_traffic_mb", "使わない時間帯の通信の合計（0 = 通知しない）", 50, 0, 100_000, "MB",
+        "下の時間帯が終わったあと、その間の通信がこれを超えていたら知らせます（接続端末の自動更新・同期の発見用）",
+    )
+    val WEB_PORT = IntDef("web_port", "管理画面のポート", 8080, 1024, 65535, "", "接続端末のブラウザで http://（この端末のアクセスポイントのアドレス）:ポート/ を開きます")
+
+    val SIGNAL_ALERT = BoolDef("signal_alert", "電波の悪化を通知する", true, "定期チェックのときに判定します（判定のために端末を起こしません）")
+    val WEB = BoolDef("web_enabled", "ローカル管理画面（読み取り専用）", true, "テザリングのアクセスポイント側だけで待ち受けます。モバイル回線側からは見えません")
+
     val HTTP = BoolDef("http_check", "外部サイトへの到達確認（HTTP）", true, "OFFにするとDNSまでの確認で判定する")
     val TETHER_EXPECTED = BoolDef("tether_expected", "Wi-Fiテザリングの停止を異常とする", true)
     val CLIENTS = BoolDef("count_clients", "接続端末数を数える（取得できる機種のみ）", true, "MACアドレスなどは記録せず、台数だけを数える")
@@ -63,13 +82,18 @@ object Defs {
         "recheck_min", "異常時の再確認（分・カンマ区切り）", "1,3,5",
         "この順に再確認し、すべて異常なら通知する（1〜5回）", ::checkRecheck,
     )
+    val QUIET_HOURS = TextDef(
+        "quiet_hours", "使わない時間帯（例: 1-6。空欄 = 設定しない）", "",
+        "0〜23 時で「開始-終了」。23-5 のように日をまたいでもかまいません", ::checkQuietHours,
+    )
 
     val ints = listOf(
         INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
+        SIGNAL_WEAK_RSRP, SIGNAL_DROP_DB, IDLE_TRAFFIC_MB, QUIET_TRAFFIC_MB, WEB_PORT,
     )
-    val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT)
-    val texts = listOf(URL, RECHECK)
+    val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB)
+    val texts = listOf(URL, RECHECK, QUIET_HOURS)
 
     fun checkUrl(s: String): String? {
         val uri = runCatching { URI(s.trim()) }.getOrNull() ?: return "URLの形式が正しくありません"
@@ -87,6 +111,9 @@ object Defs {
 
     fun checkRecheck(s: String): String? =
         if (parseRecheck(s) == null) "1〜60 の数字をカンマ区切りで1〜5個（例: 1,3,5）" else null
+
+    fun checkQuietHours(s: String): String? =
+        if (s.isNotBlank() && QuietHours.parse(s) == null) "「開始-終了」の形で 0〜23 時を入れてください（例: 1-6）。空欄なら設定しません" else null
 }
 
 /** バックアップ（JSON）から読んだ値の検証。範囲外・型違いは採用せず、理由を返す */
