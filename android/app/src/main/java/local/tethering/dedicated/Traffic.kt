@@ -176,6 +176,37 @@ class TrafficWatch(private val cooldownMs: Long = 6 * HOUR) {
     }
 }
 
+/**
+ * テザリングの通信（モバイル回線以外の通信）から、接続端末の有無を補う（仕様 F-32 / F-33 / F-36）。
+ * 接続端末の数はチェックのときにしか数えない（Android 10 は端末がつながったことをアプリに知らせない）ので、
+ * 待機（チェック間隔が長い）中につながった端末を見落とすことがある。Wi-Fi に接続していないテザリング専用機では、
+ * 全体の通信量からモバイル回線の分を引いた残りが、アクセスポイント側（接続端末とのあいだ）の通信になる
+ */
+object LanTraffic {
+    /** 区間にこれ以上あれば、接続端末がいたとみなす */
+    const val CLIENT_BYTES = 1024 * 1024L
+
+    /** 区間の途中でこれ以上たまったら、接続端末を数え直す（電池の放送のついでに見るので、端末を余計に起こさない） */
+    const val RECOUNT_BYTES = 2 * 1024 * 1024L
+
+    /** 数え直しの最短間隔（数えられない種類の接続でチェックを繰り返さないように） */
+    const val RECOUNT_GAP_MS = 30 * 60_000L
+
+    /** TrafficStats の値から（取得できないときは負の値が入る）。モバイル回線以外の送受信の合計 */
+    fun bytes(totalRx: Long, totalTx: Long, mobileRx: Long, mobileTx: Long): Long? {
+        if (totalRx < 0 || totalTx < 0 || mobileRx < 0 || mobileTx < 0) return null
+        return (totalRx + totalTx - mobileRx - mobileTx).coerceAtLeast(0)
+    }
+
+    /** 区間の接続端末数（最大）を補う。テザリング ON で 0 台と数えていても、テザリングの通信があれば 1 台 */
+    fun clients(clientsMax: Int?, tetherOn: Boolean?, lanBytes: Long?): Int? =
+        if (clientsMax == 0 && tetherOn == true && lanBytes != null && lanBytes >= CLIENT_BYTES) 1 else clientsMax
+
+    /** 0 台と数えているのにテザリングの通信が流れている → チェックで数え直す */
+    fun shouldRecount(tetherOn: Boolean?, clients: Int?, lanBytes: Long?, sinceLastRecountMs: Long): Boolean =
+        tetherOn == true && clients == 0 && lanBytes != null && lanBytes >= RECOUNT_BYTES && sinceLastRecountMs >= RECOUNT_GAP_MS
+}
+
 /** 通信量の時間帯別の集計（仕様 F-33）。電力の記録（区間）の通信量を、時間の重なりで各時間帯に按分する */
 object TrafficMath {
     class Hour(val hour: Int) {

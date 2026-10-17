@@ -122,6 +122,8 @@ object Diagnostics {
             appendLine("電池容量: ${m?.capacityMah?.let { "$it mAh" } ?: Fmt.NA}（設定 ${prefs.int(Defs.BATT_CAPACITY).takeIf { it > 0 }?.let { "$it mAh" } ?: "自動"}）")
             appendLine("直近の消費: ${m?.rateMa?.let { "%.0f mA".format(it) } ?: "－"}${m?.rateMw?.let { " / %.0f mW".format(it) } ?: ""}（${m?.method?.label ?: "－"}）")
             appendLine("推定残り時間: ${m?.remainingMin?.let { Fmt.duration(it * 60_000L) } ?: "－"}")
+            // 接続端末を数え損ねたときの補い（LanTraffic）に使う値
+            appendLine("テザリングの通信（いまの区間・モバイル回線以外の送受信）: ${m?.lanBytes?.let { "%.1f MB".format(it / 1048576.0) } ?: Fmt.NA}")
             s.experiment?.let { appendLine("比較テスト: ${it.title} / 条件 ${it.condition} ${it.measuredSec / 60}/${it.phaseSec / 60}分${if (it.waitingSwitch) "（切り替え待ち）" else ""}") }
             appendLine()
             appendLine("## 設置場所・通信量・管理画面")

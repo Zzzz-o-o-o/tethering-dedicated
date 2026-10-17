@@ -232,6 +232,38 @@ class ClientExcludeTest {
     }
 }
 
+class LanTrafficTest {
+    private val mb = 1024 * 1024L
+
+    @Test
+    fun countsNonMobileTraffic() {
+        assertEquals("全体からモバイル回線の分を引いた残り", 300 * mb, LanTraffic.bytes(1000 * mb, 200 * mb, 800 * mb, 100 * mb))
+        assertNull("取得できない値（-1）があれば null", LanTraffic.bytes(-1, 0, 0, 0))
+        assertEquals("負にはしない", 0L, LanTraffic.bytes(10, 10, 20, 20))
+    }
+
+    @Test
+    fun treatsTetheringTrafficAsAClient() {
+        // 2026-10-17 実機: 待機中につながった PC の 444 MB を「接続端末なし」と数えていた
+        assertEquals(1, LanTraffic.clients(0, true, 447 * mb))
+        assertEquals("少しなら 0 台のまま", 0, LanTraffic.clients(0, true, 100 * 1024L))
+        assertEquals("テザリング OFF の区間は変えない", 0, LanTraffic.clients(0, false, 447 * mb))
+        assertEquals("数えた台数はそのまま", 2, LanTraffic.clients(2, true, 447 * mb))
+        assertNull("数えられない機種（null）はそのまま", LanTraffic.clients(null, true, 447 * mb))
+        assertEquals("読めなければそのまま", 0, LanTraffic.clients(0, true, null))
+    }
+
+    @Test
+    fun recountsOnlyWhenTrafficFlowsWithZeroClients() {
+        assertTrue(LanTraffic.shouldRecount(true, 0, 3 * mb, LanTraffic.RECOUNT_GAP_MS))
+        assertFalse("直前に数え直した", LanTraffic.shouldRecount(true, 0, 3 * mb, 5 * 60_000L))
+        assertFalse("1 台以上と数えている", LanTraffic.shouldRecount(true, 1, 3 * mb, LanTraffic.RECOUNT_GAP_MS))
+        assertFalse("通信が少ない", LanTraffic.shouldRecount(true, 0, mb, LanTraffic.RECOUNT_GAP_MS))
+        assertFalse("テザリング OFF", LanTraffic.shouldRecount(false, 0, 3 * mb, LanTraffic.RECOUNT_GAP_MS))
+        assertFalse("台数を数えられない", LanTraffic.shouldRecount(true, null, 3 * mb, LanTraffic.RECOUNT_GAP_MS))
+    }
+}
+
 class WebClientTest {
     @Test
     fun parsesUrls() {

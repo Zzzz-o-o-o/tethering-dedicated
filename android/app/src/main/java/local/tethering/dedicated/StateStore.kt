@@ -26,6 +26,8 @@ object StateStore {
         val remainingMin: Int?,
         val capacityMah: Int?,
         val counterSupported: Boolean?,
+        /** いまの区間のテザリングの通信量（モバイル回線以外の送受信）。読めなければ null */
+        val lanBytes: Long? = null,
     )
 
     /** 比較テストの進み具合（仕様 F-27） */

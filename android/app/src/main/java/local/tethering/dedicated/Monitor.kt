@@ -111,6 +111,9 @@ class Monitor(private val ctx: Context) {
     /** 接続 0 台が 10 分に達する時刻（経過時間）。その時刻に判断し直す */
     private var schedIdleDue: Long? = null
 
+    /** テザリングの通信が流れているので接続端末を数え直した時刻（経過時間） */
+    private var lanRecountAt = -LanTraffic.RECOUNT_GAP_MS
+
     // ---- 開始・停止 ----
 
     fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
@@ -547,9 +550,23 @@ class Monitor(private val ctx: Context) {
         handleAlerts(merged)
         // 電池の放送は残量・温度が変わるたびに届くので、スマートプラグの判断はここで行う（判断のために端末を起こさない）
         smartPlug.evaluate(merged, StateStore.state.tether?.wifiOn)
+        recountIfTethered()
         publish()
         scheduleNext()
         refreshNotification()
+    }
+
+    /**
+     * 接続 0 台と数えているのにテザリングの通信が流れていたら、チェックで数え直す（電池の放送のついで）。
+     * 待機（チェック間隔 180 分）中につながった端末に気づかず、その通信を「接続端末なしの通信」と誤って数えないように
+     */
+    private fun recountIfTethered() {
+        if (checking) return
+        val t = StateStore.state.tether
+        val now = SystemClock.elapsedRealtime()
+        if (!LanTraffic.shouldRecount(t?.wifiOn, t?.clients, meter.openLanBytes(), now - lanRecountAt)) return
+        lanRecountAt = now
+        requestCheck(Trigger.EVENT)
     }
 
     // ---- 自動切り替え（仕様 F-42）。給電の有無・残量が変わったときに見直す ----

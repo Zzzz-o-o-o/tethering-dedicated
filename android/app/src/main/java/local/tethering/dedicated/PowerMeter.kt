@@ -33,6 +33,8 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
         val start: Reading,
         val startWall: Long,
         val startBytes: Long?,
+        /** モバイル回線以外（テザリング）の送受信の合計。接続端末の見落としを補う（LanTraffic） */
+        val startLan: Long?,
         val profile: String,
         val tether: Boolean?,
         val experiment: String?,
@@ -66,13 +68,25 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
         return if (rx == TrafficStats.UNSUPPORTED.toLong() || tx == TrafficStats.UNSUPPORTED.toLong()) null else rx + tx
     }
 
+    private fun lanBytes(): Long? = LanTraffic.bytes(
+        TrafficStats.getTotalRxBytes(), TrafficStats.getTotalTxBytes(), TrafficStats.getMobileRxBytes(), TrafficStats.getMobileTxBytes(),
+    )
+
+    /** 開いている区間のテザリングの通信量（モバイル回線以外の送受信）。区間がない・読めないときは null */
+    fun openLanBytes(): Long? {
+        val o = open ?: return null
+        val s = o.startLan ?: return null
+        return lanBytes()?.let { (it - s).takeIf { d -> d >= 0 } }
+    }
+
     /**
      * 区間を始める（監視の開始時や、区間を閉じた直後）。[clients] は始めた時点の接続端末数
      * （区間の始めと終わりの両方で数えて「接続端末なし」を判定するため）
      */
     fun begin(p: PowerInfo?, tetherOn: Boolean?, profile: String, experiment: String?, condition: Char?, clients: Int? = null) {
         val onBattery = p?.plug == Plug.NONE
-        open = Open(reading(p, onBattery), System.currentTimeMillis(), mobileBytes(), profile, tetherOn, experiment, condition).also { it.clientsMax = clients }
+        open = Open(reading(p, onBattery), System.currentTimeMillis(), mobileBytes(), lanBytes(), profile, tetherOn, experiment, condition)
+            .also { it.clientsMax = clients }
         currents.clear()
         screenOn = runCatching { ctx.getSystemService(PowerManager::class.java)?.isInteractive }.getOrNull() ?: false
         screenSince = now()
@@ -132,6 +146,8 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
             while (history.isNotEmpty() && end.atMs - history.first().first > 2 * 3_600_000L) history.removeFirst()
         }
         val bytes = mobileBytes()?.let { b -> o.startBytes?.let { s -> (b - s).takeIf { it >= 0 } } }
+        // 待機中など、チェックのあいだにつながった端末は数えられていないことがある。テザリングの通信があれば接続ありとみなす
+        o.clientsMax = LanTraffic.clients(o.clientsMax, o.tether, openLanBytes())
         val endWall = System.currentTimeMillis()
         if (durSec > 0) {
             PowerStore.append(
@@ -182,6 +198,7 @@ class PowerMeter(private val ctx: Context, private val prefs: Prefs) {
             capacityMah = capacity(),
             // バッテリー駆動の区間で確かめるまでは「不明」（null）
             counterSupported = counterWorked,
+            lanBytes = openLanBytes(),
         )
     }
 }
