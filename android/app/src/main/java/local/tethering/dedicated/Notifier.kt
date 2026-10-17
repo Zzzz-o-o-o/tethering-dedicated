@@ -21,6 +21,8 @@ object Notifier {
     const val ID_EXPERIMENT = 13
     const val ID_TRAFFIC_IDLE = 14
     const val ID_TRAFFIC_QUIET = 15
+    const val ID_SCHEDULE = 16
+    const val ID_PLUG = 17
     private const val ID_DEVICE_BASE = 20
 
     fun createChannels(ctx: Context) {
@@ -56,6 +58,7 @@ object Notifier {
         if (l != null) parts.add(Fmt.signalSummary(l))
         s.check?.let { parts.add(if (it.failure == null) "ネット✓" else "ネット✗") }
         s.tether?.clients?.let { parts.add("端末${it}台") }
+        s.sched?.stoppedUntil?.let { parts.add("テザリング停止中（$it に再開）") }
         s.meter?.remainingMin?.let { parts.add("残り" + Fmt.duration(it * 60_000L)) }
         s.experiment?.let { e ->
             parts.add(if (e.waitingSwitch) "比較テスト：切り替え待ち" else "比較テスト ${e.condition} ${e.measuredSec / 60}/${e.phaseSec / 60}分")
@@ -115,6 +118,9 @@ object Notifier {
 
     fun info(ctx: Context, id: Int, title: String, text: String, extra: Notification.Action? = null) = post(ctx, CH_INFO, id, title, text, false, extra)
 
+    /** 音を出さないお知らせ（夜中に起きる時間帯スケジュールの失敗など。常駐通知と同じチャンネル） */
+    fun silent(ctx: Context, id: Int, title: String, text: String, extra: Notification.Action? = null) = post(ctx, CH_MONITOR, id, title, text, false, extra)
+
     fun deviceId(a: DeviceAlert) = ID_DEVICE_BASE + a.ordinal
 
     fun cancel(ctx: Context, id: Int) {
@@ -130,6 +136,7 @@ object Notifier {
     fun placementAction(ctx: Context) = openScreen(ctx, "設置場所アシストを開く", PlacementActivity::class.java, 6)
     fun trafficAction(ctx: Context) = openScreen(ctx, "通信量を見る", TrafficActivity::class.java, 7)
     fun clientGuideAction(ctx: Context) = openScreen(ctx, "接続端末の設定ガイド", ClientGuideActivity::class.java, 8)
+    fun settingsAction(ctx: Context) = openScreen(ctx, "設定を開く", SettingsActivity::class.java, 9)
 
     private fun post(ctx: Context, channel: String, id: Int, title: String, text: String, openTether: Boolean, extra: Notification.Action?) {
         val b = Notification.Builder(ctx, channel)

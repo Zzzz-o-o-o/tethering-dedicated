@@ -18,6 +18,12 @@
   - このアプリに「使用状況へのアクセス」を許可（アプリ別の通信量を読むだけ）… -Apply に含む
   - このアプリに「設定変更の権限」（WRITE_SECURE_SETTINGS）を付ける（バッテリー駆動中の自動切り替え用）… -AllowAutoSwitch を付けたときだけ
 
+  第 4 段階で追加した項目:
+  - このアプリに「システム設定の変更」（WRITE_SETTINGS）を許可する（時間帯スケジュールでテザリングを止める・再開する）… -AllowTetherControl を付けたときだけ
+  - テザリングのハードウェアアクセラレーションを有効に戻す（tether_offload_disabled = 0）… -EnableOffload を付けたときだけ。
+    端末にオフロードの HAL（tetheroffload）がないときは効果がないので変更しない
+  - アクセスポイントの帯域（2.4GHz／5GHz）とオフロードの対応を表示する（アプリからは読めないため。表示だけ）
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない）
   .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.3.0.apk
@@ -26,6 +32,8 @@
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
   .\adb-setup.ps1 -Apply -KeepLocation              # 位置情報は変えない
   .\adb-setup.ps1 -Apply -AllowAutoSwitch           # 自動切り替え（バッテリーセーバー・Doze）の権限も付ける
+  .\adb-setup.ps1 -Apply -AllowTetherControl        # 時間帯スケジュール（テザリングの停止・再開）の許可も付ける
+  .\adb-setup.ps1 -Apply -EnableOffload             # ハードウェアアクセラレーションを有効に戻す（対応端末のみ）
   .\adb-setup.ps1 -Apply -IncludeOta                # システムの自動更新も止める（手動更新が前提）
   .\adb-setup.ps1 -Apply -ScreenOffSec 30           # PIN 等の画面ロックがあっても画面消灯を 30 秒にする
   .\adb-setup.ps1 -Restore                          # 元に戻す
@@ -40,6 +48,8 @@ param(
     [string[]]$KeepApps = @(),
     [switch]$KeepLocation,
     [switch]$AllowAutoSwitch,
+    [switch]$AllowTetherControl,
+    [switch]$EnableOffload,
     [ValidateRange(15, 1800)][int]$ScreenOffSec = 30,
     [string]$Serial,
     [string]$Adb
@@ -150,6 +160,35 @@ function Get-UsageMode {
     return $null
 }
 
+# 「システム設定の変更」（時間帯スケジュールでテザリングを切り替える。第 4 段階）。未設定なら $null
+function Get-WriteSettingsMode {
+    $r = Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'get', $Package, 'WRITE_SETTINGS') -AllowFail
+    if ($r -match 'WRITE_SETTINGS:\s*(\w+)') { return $Matches[1] }
+    return $null
+}
+
+# テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
+# HAL は VINTF マニフェストで宣言されるので、それを読む（lshal は機種によって数分かかることがあるため使わない）
+function Test-OffloadHal {
+    $files = '/vendor/etc/vintf/manifest.xml /vendor/etc/vintf/manifest/*.xml /vendor/manifest.xml /odm/etc/vintf/manifest.xml /odm/etc/vintf/manifest/*.xml'
+    $r = Invoke-Adb -Arguments @('shell', "cat $files 2>/dev/null | grep -c -i tetheroffload") -AllowFail
+    return ($r -match '(?m)^\s*[1-9]\d*\s*$')
+}
+
+# アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）
+function Get-ApBand {
+    $r = Invoke-Adb -Arguments @('shell', 'dumpsys', 'wifi') -AllowFail
+    if ($r -match 'mApConfig\.apBand:\s*(-?\d+)') {
+        switch ($Matches[1]) {
+            '0' { return '2.4GHz' }
+            '1' { return '5GHz' }
+            '-1' { return '自動（2.4／5GHz）' }
+            default { return "不明（$($Matches[1])）" }
+        }
+    }
+    return $null
+}
+
 # アプリの「Doze を早める」設定（Auto.kt の AutoPolicy.DOZE_EARLY と同じ文字列）。アプリが元に戻す前に削除された場合の後始末用
 $DozeEarly = 'light_after_inactive_to=60000,inactive_to=300000,sensing_to=0,locating_to=0,idle_after_inactive_to=300000'
 
@@ -233,6 +272,15 @@ if ($sdk -gt 29) {
     # Android 11 以降は自動OFFの設定がこのキーではない
     $items = @($items | Where-Object { $_.Key -ne 'soft_ap_timeout_enabled' })
 }
+$offloadHal = Test-OffloadHal
+if ($EnableOffload) {
+    if ($offloadHal) {
+        # 有効にするのは、テザリングを次に開始したときから
+        $items += [pscustomobject]@{ Name = 'テザリングのハードウェアアクセラレーションを無効にする（0 = 有効）'; Ns = 'global'; Key = 'tether_offload_disabled'; Want = '0' }
+    } else {
+        Write-Warning 'この端末にはテザリングのオフロード（tetheroffload）の HAL がないため、ハードウェアアクセラレーションの設定は変えません（変えても効果がありません）。'
+    }
+}
 
 $installed = Test-Installed
 $safeSerial = ($script:DeviceSerial -replace '[^A-Za-z0-9._-]', '_')
@@ -276,6 +324,12 @@ if ($Restore) {
         Invoke-Adb -Arguments @('shell', 'pm', 'revoke', $Package, 'android.permission.WRITE_SECURE_SETTINGS') -AllowFail | Out-Null
         Write-Host '戻しました: 設定変更の権限を取り消し'
     }
+    if ($installed -and $b.PSObject.Properties.Name -contains 'writeSettingsMode' -and $b.writeSettingsMode -ne 'allow' -and (Get-WriteSettingsMode) -eq 'allow') {
+        # 許可を外すとアプリはテザリングを切り替えられなくなる（止めていたテザリングは手動で ON にする）
+        $mode = if ($b.writeSettingsMode) { $b.writeSettingsMode } else { 'default' }
+        Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'WRITE_SETTINGS', $mode) -AllowFail | Out-Null
+        Write-Host "戻しました: システム設定の変更（$mode）。時間帯スケジュールは使えなくなります（アプリの設定で OFF にしてください）"
+    }
     # アプリが「Doze を早める」設定を戻さないまま止まった（削除された）場合の後始末
     if ((Get-Setting 'global' 'device_idle_constants') -eq $DozeEarly) {
         Set-Setting 'global' 'device_idle_constants' $null
@@ -314,6 +368,8 @@ if ($Apply) {
     # 第 3 段階の権限。前の保存データにない（古い版で保存した）ときは今の状態を保存する
     $us = if ($old -and $old.PSObject.Properties.Name -contains 'usageStatsMode') { $old.usageStatsMode } elseif ($installed) { Get-UsageMode } else { $null }
     $ss = if ($old -and $old.PSObject.Properties.Name -contains 'secureSettingsGranted' -and $null -ne $old.secureSettingsGranted) { $old.secureSettingsGranted } elseif ($installed) { Test-SecureSettingsGranted } else { $null }
+    # 第 4 段階。保存データにないときだけ今の状態を保存する
+    $ws = if ($old -and $old.PSObject.Properties.Name -contains 'writeSettingsMode') { $old.writeSettingsMode } elseif ($installed) { Get-WriteSettingsMode } else { $null }
     $backup = [ordered]@{
         createdAt             = if ($old) { $old.createdAt } else { (Get-Date).ToString('s') }
         serial                = $script:DeviceSerial
@@ -325,6 +381,7 @@ if ($Apply) {
         phoneStateGranted     = $ph
         usageStatsMode        = $us
         secureSettingsGranted = $ss
+        writeSettingsMode     = $ws
     }
     New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
     $backup | ConvertTo-Json -Depth 5 | Set-Content -Path $backupPath -Encoding UTF8
@@ -345,6 +402,11 @@ if ($Apply) {
             # 自動切り替え（バッテリーセーバー・Doze）。アプリは global low_power と device_idle_constants だけを変える
             $g = Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.WRITE_SECURE_SETTINGS') -AllowFail
             if ($g) { Write-Warning "設定変更の権限を付けられませんでした: $g（アプリが v0.4.0 以降か確認してください）" }
+        }
+        if ($AllowTetherControl) {
+            # 時間帯スケジュール（テザリングの停止・再開）。アプリの設定で ON にしたときだけ使う
+            $g = Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'WRITE_SETTINGS', 'allow') -AllowFail
+            if ($g) { Write-Warning "システム設定の変更を許可できませんでした: $g（アプリが v0.5.0 以降か確認してください）" }
         }
     } else {
         Write-Warning 'アプリが未インストールのため、電池の最適化の除外と権限の付与は行っていません（-Install を先に）。'
@@ -369,10 +431,20 @@ if ($installed) {
     $rows = @($rows) + [pscustomobject]@{ 項目 = '使用状況へのアクセス（本アプリ）'; 現在 = $(if ($um -eq 'allow') { '許可' } else { '未許可' }); 推奨 = '許可'; 状態 = $(if ($um -eq 'allow') { 'OK' } else { '要変更' }) }
     $sg = Test-SecureSettingsGranted
     $rows = @($rows) + [pscustomobject]@{ 項目 = '設定変更の権限（自動切り替え用・任意）'; 現在 = $(if ($sg) { '付与' } else { 'なし' }); 推奨 = '任意'; 状態 = $(if ($sg) { 'OK' } else { '-AllowAutoSwitch で付与' }) }
+    $wm = Get-WriteSettingsMode
+    $rows = @($rows) + [pscustomobject]@{ 項目 = 'システム設定の変更（時間帯スケジュール用・任意）'; 現在 = $(if ($wm -eq 'allow') { '許可' } else { '未許可' }); 推奨 = '任意'; 状態 = $(if ($wm -eq 'allow') { 'OK' } else { '-AllowTetherControl で許可' }) }
 } else {
     Write-Host 'アプリは未インストールです（-Install でインストールできます）。'
 }
 Show-Table $rows
+
+# 第 4 段階（表示だけ）。アプリからは読めない情報
+$offload = Get-Setting 'global' 'tether_offload_disabled'
+$band = Get-ApBand
+Write-Host 'テザリングの方式（表示だけ）:'
+Write-Host "  ハードウェアアクセラレーション: $(if ($offload -eq '1') { '無効' } else { '有効（既定）' })（tether_offload_disabled = $(if ($null -eq $offload) { '未設定' } else { $offload })） / オフロードの HAL: $(if ($offloadHal) { 'あり（-EnableOffload で有効に戻せます）' } else { 'なし（この端末では設定を変えても効果がありません）' })"
+Write-Host "  アクセスポイントの帯域: $(if ($band) { $band } else { '取得不可（アクセスポイントが OFF のときは読めません）' })（消費の差はアプリの比較テストで確かめられます）"
+Write-Host ''
 
 if ($userApps.Count -gt 0) {
     Write-Host 'このアプリ以外のユーザーアプリ（バックグラウンド制限。システムアプリは対象外）:'

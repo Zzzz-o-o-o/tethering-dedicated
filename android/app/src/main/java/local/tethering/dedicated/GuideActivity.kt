@@ -21,7 +21,8 @@ import android.widget.TextView
 import java.util.concurrent.Executors
 
 /**
- * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05、第 2 段階の F-34 / F-39 / F-40 / F-41、第 3 段階の F-31 / F-35 / F-42）。
+ * 設定ガイド（仕様 F-03〜F-09 / F-17 / F-18 / F-05、第 2 段階の F-34 / F-39 / F-40 / F-41、第 3 段階の F-31 / F-35 / F-42、
+ * 第 4 段階の F-37 / F-38 / F-44 / F-45）。
  * 現在の値を読んで推奨値と並べ、OS の設定画面へ案内する。OS の設定はこの画面からは一切変更しない。
  * 区分: APK（このアプリで行う）／ADB事前設定（PC から tools/adb-setup.ps1 で行う）／手動設定／要検証。
  */
@@ -274,7 +275,8 @@ class GuideActivity : Activity() {
                 "充電上限・バイパス充電", "手動確認・要検証",
                 { _ -> "非対応として扱う（Android 10 標準に設定なし）" to Level.INFO },
                 "メーカーの機能があれば使う",
-                "Android 10 の標準には充電の上限やバイパス給電の設定がありません。メーカー独自の「電池保護」などがあれば利用し、なければ熱のこもらない置き場所・ケースを外す・温度警告の活用で対策します。給電中でも発熱と劣化はなくなりません。",
+                "Android 10 の標準には充電の上限やバイパス給電の設定がありません。メーカー独自の「電池保護」などがあれば利用し、なければ熱のこもらない置き場所・ケースを外す・温度警告の活用で対策します。給電中でも発熱と劣化はなくなりません。" +
+                    "スマートプラグがあれば、下の「スマートプラグで充電の範囲を保つ」で代わりにできます。",
                 listOf("電池の設定を開く" to { a -> SystemScreens.battery(a) }),
             ),
         ),
@@ -379,6 +381,86 @@ class GuideActivity : Activity() {
                     "モバイル ネットワークの設定を開く" to { a -> SystemScreens.mobileNetwork(a) },
                     "比較テストを開く" to { a -> a.startActivity(Intent(a, ExperimentActivity::class.java)) },
                 ),
+            ),
+        ),
+        "テザリングの方式・時間帯・給電" to listOf(
+            Item(
+                "時間帯スケジュール（使わない時間帯は止める）", "APK・要検証",
+                { c ->
+                    val prefs = Prefs(c)
+                    val q = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))
+                    val permitted = TetherControl.permitted(c)
+                    when {
+                        !prefs.bool(Defs.TETHER_SCHEDULE) -> "使わない" + (if (permitted) "（許可は済み）" else "") to Level.INFO
+                        !permitted -> "ON だが「システム設定の変更」が未許可" to Level.WARN
+                        q == null -> "ON だが時間帯が未設定" to Level.WARN
+                        else -> "${q.label} は止める（接続 0 台が 10 分続いたら）" to Level.OK
+                    }
+                },
+                "毎日使わない時間帯がはっきりしているなら ON",
+                "使わない時間帯に入ったら、接続端末が 0 台の状態が 10 分続くのを待ってテザリングを止め、時間帯の終わりに再開します。止めている間は接続 0 台の待機電力がかかりません。" +
+                    "このアプリが止めたときだけ再開し、利用者が手で ON にしたらその時間帯はもう止めません。再開に 3 回失敗したら、テザリング停止の異常として通知します。" +
+                    "Android 10 の非公開の仕組みを使うため、端末によっては使えません（設定の「切り替えられるか確認する」で、止めずに確かめられます）。",
+                listOf(
+                    "設定を開く" to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) },
+                    "「システム設定の変更」を許可する" to { a -> SystemScreens.writeSettings(a) },
+                ),
+                "adb shell appops set ${BuildConfig.APPLICATION_ID} WRITE_SETTINGS allow\n（まとめて: tools\\adb-setup.bat -Apply -AllowTetherControl　戻す: -Restore）",
+            ),
+            Item(
+                "アクセスポイントの帯域（2.4GHz／5GHz）", "手動設定・要検証",
+                { _ -> "アプリからは読めません（PC の tools\\adb-setup.bat で表示します）" to Level.INFO },
+                "比較テストで消費の少ない方を選ぶ",
+                "5GHz は速く混雑しにくい一方、壁などで弱まりやすく、2.4GHz は遠くまで届きます。消費の差は端末によって違うので、比較テスト「アクセスポイントを 5GHz にする／2.4GHz にする」で実測して決めてください。" +
+                    "帯域を変えると接続端末はつなぎ直しになり、5GHz に対応していない接続端末はつながらなくなります。",
+                listOf(
+                    "アクセスポイントの設定を開く" to { a -> SystemScreens.hotspot(a) },
+                    "比較テストを開く" to { a -> a.startActivity(Intent(a, ExperimentActivity::class.java)) },
+                ),
+                "adb shell dumpsys wifi | findstr apBand\n（0 = 2.4GHz、1 = 5GHz、-1 = 自動）",
+            ),
+            Item(
+                "テザリングのハードウェアアクセラレーション", "手動設定・ADB事前設定・要検証",
+                { c ->
+                    when (Os.global(c, "tether_offload_disabled")) {
+                        null, "0" -> "ON（既定）" to Level.OK
+                        else -> "OFF（開発者向けオプションで無効）" to Level.INFO
+                    }
+                },
+                "ON（対応している端末だけ効果があります）",
+                "テザリングの中継を CPU ではなく通信用のチップに任せる機能で、対応していれば CPU の負担と消費が減ります。対応していない端末（オフロード用の HAL がない端末）では、ON にしても何も変わりません。" +
+                    "アプリからは対応しているか読めないので、PC の tools\\adb-setup.bat で確認してください。効果は比較テスト「ハードウェアアクセラレーションを ON」で確かめられます。",
+                listOf("開発者向けオプションを開く" to { a -> SystemScreens.developer(a) }),
+                "adb shell settings put global tether_offload_disabled 0\n（対応の確認: adb shell lshal | findstr tetheroffload　まとめて: tools\\adb-setup.bat -Apply -EnableOffload）",
+            ),
+            Item(
+                "スマートプラグで充電の範囲を保つ", "APK・要検証（プラグ次第）",
+                { c ->
+                    val prefs = Prefs(c)
+                    if (!prefs.bool(Defs.PLUG)) "使わない" to Level.INFO
+                    else "${PlugUrls.label(prefs.text(Defs.PLUG_KIND))}・${prefs.int(Defs.PLUG_LOW)}〜${prefs.int(Defs.PLUG_HIGH)}%" to Level.OK
+                },
+                "給電しながら長く運用するなら、40〜80% の範囲で使う",
+                "充電上限のない端末で、つなぎっぱなしの満充電と高温を避けるために、スマートプラグの ON／OFF で電池残量を範囲の中に保ちます。高温のときは給電を止めます。" +
+                    "Shelly・Tasmota はアドレスを入れるだけで使え、そのほかのプラグや Home Assistant は ON／OFF の URL を指定します。" +
+                    "プラグをこの端末のテザリングにつなぐ場合、テザリングを止めている間はプラグに届きません（プラグ側の状態のまま）。Shelly は OFF のあと自動で ON に戻すタイマーを付けるので、このアプリが止まっても電池切れになりません。",
+                listOf("設定を開く" to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) }),
+            ),
+            Item(
+                "外部への通知（ntfy・Discord・Slack）", "APK",
+                { c ->
+                    val prefs = Prefs(c)
+                    val d = ExtNotify.parse(prefs.text(Defs.EXT_URL))
+                    when {
+                        !prefs.bool(Defs.EXT_NOTIFY) -> "使わない" to Level.INFO
+                        d == null -> "ON だが通知先の URL が正しくない" to Level.WARN
+                        else -> "${d.label} に送る" to Level.OK
+                    }
+                },
+                "離れた場所に置くなら ON",
+                "端末の画面を見なくても、回線・テザリングが止まっていた時間（復旧してから送ります）、温度・電池の警告、再起動を、スマートフォンや PC で受け取れます。" +
+                    "ntfy はアプリを入れてトピックを購読するだけで使えます（トピック名は他人に推測されない長いものにしてください）。送るのは状態だけで、IP アドレス・SSID・接続端末の情報は送りません。",
+                listOf("設定を開く" to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) }),
             ),
         ),
         "同期・通知・通話" to listOf(

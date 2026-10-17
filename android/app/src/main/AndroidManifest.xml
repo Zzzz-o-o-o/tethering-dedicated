@@ -30,6 +30,14 @@
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+    <!--
+      第 4 段階。WRITE_SETTINGS（システム設定の変更）: 時間帯スケジュール（F-37）でテザリングを止める・再開する。
+      Android 10 では、キャリアの確認が要らない端末なら、この許可でテザリングを切り替えられる。
+      利用者が設定画面（特別なアプリアクセス）か ADB で許可したときだけ使う
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.telephony"

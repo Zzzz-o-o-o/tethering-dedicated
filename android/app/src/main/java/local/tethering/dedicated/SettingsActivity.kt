@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +13,8 @@ import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -59,13 +62,16 @@ class SettingsActivity : Activity() {
         section(page, "消費電力の計測", listOf(Defs.BATT_CAPACITY, Defs.RUNTIME_ALERT))
         section(page, "比較テスト", listOf(Defs.EXP_PHASE, Defs.EXP_REPEATS, Defs.EXP_MIN_GAIN))
         section(page, "電波の悪化（設置場所）", listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true)
-        section(page, "待機中の通信", listOf(Defs.IDLE_TRAFFIC_MB, Defs.QUIET_TRAFFIC_MB), texts = listOf(Defs.QUIET_HOURS))
+        section(page, "待機中の通信", listOf(Defs.IDLE_TRAFFIC_MB))
+        scheduleSection(page)
         section(page, "ローカル管理画面", listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
         section(page, "自動切り替え（バッテリー駆動中）", listOf(Defs.AUTO_SAVER_PCT), bools = listOf(Defs.AUTO_SAVER, Defs.AUTO_DOZE), boolsFirst = true).also { c ->
             autoStatus = Ui.small(c, "")
             Ui.button(c, "自動で変えた設定をすべて元に戻す") { confirmAutoRestore() }
         }
         section(page, "監視の通信を減らす", listOf(Defs.IDLE_INTERVAL, Defs.IDLE_BATT), bools = listOf(Defs.SKIP_PROBE), boolsFirst = true)
+        plugSection(page)
+        extSection(page)
         section(page, "ログ（操作ログと電力の記録）", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
             logSize = Ui.small(c, "")
             Ui.button(c, "ログを消去") { confirmClearLogs() }
@@ -98,6 +104,12 @@ class SettingsActivity : Activity() {
         super.onDestroy()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 「システム設定の変更」の許可画面から戻ってきたときにも表示を更新する
+        refreshPhase4()
+    }
+
     private fun section(
         page: LinearLayout,
         title: String,
@@ -109,18 +121,142 @@ class SettingsActivity : Activity() {
         val c = Ui.card(page)
         Ui.heading(c, title)
         if (boolsFirst) bools.forEach { addBool(c, it) }
-        for (d in ints) {
-            Ui.text(c, "${d.label}（${d.min}〜${d.max}${d.unit}）", 14f)
-            if (d.help.isNotEmpty()) Ui.small(c, d.help)
-            intFields[d] = Ui.numberField(c, prefs.int(d), signed = d.min < 0)
-        }
-        for (d in texts) {
-            Ui.text(c, d.label, 14f)
-            Ui.small(c, d.help)
-            textFields[d] = Ui.textField(c, prefs.text(d))
-        }
+        ints.forEach { addInt(c, it) }
+        texts.forEach { addText(c, it) }
         if (!boolsFirst) bools.forEach { addBool(c, it) }
         return c
+    }
+
+    private fun addInt(c: LinearLayout, d: IntDef) {
+        Ui.text(c, "${d.label}（${d.min}〜${d.max}${d.unit}）", 14f)
+        if (d.help.isNotEmpty()) Ui.small(c, d.help)
+        intFields[d] = Ui.numberField(c, prefs.int(d), signed = d.min < 0)
+    }
+
+    private fun addText(c: LinearLayout, d: TextDef) {
+        Ui.text(c, d.label, 14f)
+        if (d.help.isNotEmpty()) Ui.small(c, d.help)
+        textFields[d] = Ui.textField(c, prefs.text(d))
+    }
+
+    // ---- 第 4 段階 ----
+
+    private lateinit var schedStatus: TextView
+    private lateinit var plugStatus: TextView
+    private lateinit var extStatus: TextView
+    private lateinit var plugKind: RadioGroup
+    private val plugKindIds = HashMap<Int, String>()
+
+    /** 使わない時間帯（仕様 F-33 の通信の通知と、F-37 の時間帯スケジュールで共通） */
+    private fun scheduleSection(page: LinearLayout) {
+        val c = Ui.card(page)
+        Ui.heading(c, "使わない時間帯（通信の通知・テザリングの停止）")
+        addText(c, Defs.QUIET_HOURS)
+        addInt(c, Defs.QUIET_TRAFFIC_MB)
+        addBool(c, Defs.TETHER_SCHEDULE)
+        schedStatus = Ui.small(c, "")
+        Ui.button(c, "「システム設定の変更」を許可する（OS の画面）") { SystemScreens.writeSettings(this) }
+        Ui.button(c, "切り替えられるか確認する（テザリングは止めません）") {
+            val r = TetherControl.probe(this)
+            AlertDialog.Builder(this)
+                .setTitle(if (r.ok) "このアプリからテザリングを切り替えられます" else "切り替えられません")
+                .setMessage(if (r.ok) "時間帯スケジュールを使えます。" else r.text)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    /** スマートプラグ（仕様 F-45） */
+    private fun plugSection(page: LinearLayout) {
+        val c = Ui.card(page)
+        Ui.heading(c, "スマートプラグ（給電の切り替え）")
+        addBool(c, Defs.PLUG)
+        Ui.text(c, Defs.PLUG_KIND.label, 14f)
+        plugKind = RadioGroup(this)
+        val current = prefs.text(Defs.PLUG_KIND)
+        for ((key, label) in PlugUrls.kinds) {
+            val rb = RadioButton(this).apply { text = label }
+            plugKind.addView(rb)
+            plugKindIds[rb.id] = key
+            if (key == current) plugKind.check(rb.id)
+        }
+        c.addView(plugKind)
+        addText(c, Defs.PLUG_HOST)
+        addText(c, Defs.PLUG_ON_URL)
+        addText(c, Defs.PLUG_OFF_URL)
+        listOf(Defs.PLUG_LOW, Defs.PLUG_HIGH, Defs.PLUG_HOT, Defs.PLUG_FLIPBACK).forEach { addInt(c, it) }
+        plugStatus = Ui.small(c, "")
+        Ui.buttonRow(c, "ON にしてみる" to { plugTest(true) }, "OFF にしてみる" to { plugTest(false) })
+        Ui.small(c, "入力中の内容で 1 回だけ送ります（保存はしません）。連携が ON のときは、数分で目標の状態に戻します。")
+    }
+
+    private fun selectedPlugKind(): String = plugKindIds[plugKind.checkedRadioButtonId] ?: prefs.text(Defs.PLUG_KIND)
+
+    private fun field(d: TextDef): String = Fmt.halfWidth(textFields[d]?.text?.toString().orEmpty()).trim()
+
+    private fun plugTest(on: Boolean) {
+        val req = PlugUrls.request(selectedPlugKind(), field(Defs.PLUG_HOST), field(Defs.PLUG_ON_URL), field(Defs.PLUG_OFF_URL), on, 0)
+        if (req == null) {
+            toast("プラグのアドレス（または URL）を入れてください")
+            return
+        }
+        toast("送っています…")
+        bg.execute {
+            val r = WebClient.send(req.method, req.target, emptyList(), null, null, 10_000)
+            main.post {
+                AlertDialog.Builder(this)
+                    .setTitle("スマートプラグを ${if (on) "ON" else "OFF"}：${if (r.ok) "成功" else "失敗"}")
+                    .setMessage("${req.method} ${req.target.host}: ${r.text}" + if (r.ok) "\n給電の変化は、ダッシュボードの「給電」で確かめてください。" else "")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }
+
+    /** 外部への通知（仕様 F-44） */
+    private fun extSection(page: LinearLayout) {
+        val c = Ui.card(page)
+        Ui.heading(c, "外部への通知")
+        addBool(c, Defs.EXT_NOTIFY)
+        addText(c, Defs.EXT_URL)
+        addBool(c, Defs.EXT_RECOVERY)
+        addBool(c, Defs.EXT_ALERT)
+        extStatus = Ui.small(c, "")
+        Ui.button(c, "テスト送信（入力中の URL に 1 件送る）") {
+            val url = field(Defs.EXT_URL)
+            val dest = ExtNotify.parse(url)
+            if (dest == null) {
+                toast(ExtNotify.check(url) ?: "通知先の URL を入れてください")
+                return@button
+            }
+            toast("送っています…")
+            bg.execute {
+                val r = ExtNotify.sendTest(dest, Build.MODEL ?: "Android", System.currentTimeMillis())
+                main.post {
+                    AlertDialog.Builder(this)
+                        .setTitle("テスト送信：${if (r.ok) "成功" else "失敗"}")
+                        .setMessage("${dest.label}: ${r.text}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun refreshPhase4() {
+        if (!::schedStatus.isInitialized) return
+        val s = StateStore.state
+        val permitted = TetherControl.permitted(this)
+        schedStatus.text = "「システム設定の変更」: ${if (permitted) "許可済み" else "未許可（時間帯スケジュールには許可が必要）"}" +
+            (s.sched?.stoppedUntil?.let { "\nいま止めています（$it に再開）" } ?: "") +
+            (s.sched?.note?.let { "\n$it" } ?: "")
+        plugStatus.text = s.plug?.let { p ->
+            "目標: ${p.want?.let { if (it) "ON" else "OFF" } ?: "未定（範囲の中）"}${p.why?.let { "（$it）" } ?: ""}・範囲 ${p.range}" +
+                (p.lastResult?.let { "\n直近: $it" } ?: "") + if (p.stuck) "\n⚠ 給電の状態が目標と合いません" else ""
+        } ?: "連携: OFF"
+        extStatus.text = s.ext?.let { e ->
+            "送り先: ${e.dest ?: "URL が正しくありません"}" + (if (e.pending > 0) "・未送信 ${e.pending}件" else "") + (e.lastResult?.let { "\n直近: $it" } ?: "")
+        } ?: "外部への通知: OFF"
     }
 
     private fun addBool(c: LinearLayout, d: BoolDef) {
@@ -163,6 +299,9 @@ class SettingsActivity : Activity() {
 
     private fun refreshFooter() {
         refreshAuto()
+        refreshPhase4()
+        // 保存した設定をサービスが反映したあとの状態でも表示し直す
+        main.postDelayed({ refreshPhase4() }, 800L)
         bg.execute {
             val bytes = LogStore.totalBytes(this) + PowerStore.totalBytes(this)
             val hasBefore = File(filesDir, BEFORE_FILE).exists()
@@ -189,6 +328,20 @@ class SettingsActivity : Activity() {
             val v = Fmt.halfWidth(e.text.toString()).trim()
             val reason = d.check(v)
             if (reason != null) errors.add("${d.label}: $reason") else values[d.key] = v
+        }
+        values[Defs.PLUG_KIND.key] = selectedPlugKind()
+        // 連携を ON にするなら、送り先がないと動かない
+        if (values[Defs.PLUG.key] == true) {
+            val kind = selectedPlugKind()
+            val ok = if (kind == PlugUrls.CUSTOM) {
+                (values[Defs.PLUG_ON_URL.key] as? String).orEmpty().isNotEmpty() && (values[Defs.PLUG_OFF_URL.key] as? String).orEmpty().isNotEmpty()
+            } else {
+                (values[Defs.PLUG_HOST.key] as? String).orEmpty().isNotEmpty()
+            }
+            if (!ok) errors.add("スマートプラグ: ${if (kind == PlugUrls.CUSTOM) "ON と OFF の URL" else "プラグのアドレス"}を入れてください")
+        }
+        if (values[Defs.EXT_NOTIFY.key] == true && (values[Defs.EXT_URL.key] as? String).orEmpty().isEmpty()) {
+            errors.add("外部への通知: 通知先の URL を入れてください")
         }
         return values to errors
     }
@@ -218,7 +371,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun writeBefore() {
-        runCatching { File(filesDir, BEFORE_FILE).writeText(prefs.toJson().toString(2), Charsets.UTF_8) }
+        // 端末内の巻き戻し用なので、通知先の URL なども含める
+        runCatching { File(filesDir, BEFORE_FILE).writeText(prefs.toJson(includeSecrets = true).toString(2), Charsets.UTF_8) }
     }
 
     private fun notifyService() {

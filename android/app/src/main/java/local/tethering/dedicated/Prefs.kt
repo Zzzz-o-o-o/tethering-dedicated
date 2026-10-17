@@ -90,6 +90,38 @@ class Prefs(context: Context) {
             state.edit().putString("auto_doze_original", v).commit()
         }
 
+    // 時間帯スケジュール（仕様 F-37）。このアプリがテザリングを止めた時間帯の開始（0 = 止めていない）。
+    // 止めた直後にアプリが止まっても、次の起動で再開できるよう、すぐにファイルへ書く（commit）
+    @set:SuppressLint("ApplySharedPref")
+    var schedStoppedWindow: Long
+        get() = state.getLong("sched_stopped_window", 0L)
+        set(v) {
+            state.edit().putLong("sched_stopped_window", v).commit()
+        }
+
+    /** テザリングを止めた時刻（停止していた時間の記録用） */
+    var schedStoppedAt: Long
+        get() = state.getLong("sched_stopped_at", 0L)
+        set(v) = state.edit().putLong("sched_stopped_at", v).apply()
+
+    /** 止める判断を済ませた時間帯の開始（同じ時間帯に 2 回止めない） */
+    var schedHandledWindow: Long
+        get() = state.getLong("sched_handled_window", 0L)
+        set(v) = state.edit().putLong("sched_handled_window", v).apply()
+
+    /** 外部への通知（仕様 F-44）で送れなかったもの（JSON） */
+    var extQueueJson: String?
+        get() = state.getString("ext_queue", null)
+        set(v) = state.edit().putString("ext_queue", v).apply()
+
+    /** スマートプラグ（仕様 F-45）の給電の目標（「1:LOW」など。null = なし） */
+    @set:SuppressLint("ApplySharedPref")
+    var plugWant: String?
+        get() = state.getString("plug_want", null)
+        set(v) {
+            state.edit().apply { if (v == null) remove("plug_want") else putString("plug_want", v) }.commit()
+        }
+
     // ---- 運用状態（バックアップ・初期化の対象外） ----
 
     /** 監視を続けるか（利用者が「停止」したら false。再起動後に自動で始めるかもこれで決まる） */
@@ -138,9 +170,11 @@ class Prefs(context: Context) {
 
     fun resetToDefaults() = sp.edit().clear().apply()
 
-    fun toJson(): JSONObject {
+    /** [includeSecrets] は端末内の巻き戻し用だけ true（ファイルに書き出す設定には、通知先の URL などを含めない） */
+    fun toJson(includeSecrets: Boolean = false): JSONObject {
         val settings = JSONObject()
-        values().forEach { (k, v) -> settings.put(k, v) }
+        val secret = Defs.secretKeys
+        values().forEach { (k, v) -> if (includeSecrets || k !in secret) settings.put(k, v) }
         return JSONObject()
             .put("app", app.packageName)
             .put("schema", SettingsCodec.SCHEMA)

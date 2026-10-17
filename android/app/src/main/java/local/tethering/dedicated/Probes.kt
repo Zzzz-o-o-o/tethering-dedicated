@@ -109,7 +109,8 @@ object TetherProbe {
     /** Android 10 の「接続がないときにアクセスポイントを自動でOFF」（Settings.Global、非公開キー） */
     const val KEY_SOFT_AP_TIMEOUT = "soft_ap_timeout_enabled"
 
-    fun read(ctx: Context, countClients: Boolean, ap: Intent? = null, tether: Intent? = null): TetherInfo {
+    /** [exclude] は接続端末として数えない IP アドレス（このテザリングにつないだスマートプラグなど。仕様 F-45） */
+    fun read(ctx: Context, countClients: Boolean, ap: Intent? = null, tether: Intent? = null, exclude: Set<String> = emptySet()): TetherInfo {
         val apIntent = ap ?: sticky(ctx, ACTION_AP)
         val apState = apIntent?.getIntExtra(EXTRA_AP_STATE, -1)?.takeIf { it >= 0 }
         val apIface = apIntent?.getStringExtra(EXTRA_AP_IFACE)?.takeIf { it.isNotEmpty() }
@@ -121,7 +122,7 @@ object TetherProbe {
         val (clients, method) = when {
             !countClients -> null to "数えない設定"
             !running -> null to "テザリングOFF"
-            else -> Clients.count(wifiIface)
+            else -> Clients.count(wifiIface, exclude)
         }
         return TetherInfo(apState, apIface, apMode, active, clients, method, autoOff)
     }
@@ -132,9 +133,10 @@ object TetherProbe {
 
 /** 接続端末数の推定。台数だけを数え、MAC アドレス・IP アドレスは保存しない */
 object Clients {
-    fun count(iface: String?): Pair<Int?, String> {
+    fun count(iface: String?, exclude: Set<String> = emptySet()): Pair<Int?, String> {
+        val note = if (exclude.isEmpty()) "" else "・プラグを除く"
         try {
-            return Parsers.countArp(File("/proc/net/arp").readLines(), iface) to "ARP"
+            return Parsers.countArp(File("/proc/net/arp").readLines(), iface, exclude) to "ARP$note"
         } catch (_: Exception) {
             // Android 10 では読めない機種がある → 次の方法へ
         }
@@ -145,7 +147,7 @@ object Clients {
                 return null to "取得不可（応答なし）"
             }
             val out = p.inputStream.bufferedReader().use { it.readText() }
-            if (p.exitValue() == 0) return Parsers.countNeigh(out, iface) to "ip neigh"
+            if (p.exitValue() == 0) return Parsers.countNeigh(out, iface, exclude) to "ip neigh$note"
         } catch (_: Exception) {
         }
         return null to "取得不可（OSの制限）"

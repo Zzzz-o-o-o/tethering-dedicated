@@ -76,6 +76,13 @@ object SystemScreens {
 
     fun usageAccess(ctx: Context) = open(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), Intent(Settings.ACTION_SECURITY_SETTINGS))
 
+    /** 「システム設定の変更」の許可（時間帯スケジュール F-37 でテザリングを切り替えるため） */
+    fun writeSettings(ctx: Context) = open(
+        ctx,
+        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${ctx.packageName}")),
+        appDetails(ctx.packageName),
+    )
+
     /** モバイル ネットワークの設定（優先ネットワークの種類・VoLTE がある画面） */
     fun mobileNetwork(ctx: Context) = open(
         ctx,

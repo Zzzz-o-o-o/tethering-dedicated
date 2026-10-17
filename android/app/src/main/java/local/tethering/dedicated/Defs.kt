@@ -16,8 +16,11 @@ class IntDef(
 /** ON/OFF の設定項目 */
 class BoolDef(val key: String, val label: String, val def: Boolean, val help: String = "")
 
-/** 文字列の設定項目。[check] は誤りの説明（正しければ null）を返す */
-class TextDef(val key: String, val label: String, val def: String, val help: String, val check: (String) -> String?)
+/**
+ * 文字列の設定項目。[check] は誤りの説明（正しければ null）を返す。
+ * [secret] はトークン・パスワードを含みうる値（通知先の URL など）。設定のファイル保存・診断情報には含めない
+ */
+class TextDef(val key: String, val label: String, val def: String, val help: String, val check: (String) -> String?, val secret: Boolean = false)
 
 /**
  * 設定項目の一覧。設定画面・バックアップ／復元・入力チェックはすべてここを参照する。
@@ -91,6 +94,33 @@ object Defs {
         "OS の接続検証が OK で、前回のチェックから 256 KB 以上受信していれば、DNS・HTTP の確認を省きます",
     )
 
+    // 第 4 段階
+    val PLUG_LOW = IntDef("plug_low_pct", "給電を始める電池残量", 40, 10, 90, "%")
+    val PLUG_HIGH = IntDef("plug_high_pct", "給電を止める電池残量", 80, 20, 100, "%", "給電を始める残量より 10% 以上高くしてください（近すぎるときは +10% として扱います）")
+    val PLUG_HOT = IntDef(
+        "plug_hot_c", "給電を止める電池温度", 40, 30, 60, "℃",
+        "これ以上になったら給電を止め、3℃ 下がるまで再開しません。ただし残量が「電池残量の警告」以下なら、「電池温度の警告」未満のあいだは給電します",
+    )
+    val PLUG_FLIPBACK = IntDef(
+        "plug_flipback_min", "OFF のあと自動で ON に戻す時間（Shelly のみ・0 = 使わない）", 240, 0, 1440, "分",
+        "このアプリや端末が止まっても電池切れにならないよう、プラグ自身のタイマーで ON に戻します。動いている間はタイマーを延長し続けます",
+    )
+
+    val TETHER_SCHEDULE = BoolDef(
+        "tether_schedule", "使わない時間帯はテザリングを止める", false,
+        "上の時間帯に入ったら、接続 0 台が 10 分続いたときにテザリングを止め、時間帯の終わりに再開します（このアプリが止めたときだけ）。「システム設定の変更」の許可が必要です",
+    )
+    val EXT_NOTIFY = BoolDef(
+        "ext_notify", "外部へ通知する（ntfy・Discord・Slack）", false,
+        "復旧（止まっていた時間）や警告を、下の通知先にも送ります。送るのは状態だけで、IP アドレス・SSID・接続端末の情報は送りません",
+    )
+    val EXT_RECOVERY = BoolDef("ext_recovery", "復旧と再起動を送る", true, "回線・テザリングが止まっていた時間、起動後チェックの結果")
+    val EXT_ALERT = BoolDef("ext_alert", "警告を送る", true, "温度・電池・電波の警告、テザリングの停止、スケジュール・スマートプラグの失敗")
+    val PLUG = BoolDef(
+        "plug", "スマートプラグで給電を切り替える", false,
+        "電池残量が下の範囲に収まるよう、プラグを ON／OFF します（充電上限のない端末の代わり）。高温のときは給電を止めます",
+    )
+
     val HTTP = BoolDef("http_check", "外部サイトへの到達確認（HTTP）", true, "OFFにするとDNSまでの確認で判定する")
     val TETHER_EXPECTED = BoolDef("tether_expected", "Wi-Fiテザリングの停止を異常とする", true)
     val CLIENTS = BoolDef("count_clients", "接続端末数を数える（取得できる機種のみ）", true, "MACアドレスなどは記録せず、台数だけを数える")
@@ -108,17 +138,42 @@ object Defs {
     )
     val QUIET_HOURS = TextDef(
         "quiet_hours", "使わない時間帯（例: 1-6。空欄 = 設定しない）", "",
-        "0〜23 時で「開始-終了」。23-5 のように日をまたいでもかまいません", ::checkQuietHours,
+        "0〜23 時で「開始-終了」。1:30-6:00 のように分も指定でき、23-5 のように日をまたいでもかまいません", ::checkQuietHours,
     )
+
+    val EXT_URL = TextDef(
+        "ext_url", "通知先の URL", "",
+        "ntfy は https://ntfy.sh/トピック名（自分のサーバーも可）、Discord・Slack は Webhook の URL。設定のファイル保存には含めません",
+        ExtNotify::check, secret = true,
+    )
+    val PLUG_KIND = TextDef("plug_kind", "プラグの種類", PlugUrls.SHELLY2, "", PlugUrls::checkKind)
+    val PLUG_HOST = TextDef(
+        "plug_host", "プラグのアドレス（Shelly・Tasmota）", "",
+        "例: 192.168.43.50。このテザリングにつなぐ場合は、プラグのアプリで割り当てられたアドレスを確認して入れます（接続端末の数からは自動で除きます）。設定のファイル保存には含めません",
+        PlugUrls::checkHost, secret = true,
+    )
+    val PLUG_ON_URL = TextDef(
+        "plug_on_url", "ON にする URL（「URL を指定」のとき）", "",
+        "例: http://192.168.43.50/relay/0?turn=on。POST で送るときは先頭に「POST 」。設定のファイル保存には含めません",
+        PlugUrls::checkSpec, secret = true,
+    )
+    val PLUG_OFF_URL = TextDef("plug_off_url", "OFF にする URL（「URL を指定」のとき）", "", "", PlugUrls::checkSpec, secret = true)
 
     val ints = listOf(
         INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
         SIGNAL_WEAK_RSRP, SIGNAL_DROP_DB, IDLE_TRAFFIC_MB, QUIET_TRAFFIC_MB, WEB_PORT,
         AUTO_SAVER_PCT, IDLE_INTERVAL, IDLE_BATT,
+        PLUG_LOW, PLUG_HIGH, PLUG_HOT, PLUG_FLIPBACK,
     )
-    val bools = listOf(HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE)
-    val texts = listOf(URL, RECHECK, QUIET_HOURS)
+    val bools = listOf(
+        HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE,
+        TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG,
+    )
+    val texts = listOf(URL, RECHECK, QUIET_HOURS, EXT_URL, PLUG_KIND, PLUG_HOST, PLUG_ON_URL, PLUG_OFF_URL)
+
+    /** 設定のファイル保存・診断情報に含めない項目のキー */
+    val secretKeys: Set<String> get() = texts.filter { it.secret }.map { it.key }.toSet()
 
     fun checkUrl(s: String): String? {
         val uri = runCatching { URI(s.trim()) }.getOrNull() ?: return "URLの形式が正しくありません"
@@ -138,7 +193,7 @@ object Defs {
         if (parseRecheck(s) == null) "1〜60 の数字をカンマ区切りで1〜5個（例: 1,3,5）" else null
 
     fun checkQuietHours(s: String): String? =
-        if (s.isNotBlank() && QuietHours.parse(s) == null) "「開始-終了」の形で 0〜23 時を入れてください（例: 1-6）。空欄なら設定しません" else null
+        if (s.isNotBlank() && QuietHours.parse(s) == null) "「開始-終了」の形で 0〜23 時を入れてください（例: 1-6、1:30-6:00）。空欄なら設定しません" else null
 }
 
 /** バックアップ（JSON）から読んだ値の検証。範囲外・型違いは採用せず、理由を返す */
@@ -199,6 +254,11 @@ object SettingsCodec {
                     ?: Defs.texts.firstOrNull { it.key == k }?.label
                     ?: k
             }
+            // トークンを含みうる値は、画面・ログに出さない
+            if (k in Defs.secretKeys) {
+                out.add("$label: " + if ((v as? String).isNullOrEmpty()) "空欄にする" else "変更")
+                continue
+            }
             out.add("$label: ${show(k, old)} → ${show(k, v)}")
         }
         return out
@@ -207,6 +267,7 @@ object SettingsCodec {
     private fun show(key: String, v: Any?): String = when {
         v == null -> "（未設定）"
         key == Defs.MODE_KEY -> BaseMode.of(v as? String).label
+        key == Defs.PLUG_KIND.key -> PlugUrls.label(v.toString())
         v is Boolean -> if (v) "ON" else "OFF"
         else -> v.toString()
     }

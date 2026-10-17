@@ -76,7 +76,7 @@ object Diagnostics {
         val s = StateStore.state
         val prefs = Prefs(ctx)
         val p = PowerProbe.read(ctx)
-        val t = TetherProbe.read(ctx, countClients = true)
+        val t = TetherProbe.read(ctx, countClients = true, exclude = PlugUrls.exclude(prefs))
         val l = LineProbe.read(ctx, null)
         val pm = ctx.getSystemService(PowerManager::class.java)
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -138,6 +138,31 @@ object Diagnostics {
             appendLine("待機: ${s.idleReason ?: "していない"}（設定 ${prefs.int(Defs.IDLE_INTERVAL)}分・残量 ${prefs.int(Defs.IDLE_BATT)}%） / 到達確認の省略: ${Fmt.onOff(prefs.bool(Defs.SKIP_PROBE), "使う", "使わない")}${if (s.check?.probeSkipped == true) "（直近のチェックで省略）" else ""}")
             appendLine("使用状況へのアクセス: ${if (AppUsageProbe.hasAccess(ctx)) "許可" else "未許可"} / 優先ネットワーク: ${Os.preferredNetworkMode(ctx)?.let { "${NetworkModes.label(it)}（$it）" } ?: Fmt.NA}")
             appendLine()
+            appendLine("## 第 4 段階")
+            // テザリングは止めずに、切り替えられるかだけを確かめる
+            appendLine("テザリングの切り替え: システム設定の変更 ${if (TetherControl.permitted(ctx)) "許可" else "未許可"} / 確認 ${TetherControl.probe(ctx).text}")
+            val quiet = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))
+            appendLine(
+                "時間帯スケジュール: ${Fmt.onOff(prefs.bool(Defs.TETHER_SCHEDULE), "使う", "使わない")}（${quiet?.label ?: "時間帯の未設定"}） / " +
+                    "止めている: ${if (prefs.schedStoppedWindow != 0L) "はい（${Fmt.time(prefs.schedStoppedAt)}から）" else "いいえ"}${s.sched?.note?.let { " / $it" } ?: ""}",
+            )
+            appendLine(
+                "ハードウェアアクセラレーション: global tether_offload_disabled = ${Os.global(ctx, "tether_offload_disabled") ?: "未設定（既定は有効）"}" +
+                    "（端末が対応しているかはアプリから読めません。PC の adb-setup で確認できます）",
+            )
+            val dest = ExtNotify.parse(prefs.text(Defs.EXT_URL))
+            appendLine(
+                "外部への通知: ${Fmt.onOff(prefs.bool(Defs.EXT_NOTIFY), "使う", "使わない")} / 送り先 ${dest?.label ?: "未設定"}" +
+                    " / 未送信 ${s.ext?.pending ?: 0}件${s.ext?.lastResult?.let { " / 直近 $it" } ?: ""}",
+            )
+            val kind = prefs.text(Defs.PLUG_KIND)
+            val excluded = PlugUrls.ipv4(kind, prefs.text(Defs.PLUG_HOST), prefs.text(Defs.PLUG_ON_URL)) != null
+            appendLine(
+                "スマートプラグ: ${Fmt.onOff(prefs.bool(Defs.PLUG), "使う", "使わない")} / ${PlugUrls.label(kind)} / 範囲 ${prefs.int(Defs.PLUG_LOW)}〜${prefs.int(Defs.PLUG_HIGH)}% / " +
+                    "高温 ${prefs.int(Defs.PLUG_HOT)}℃ / 自動で ON に戻す ${prefs.int(Defs.PLUG_FLIPBACK)}分 / 接続端末の数から除く: ${if (excluded && prefs.bool(Defs.PLUG)) "あり" else "なし"}",
+            )
+            s.plug?.let { appendLine("スマートプラグの状態: 目標 ${it.want?.let { w -> if (w) "ON" else "OFF" } ?: "未定"}${it.why?.let { w -> "（$w）" } ?: ""} / 直近 ${it.lastResult ?: "－"}${if (it.stuck) " / 給電の状態が合わない" else ""}") }
+            appendLine()
             appendLine("## 直近の接続性チェック")
             if (c == null) {
                 appendLine("まだ実行していません")
@@ -168,7 +193,11 @@ object Diagnostics {
             appendLine("system screen_off_timeout = ${Os.system(ctx, Settings.System.SCREEN_OFF_TIMEOUT) ?: "未設定"}")
             appendLine()
             appendLine("## アプリの設定")
-            prefs.values().forEach { (k, v) -> appendLine("$k = $v") }
+            // 通知先・プラグの URL はトークン・パスワードを含みうるので出さない
+            val secret = Defs.secretKeys
+            prefs.values().forEach { (k, v) ->
+                appendLine("$k = " + if (k in secret) (if ((v as? String).isNullOrEmpty()) "（空欄）" else "（設定あり・非表示）") else v)
+            }
             appendLine()
             appendLine("## 最新のログ（末尾）")
             LogStore.tail(ctx, 15).forEach { appendLine(it) }

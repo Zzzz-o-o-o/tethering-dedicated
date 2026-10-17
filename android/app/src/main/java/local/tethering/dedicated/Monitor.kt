@@ -81,6 +81,36 @@ class Monitor(private val ctx: Context) {
     /** 前回のチェックのときのモバイル回線の受信量（通信が流れているかを見る。仕様 F-32） */
     private var lastRx: Long? = null
 
+    /** 外部への通知（仕様 F-44） */
+    private val ext = ExtSender(prefs).apply {
+        onLog = { text -> log(Ev.EXT, result = text) }
+        onChanged = { if (!closed) publish() }
+    }
+
+    /** スマートプラグ（仕様 F-45） */
+    private val smartPlug = PlugSwitch(prefs).apply {
+        onEvent = { e -> onPlugEvent(e) }
+        onChanged = { if (!closed) publish() }
+    }
+
+    // 時間帯スケジュール（仕様 F-37）。再開のやり直しの状態（メモリだけ。止めた時間帯は Prefs に残す）
+    private var resumePending = false
+    private var resumeTries = 0
+    private var resumeNextAt = 0L
+
+    /** 再開をあきらめた理由（テザリング停止の通知の文面に使う） */
+    private var resumeFailed: String? = null
+
+    /** 止めるのを待っていることを記録した時間帯（同じ時間帯で何度も記録しない） */
+    private var schedWaitLogged = 0L
+    private var schedNote: String? = null
+
+    /** テザリング ON・接続 0 台になった時刻（経過時間）。止めるのは 0 台が 10 分続いてから（仕様 F-37） */
+    private var apIdleSince: Long? = null
+
+    /** 接続 0 台が 10 分に達する時刻（経過時間）。その時刻に判断し直す */
+    private var schedIdleDue: Long? = null
+
     // ---- 開始・停止 ----
 
     fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
@@ -109,9 +139,16 @@ class Monitor(private val ctx: Context) {
     fun stop() {
         val s = StateStore.state
         recordSegment(s.power, s.line, s.tether, transition = { if (exp != null) finishExperiment(aborted = true) })
+        // 監視をやめても、このアプリが変えたテザリング・給電の状態は残さない（止めていたら再開・ON に戻す）
+        if (prefs.schedStoppedWindow != 0L) {
+            TetherControl.start(ctx) { }
+            prefs.schedStoppedWindow = 0L
+            log(Ev.SCHEDULE, result = "監視の停止に合わせてテザリングを再開")
+        }
+        smartPlug.release("監視を停止")
         log(Ev.STOP)
         Scheduler.cancel(ctx)
-        for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT)) Notifier.cancel(ctx, id)
+        for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT, Notifier.ID_SCHEDULE, Notifier.ID_PLUG)) Notifier.cancel(ctx, id)
         DeviceAlert.entries.forEach { Notifier.cancel(ctx, Notifier.deviceId(it)) }
         close()
     }
@@ -125,6 +162,8 @@ class Monitor(private val ctx: Context) {
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
         web.stop()
+        ext.close()
+        smartPlug.close()
         WakeLocks.release(eventLock)
         StateStore.update { it.copy(running = false, checking = false, nextCheckAt = 0L, web = null) }
     }
@@ -147,6 +186,8 @@ class Monitor(private val ctx: Context) {
         val now = System.currentTimeMillis()
         if (prefs.maintUntil != 0L) {
             if (prefs.maintenanceActive(now)) {
+                // メンテナンス中は新たに止めないが、止めていたテザリングの再開は行う（仕様 F-37）
+                schedEvaluate(StateStore.state.tether)
                 scheduleNext()
                 return
             }
@@ -178,10 +219,11 @@ class Monitor(private val ctx: Context) {
         val troubled = upstream.episode != null || tether.episode != null
         val skipEnabled = prefs.bool(Defs.SKIP_PROBE)
         val prevRx = lastRx
+        val exclude = plugExclude()
         worker.execute {
             val result = runCatching {
                 val p = PowerProbe.read(ctx)
-                val t = TetherProbe.read(ctx, countClients)
+                val t = TetherProbe.read(ctx, countClients, exclude = exclude)
                 val l = LineProbe.read(ctx, svc)
                 val rx = mobileRx()
                 val delta = if (prevRx != null && rx != null && rx >= prevRx) rx - prevRx else null
@@ -210,6 +252,9 @@ class Monitor(private val ctx: Context) {
 
     private fun mobileRx(): Long? = TrafficStats.getMobileRxBytes().takeIf { it != TrafficStats.UNSUPPORTED.toLong() }
 
+    /** このテザリングにつないだスマートプラグは、接続端末として数えない（仕様 F-45） */
+    private fun plugExclude(): Set<String> = PlugUrls.exclude(prefs)
+
     private fun priority(t: Trigger) = when (t) {
         Trigger.BOOT -> 5
         Trigger.MANUAL -> 4
@@ -237,6 +282,10 @@ class Monitor(private val ctx: Context) {
         handleAlerts(pr.power)
         if (!prefs.maintenanceActive(r.at)) handleSignal(pr.line)
         if (trigger == Trigger.BOOT) bootSummary(pr)
+        schedEvaluate(pr.tether)
+        smartPlug.evaluate(pr.power, pr.tether.wifiOn)
+        // 回線が正常なら、送れていなかった外部への通知を送る
+        if (r.failure == null) ext.flush()
         updateWeb(pr.tether)
         publish()
         scheduleNext()
@@ -294,6 +343,11 @@ class Monitor(private val ctx: Context) {
                     recent(Ev.RECOVERED, "${ep.kind.label}（$dur）")
                     Notifier.cancel(ctx, Notifier.ID_UPSTREAM)
                     if (prefs.bool(Defs.NOTIFY_RECOVERY)) Notifier.info(ctx, Notifier.ID_UPSTREAM, "復旧しました", "${ep.kind.label}は${dur}で復旧しました")
+                    // 止まっている間は外へ送れないので、復旧してから止まっていた時間を送る（仕様 F-44）
+                    ext.post(
+                        ExtNotify.Category.RECOVERY, "回線が復旧しました",
+                        "${ep.kind.label}が続いていました。止まっていた時間: $dur（${Fmt.hm(ep.startedAt)}〜${Fmt.hm(r.at)}）",
+                    )
                 } else {
                     log(Ev.BLIP, anomaly = ep.kind.label, result = "再確認${ep.rechecks}回目で正常")
                     recent(Ev.BLIP, ep.kind.label)
@@ -329,9 +383,10 @@ class Monitor(private val ctx: Context) {
         if (!started || closed) return
         val isAp = intent.action == TetherProbe.ACTION_AP
         val countClients = prefs.bool(Defs.CLIENTS)
+        val exclude = plugExclude()
         worker.execute {
             val t = runCatching {
-                TetherProbe.read(ctx, countClients, ap = if (isAp) intent else null, tether = if (isAp) null else intent)
+                TetherProbe.read(ctx, countClients, ap = if (isAp) intent else null, tether = if (isAp) null else intent, exclude = exclude)
             }.getOrNull() ?: return@execute
             main.post { onTether(t) }
         }
@@ -353,6 +408,8 @@ class Monitor(private val ctx: Context) {
             meter.noteClients(t.clients)
         }
         if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), t)
+        // 再開できたか・利用者が手で ON にしたかを見る（仕様 F-37）
+        schedEvaluate(t)
         updateWeb(t)
         publish()
         scheduleNext()
@@ -362,7 +419,9 @@ class Monitor(private val ctx: Context) {
     private fun handleTether(now: Long, t: TetherInfo) {
         // 比較テスト「使わないときはテザリングを止める」の間は、テザリングの停止を異常としない（利用者が止めるため）
         val testingOff = exp?.candidate?.key == Candidates.KEY_TETHER_OFF
-        if (!prefs.bool(Defs.TETHER_EXPECTED) || testingOff) {
+        // 時間帯スケジュールで止めている間（再開のやり直し中を含む）も異常としない（仕様 F-37）
+        val scheduled = prefs.schedStoppedWindow != 0L
+        if (!prefs.bool(Defs.TETHER_EXPECTED) || testingOff || scheduled) {
             if (tether.episode != null) {
                 tether.reset()
                 tetherDue = null
@@ -390,13 +449,16 @@ class Monitor(private val ctx: Context) {
                 tetherDue = null
                 log(Ev.TETHER, anomaly = step.episode.kind.label, action = "通知")
                 recent(Ev.TETHER, step.episode.kind.label)
-                if (prefs.bool(Defs.NOTIFY_ALERT)) {
-                    Notifier.alert(
-                        ctx, Notifier.ID_TETHER, step.episode.kind.label,
-                        "再起動や自動OFFで止まった可能性があります。テザリングをONにしてください（このアプリからは自動でONにできません）。",
-                        openTether = true,
-                    )
+                val failed = resumeFailed
+                resumeFailed = null
+                val text = if (failed != null) {
+                    "時間帯スケジュールで再開できませんでした（$failed）。テザリングを手動で ON にしてください。"
+                } else {
+                    "再起動や自動OFFで止まった可能性があります。テザリングをONにしてください（このアプリは自動では ON にしません）。"
                 }
+                if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.ID_TETHER, step.episode.kind.label, text, openTether = true)
+                // テザリングが止まってもモバイル回線は使えることが多いので、外へも知らせる（仕様 F-44）
+                ext.post(ExtNotify.Category.ALERT, step.episode.kind.label, text)
             }
             is RecoveryMachine.Step.StillBad -> {
                 tetherDue = null
@@ -412,6 +474,9 @@ class Monitor(private val ctx: Context) {
                 recent(Ev.TETHER, "Wi-Fiテザリング再開")
                 Notifier.cancel(ctx, Notifier.ID_TETHER)
                 if (ep.confirmed && prefs.bool(Defs.NOTIFY_RECOVERY)) Notifier.info(ctx, Notifier.ID_TETHER, "Wi-Fiテザリングが再開しました", "停止していた時間: $dur")
+                if (ep.confirmed) {
+                    ext.post(ExtNotify.Category.RECOVERY, "Wi-Fiテザリングが再開しました", "停止していた時間: $dur（${Fmt.hm(ep.startedAt)}〜${Fmt.hm(now)}）")
+                }
             }
         }
     }
@@ -480,6 +545,8 @@ class Monitor(private val ctx: Context) {
         autoEvaluate(merged)
         noteProfileChange(merged.plug)
         handleAlerts(merged)
+        // 電池の放送は残量・温度が変わるたびに届くので、スマートプラグの判断はここで行う（判断のために端末を起こさない）
+        smartPlug.evaluate(merged, StateStore.state.tether?.wifiOn)
         publish()
         scheduleNext()
         refreshNotification()
@@ -509,6 +576,184 @@ class Monitor(private val ctx: Context) {
         publish()
     }
 
+    // ---- 時間帯スケジュール（仕様 F-37）。チェック・テザリングの放送・設定の変更のたびに判断する ----
+
+    private fun schedEvaluate(t: TetherInfo?) {
+        if (closed) return
+        val enabled = prefs.bool(Defs.TETHER_SCHEDULE)
+        val stopped = prefs.schedStoppedWindow
+        if (!enabled && stopped == 0L) return
+        val now = System.currentTimeMillis()
+        val el = SystemClock.elapsedRealtime()
+        val q = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))
+        val zeroFor = apIdleSince?.let { el - it }
+        val d = TetherSchedule.decide(
+            TetherSchedule.Input(
+                enabled, q, now, t?.wifiOn, t?.clients, zeroFor, stopped, prefs.schedHandledWindow,
+                hold = exp != null || prefs.maintenanceActive(now),
+            ),
+            TimeZone.getDefault(),
+        )
+        val w = d.window
+        // 時間帯が終わったら「止めるのを待っています」の表示を消す
+        if (w == null && schedWaitLogged != 0L) {
+            schedWaitLogged = 0L
+            if (stopped == 0L) schedNote = null
+        }
+        schedIdleDue = null
+        when (d.act) {
+            TetherSchedule.Act.NONE -> Unit
+            TetherSchedule.Act.WAIT -> {
+                // 接続 0 台が 10 分に達する時刻に判断し直す（それまでに端末がつながれば、またそのとき待つ）
+                val idle = apIdleSince
+                if (t?.clients == 0 && idle != null) schedIdleDue = idle + TetherSchedule.MIN_ZERO_MS + 1_000L
+                val why = when (t?.clients) {
+                    null -> "接続端末の数が分からない"
+                    0 -> "接続 0 台になってから 10 分たっていない"
+                    else -> "接続端末が ${t.clients} 台ある"
+                }
+                schedNote = "${why}ため、止めるのを待っています"
+                // 記録は 1 つの時間帯につき 1 回だけ
+                if (w != null && schedWaitLogged != w.first) {
+                    schedWaitLogged = w.first
+                    log(Ev.SCHEDULE, result = "止めるのを待つ（$why）")
+                }
+            }
+            TetherSchedule.Act.ALREADY_OFF -> if (w != null) {
+                prefs.schedHandledWindow = w.first
+                log(Ev.SCHEDULE, result = "時間帯に入った（テザリングはすでに OFF のため何もしない）")
+            }
+            TetherSchedule.Act.STOP -> if (w != null && q != null) schedStop(w, q)
+            TetherSchedule.Act.START -> schedStart(if (enabled) "時間帯の終わり" else "スケジュールを OFF にした")
+            TetherSchedule.Act.CLEAR -> schedCleared()
+        }
+    }
+
+    private fun schedStop(w: Pair<Long, Long>, q: QuietHours) {
+        prefs.schedHandledWindow = w.first
+        val r = TetherControl.stop(ctx)
+        if (r.ok) {
+            prefs.schedStoppedWindow = w.first
+            prefs.schedStoppedAt = System.currentTimeMillis()
+            schedNote = null
+            val text = "テザリングを止めた（${q.endLabel} に再開）"
+            log(Ev.SCHEDULE, result = text)
+            recent(Ev.SCHEDULE, text)
+            Notifier.cancel(ctx, Notifier.ID_SCHEDULE)
+        } else {
+            // この時間帯はもう試さない（許可がないときに何度も記録しない）
+            schedNote = "止められませんでした（${r.text}）"
+            log(Ev.SCHEDULE, anomaly = "テザリングを止められない", result = r.text)
+            recent(Ev.SCHEDULE, "止められない（${r.reason?.label ?: r.text}）")
+            // 夜中に鳴らさないよう、音のないお知らせにする
+            if (prefs.bool(Defs.NOTIFY_ALERT)) {
+                Notifier.silent(
+                    ctx, Notifier.ID_SCHEDULE, "時間帯スケジュール：テザリングを止められませんでした",
+                    "${r.text}\n設定の「使わない時間帯」で、許可と動作を確認してください。", Notifier.settingsAction(ctx),
+                )
+            }
+            ext.post(ExtNotify.Category.ALERT, "時間帯スケジュール：テザリングを止められませんでした", r.text)
+        }
+    }
+
+    private fun schedStart(why: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (resumePending || now < resumeNextAt) return
+        resumePending = true
+        TetherControl.start(ctx) { r ->
+            if (closed) return@start
+            if (r.ok) {
+                log(Ev.SCHEDULE, result = "テザリングの再開を依頼（$why）")
+                // アクセスポイントが ON になったことは放送で確かめる（CLEAR）。90 秒たっても ON でなければ失敗として扱う
+                main.postDelayed({ schedVerify() }, 90_000L)
+            } else {
+                resumePending = false
+                schedResumeFailed(r.text)
+            }
+        }
+    }
+
+    private fun schedVerify() {
+        if (closed || !resumePending) return
+        resumePending = false
+        if (StateStore.state.tether?.wifiOn == true) {
+            schedCleared()
+            publish()
+            refreshNotification()
+            return
+        }
+        schedResumeFailed("アクセスポイントが ON になりませんでした")
+    }
+
+    private fun schedResumeFailed(reason: String) {
+        val delays = TetherSchedule.RETRY_MIN
+        resumeTries++
+        if (resumeTries <= delays.size) {
+            val min = delays[resumeTries - 1]
+            resumeNextAt = SystemClock.elapsedRealtime() + min * 60_000L
+            log(Ev.SCHEDULE, anomaly = "再開に失敗", action = "${min}分後にやり直し（$resumeTries/${delays.size}）", result = reason)
+            scheduleNext()
+            return
+        }
+        // あきらめて、テザリング停止の異常として知らせる（通常の確認・通知の流れに戻す。無限にやり直さない）
+        resumeTries = 0
+        resumeNextAt = 0L
+        prefs.schedStoppedWindow = 0L
+        resumeFailed = reason
+        schedNote = "再開できませんでした（$reason）"
+        log(Ev.SCHEDULE, anomaly = "再開に失敗", action = "やり直しをやめた（手動で ON にしてください）", result = reason)
+        recent(Ev.SCHEDULE, "再開に失敗（$reason）")
+        StateStore.state.tether?.let { if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), it) }
+        publish()
+        scheduleNext()
+        refreshNotification()
+    }
+
+    private fun schedCleared() {
+        val since = prefs.schedStoppedAt
+        prefs.schedStoppedWindow = 0L
+        resumePending = false
+        resumeTries = 0
+        resumeNextAt = 0L
+        schedNote = null
+        val text = "テザリングが ON に戻った" + if (since > 0) "（止めていた時間 ${Fmt.duration(System.currentTimeMillis() - since)}）" else ""
+        log(Ev.SCHEDULE, result = text)
+        recent(Ev.SCHEDULE, text)
+    }
+
+    /** 次にスケジュールを判断し直すまでの時間（ミリ秒）。使っていなければ null */
+    private fun schedDelay(nowWall: Long, nowEl: Long): Long? {
+        val enabled = prefs.bool(Defs.TETHER_SCHEDULE)
+        val stopped = prefs.schedStoppedWindow
+        if (!enabled && stopped == 0L) return null
+        if (resumeNextAt > nowEl) return resumeNextAt - nowEl + 1_000L
+        val due = TetherSchedule.nextDue(enabled, QuietHours.parse(prefs.text(Defs.QUIET_HOURS)), nowWall, stopped, TimeZone.getDefault()) ?: return null
+        // 境目のちょうど後に判断する。接続 0 台が 10 分に達するのを待っているなら、その時刻にも判断し直す
+        val boundary = (due - nowWall).coerceAtLeast(0) + 2_000L
+        return schedIdleDue?.let { minOf(boundary, (it - nowEl).coerceAtLeast(0)) } ?: boundary
+    }
+
+    // ---- スマートプラグ（仕様 F-45） ----
+
+    private fun onPlugEvent(e: PlugSwitch.Event) {
+        if (closed) return
+        when (e.level) {
+            PlugSwitch.Level.INFO -> log(Ev.PLUG, result = e.text, detail = e.detail)
+            PlugSwitch.Level.ALERT -> {
+                log(Ev.PLUG, anomaly = e.text, result = e.detail)
+                if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.ID_PLUG, e.text, e.detail.orEmpty(), extra = Notifier.settingsAction(ctx))
+                ext.post(ExtNotify.Category.ALERT, e.text, e.detail.orEmpty())
+            }
+            PlugSwitch.Level.CLEAR -> {
+                log(Ev.PLUG, result = e.text)
+                Notifier.cancel(ctx, Notifier.ID_PLUG)
+            }
+        }
+        recent(Ev.PLUG, e.text)
+        publish()
+        refreshNotification()
+    }
+
     // ---- 待機（仕様 F-32）。接続 0 台が続いたか ----
 
     private fun noteZero(t: TetherInfo?) {
@@ -518,6 +763,8 @@ class Monitor(private val ctx: Context) {
             t.wifiOn == false || t.clients == 0 -> zeroSince ?: now
             else -> null // 接続あり、または台数が分からない（待機にしない）
         }
+        // 時間帯スケジュール用。テザリングが ON のまま 0 台のときだけ数える（OFF の間は数えない）
+        apIdleSince = if (t.wifiOn == true && t.clients == 0) apIdleSince ?: now else null
     }
 
     fun onScreen(on: Boolean) {
@@ -552,6 +799,7 @@ class Monitor(private val ctx: Context) {
                 recent(Ev.ALERT, "${a.label}（$value）")
                 if (a == DeviceAlert.TEMP_CRIT) Notifier.cancel(ctx, Notifier.deviceId(DeviceAlert.TEMP_WARN))
                 if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.deviceId(a), "${a.label}（$value）", advice(a))
+                ext.post(ExtNotify.Category.ALERT, "${a.label}（$value）", advice(a))
             } else {
                 log(Ev.ALERT_CLEAR, anomaly = a.label, result = value)
                 recent(Ev.ALERT_CLEAR, a.label)
@@ -585,6 +833,7 @@ class Monitor(private val ctx: Context) {
             if (prefs.bool(Defs.NOTIFY_ALERT)) {
                 Notifier.alert(ctx, Notifier.deviceId(a), "${a.label}（$value）", advice(a), extra = Notifier.placementAction(ctx))
             }
+            ext.post(ExtNotify.Category.ALERT, "${a.label}（$value）", advice(a))
         } else {
             log(Ev.ALERT_CLEAR, anomaly = a.label, result = value)
             recent(Ev.ALERT_CLEAR, a.label)
@@ -675,7 +924,8 @@ class Monitor(private val ctx: Context) {
         bootDue = null
         prefs.lastBootCheckAt = System.currentTimeMillis()
         val actions = ArrayList<String>()
-        if (pr.tether.wifiOn == false) {
+        val schedStopped = prefs.schedStoppedWindow != 0L
+        if (pr.tether.wifiOn == false && !schedStopped) {
             actions.add("Wi-Fiテザリングが OFF です（手動でONにしてください）")
             // この通知で知らせるので、テザリング停止の通知は重ねて出さない
             tether.markNotified(pr.check.at)
@@ -686,16 +936,28 @@ class Monitor(private val ctx: Context) {
         if (pr.tether.autoOff == true) actions.add("アクセスポイントの自動OFFが有効です")
         if (pr.power.powerSave == true) actions.add("バッテリーセーバーが ON です")
         val pending = pr.check.failure?.let { "回線: ${it.label}（再確認中）" }
+        // 時間帯スケジュールで止めている間に再起動した場合は、時間帯の終わりに再開する（異常ではない）
+        val schedNoteText = if (schedStopped && pr.tether.wifiOn == false) {
+            "時間帯スケジュールで停止中（${QuietHours.parse(prefs.text(Defs.QUIET_HOURS))?.endLabel ?: "時間帯の終わり"} に再開）"
+        } else {
+            null
+        }
         val lines = actions + listOfNotNull(pending)
         log(
             Ev.BOOT_CHECK,
             result = if (lines.isEmpty()) "問題なし" else "要確認 ${lines.size}件",
-            detail = lines.joinToString(" / ").ifEmpty { null },
+            detail = (lines + listOfNotNull(schedNoteText)).joinToString(" / ").ifEmpty { null },
         )
         recent(Ev.BOOT_CHECK, if (lines.isEmpty()) "問題なし" else "要確認 ${lines.size}件")
+        // 再起動したことは、離れた場所の管理者には大事な情報なので外へも送る（仕様 F-44）
+        if (actions.isEmpty()) {
+            ext.post(ExtNotify.Category.RECOVERY, "再起動しました（起動後チェック：問題なし）", listOfNotNull(pending, schedNoteText).joinToString("\n").ifEmpty { "テザリング・回線・設定の状態は正常です" })
+        } else {
+            ext.post(ExtNotify.Category.ALERT, "再起動しました（起動後チェック：要確認）", lines.joinToString("\n"))
+        }
         if (!prefs.bool(Defs.NOTIFY_BOOT)) return
         if (actions.isEmpty()) {
-            Notifier.info(ctx, Notifier.ID_BOOT, "起動後チェック：問題なし", pending ?: "テザリング・回線・設定の状態は正常です")
+            Notifier.info(ctx, Notifier.ID_BOOT, "起動後チェック：問題なし", listOfNotNull(pending, schedNoteText).joinToString("\n").ifEmpty { "テザリング・回線・設定の状態は正常です" })
         } else {
             Notifier.alert(ctx, Notifier.ID_BOOT, "起動後チェック：要確認", lines.joinToString("\n"), openTether = pr.tether.wifiOn == false)
         }
@@ -717,6 +979,12 @@ class Monitor(private val ctx: Context) {
         }
         // 自動切り替えを OFF にしたら、自動で変えていた設定を元に戻す
         autoEvaluate(StateStore.state.power)
+        // スケジュールを OFF にしたら、止めていたテザリングを再開する（時間帯を変えたときも判断し直す）
+        schedWaitLogged = 0L
+        schedEvaluate(StateStore.state.tether)
+        // スマートプラグを OFF にしたら、止めていた給電を ON に戻す
+        if (prefs.bool(Defs.PLUG)) smartPlug.evaluate(StateStore.state.power, StateStore.state.tether?.wifiOn) else smartPlug.release("設定で OFF")
+        if (!prefs.bool(Defs.EXT_NOTIFY)) ext.clear() else ext.flush()
         updateWeb(StateStore.state.tether)
         publish()
         scheduleNext()
@@ -759,7 +1027,8 @@ class Monitor(private val ctx: Context) {
         val nowWall = System.currentTimeMillis()
         val nowEl = SystemClock.elapsedRealtime()
         val delay = if (prefs.maintenanceActive(nowWall)) {
-            prefs.maintUntil - nowWall
+            // メンテナンス中もスケジュールの再開だけは時刻どおりに行う
+            minOf(prefs.maintUntil - nowWall, schedDelay(nowWall, nowEl) ?: Long.MAX_VALUE)
         } else {
             val interval = StateStore.state.intervalMin * 60_000L
             val base = if (lastCheckElapsed == 0L) 5_000L else lastCheckElapsed + interval - nowEl
@@ -767,7 +1036,7 @@ class Monitor(private val ctx: Context) {
             val expDelay = exp?.takeIf { it.measuring && StateStore.state.power?.plug == Plug.NONE }?.let { e ->
                 (e.remainingSec - meter.openBatterySec(e.condition)).coerceAtLeast(0) * 1000L + 5_000L
             }
-            listOfNotNull(base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl), expDelay).min()
+            listOfNotNull(base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl), expDelay, schedDelay(nowWall, nowEl)).min()
         }
         val at = Scheduler.schedule(ctx, delay)
         StateStore.update { it.copy(nextCheckAt = at) }
@@ -822,6 +1091,26 @@ class Monitor(private val ctx: Context) {
             saverOn = prefs.autoSaverApplied,
             dozeOn = prefs.autoDozeApplied,
         )
+        val stoppedWindow = prefs.schedStoppedWindow
+        val quiet = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))
+        val schedView = if (prefs.bool(Defs.TETHER_SCHEDULE) || stoppedWindow != 0L) {
+            StateStore.SchedView(
+                enabled = prefs.bool(Defs.TETHER_SCHEDULE), permitted = TetherControl.permitted(ctx), quiet = quiet?.label,
+                stoppedUntil = if (stoppedWindow != 0L) quiet?.endLabel ?: "まもなく" else null, note = schedNote,
+            )
+        } else {
+            null
+        }
+        val plugView = if (prefs.bool(Defs.PLUG)) {
+            val low = prefs.int(Defs.PLUG_LOW)
+            StateStore.PlugView(
+                smartPlug.want?.on, smartPlug.want?.why?.label,
+                "$low〜${PlugPolicy.high(PlugPolicy.Config(low, prefs.int(Defs.PLUG_HIGH), 0, 0, 0))}%", smartPlug.lastResult, smartPlug.stuck,
+            )
+        } else {
+            null
+        }
+        val extView = if (prefs.bool(Defs.EXT_NOTIFY)) StateStore.ExtView(ExtNotify.parse(prefs.text(Defs.EXT_URL))?.label, ext.pending, ext.lastResult) else null
         val total = prefs.recheckDelaysMin.size
         val up = upstream.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, minOf(it.rechecks + 1, total), total, it.confirmed) }
         val te = tether.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, 1, 1, it.confirmed) }
@@ -840,7 +1129,7 @@ class Monitor(private val ctx: Context) {
                 mode = mode, base = base, effective = eff, intervalMin = interval, maintUntil = maintUntil,
                 upstream = up, tetherIssue = te, meter = meterView, experiment = expView,
                 alerts = alerts.active.toSet() + listOfNotNull(DeviceAlert.SIGNAL_WEAK.takeIf { signal.active }),
-                auto = autoView, idleReason = reason?.label,
+                auto = autoView, idleReason = reason?.label, sched = schedView, plug = plugView, ext = extView,
             )
         }
     }

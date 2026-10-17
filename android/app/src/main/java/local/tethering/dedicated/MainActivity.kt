@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private lateinit var vShared: TextView
     private lateinit var vClients: TextView
     private lateinit var vAutoOff: TextView
+    private lateinit var vSched: TextView
     private lateinit var vWeb: TextView
 
     private lateinit var vSim: TextView
@@ -66,6 +67,7 @@ class MainActivity : Activity() {
 
     private lateinit var vBattery: TextView
     private lateinit var vPlug: TextView
+    private lateinit var vSmartPlug: TextView
     private lateinit var vTemp: TextView
     private lateinit var vThermal: TextView
     private lateinit var vSoc: TextView
@@ -164,6 +166,7 @@ class MainActivity : Activity() {
             vShared = Ui.kv(c, "共有中")
             vClients = Ui.kv(c, "接続端末")
             vAutoOff = Ui.kv(c, "自動OFF設定")
+            vSched = Ui.kv(c, "時間帯スケジュール")
             vWeb = Ui.kv(c, "管理画面（接続端末から）")
             Ui.button(c, "テザリング設定を開く") { SystemScreens.tether(this) }
         }
@@ -202,6 +205,7 @@ class MainActivity : Activity() {
             vRemaining = Ui.kv(c, "推定残り時間")
             vBattery = Ui.kv(c, "電池")
             vPlug = Ui.kv(c, "給電")
+            vSmartPlug = Ui.kv(c, "スマートプラグ")
             vTemp = Ui.kv(c, "電池温度")
             vThermal = Ui.kv(c, "熱状態")
             vSoc = Ui.kv(c, "SoC温度（参考）")
@@ -259,7 +263,7 @@ class MainActivity : Activity() {
             Ui.buttonRow(c, "設定" to { startActivity(Intent(this, SettingsActivity::class.java)) }, "設定ガイド" to { startActivity(Intent(this, GuideActivity::class.java)) })
             Ui.button(c, "診断情報") { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
             monitorButton = Ui.button(c, "監視を停止") { toggleMonitoring() }
-            Ui.small(c, "このアプリはOS標準のテザリング機能を変更しません。状態の確認・記録・通知だけを行います。")
+            Ui.small(c, "このアプリは、時間帯スケジュールを ON にしたときだけテザリングを止め・再開します。それ以外はOS標準のテザリング機能を変更せず、状態の確認・記録・通知だけを行います。")
         }
     }
 
@@ -313,6 +317,14 @@ class MainActivity : Activity() {
             true -> "ON（接続がないと停止）⚠"
             null -> "未設定（AOSPの既定はON）"
         }
+        vSched.text = s.sched?.let { sc ->
+            when {
+                sc.stoppedUntil != null -> "停止中（${sc.stoppedUntil} に再開）"
+                !sc.permitted -> "許可がないため動きません ⚠"
+                sc.quiet == null -> "時間帯が未設定です ⚠"
+                else -> "${sc.quiet} は止める（接続 0 台が 10 分続いたら）" + (sc.note?.let { "\n$it" } ?: "")
+            }
+        } ?: "使わない"
         vWeb.text = when {
             !prefs.bool(Defs.WEB) -> "OFF（設定）"
             s.web == null -> "－"
@@ -385,6 +397,14 @@ class MainActivity : Activity() {
         }
         vBattery.text = p?.let { "${Fmt.num(it.levelPct, "%")}" + if (it.charging == true) "・充電中" else "" } ?: Fmt.NA
         vPlug.text = p?.plug?.label ?: Fmt.NA
+        vSmartPlug.text = s.plug?.let { sp ->
+            val target = when (sp.want) {
+                true -> "給電 ON（${sp.why}）"
+                false -> "給電 OFF（${sp.why}）"
+                null -> "まだ切り替えていません"
+            }
+            target + if (sp.stuck) "\n⚠ 給電の状態が目標と合いません" else "\n範囲 ${sp.range}"
+        } ?: "使わない"
         vTemp.text = Fmt.temp(p?.tempC)
         vThermal.text = Fmt.thermal(p?.thermalStatus)
         vSoc.text = p?.let { pw -> pw.socTempC?.let { Fmt.temp(it) + (pw.socZone?.let { z -> "（$z）" } ?: "") } } ?: Fmt.NA
@@ -449,6 +469,13 @@ class MainActivity : Activity() {
         }
         if (DeviceAlert.SIGNAL_WEAK in StateStore.state.alerts) {
             items.add(Triple("電波が悪化しています。置き場所を見直すと消費と発熱が減ります。", "設置場所アシスト") { startActivity(Intent(this, PlacementActivity::class.java)) })
+        }
+        val sched = StateStore.state.sched
+        if (sched != null && sched.enabled && !sched.permitted) {
+            items.add(Triple("時間帯スケジュールが ON ですが、「システム設定の変更」が許可されていないため、テザリングを止められません。", "許可する") { SystemScreens.writeSettings(this) })
+        }
+        if (StateStore.state.plug?.stuck == true) {
+            items.add(Triple("スマートプラグで給電を切り替えられません。プラグの電源・ネットワーク・ケーブルを確認してください。", "設定を開く") { startActivity(Intent(this, SettingsActivity::class.java)) })
         }
         val key = items.joinToString("|") { it.first }
         if (key == bannerKey) return

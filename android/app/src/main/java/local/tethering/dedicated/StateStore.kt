@@ -53,9 +53,45 @@ object StateStore {
         val dozeOn: Boolean,
     )
 
+    /** 時間帯スケジュール（仕様 F-37）の状態 */
+    data class SchedView(
+        val enabled: Boolean,
+        /** 「システム設定の変更」が許可されている */
+        val permitted: Boolean,
+        /** 使わない時間帯（例: 1:00〜6:00）。未設定なら null */
+        val quiet: String?,
+        /** このアプリがテザリングを止めている間の再開時刻（例: 6:00） */
+        val stoppedUntil: String?,
+        /** 止めるのを待っている理由・失敗の説明 */
+        val note: String?,
+    )
+
+    /** スマートプラグ（仕様 F-45）の状態 */
+    data class PlugView(
+        /** 給電の目標（null = まだ決めていない） */
+        val want: Boolean?,
+        val why: String?,
+        /** 給電を始める〜止める残量（例: 40〜80%） */
+        val range: String,
+        val lastResult: String?,
+        /** 送り直しても給電の状態が目標と合わない */
+        val stuck: Boolean,
+    )
+
+    /** 外部への通知（仕様 F-44）の状態 */
+    data class ExtView(
+        /** 送り先（例: ntfy（ntfy.sh））。URL が正しくなければ null */
+        val dest: String?,
+        val pending: Int,
+        val lastResult: String?,
+    )
+
     data class State(
         val meter: MeterView? = null,
         val auto: AutoView? = null,
+        val sched: SchedView? = null,
+        val plug: PlugView? = null,
+        val ext: ExtView? = null,
         /** 待機中（チェック間隔を長くしている）の理由（仕様 F-32）。待機していなければ null */
         val idleReason: String? = null,
         val experiment: ExperimentView? = null,
@@ -82,7 +118,7 @@ object StateStore {
             !running -> Overall.STOPPED
             maintUntil > now -> Overall.MAINT
             upstream?.confirmed == true || tetherIssue?.confirmed == true -> Overall.ERROR
-            upstream != null || tetherIssue != null || alerts.isNotEmpty() -> Overall.WARN
+            upstream != null || tetherIssue != null || alerts.isNotEmpty() || plug?.stuck == true -> Overall.WARN
             power?.dataSaver == true -> Overall.WARN
             check == null -> Overall.UNKNOWN
             check.failure != null -> Overall.WARN

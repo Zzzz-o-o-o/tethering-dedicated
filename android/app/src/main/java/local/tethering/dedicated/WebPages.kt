@@ -128,9 +128,10 @@ object WebPages {
             card(
                 "テザリング",
                 kv(
-                    listOf(
+                    listOfNotNull(
                         "Wi-Fiテザリング" to t?.let { Fmt.ap(it.apState) },
                         "接続端末" to t?.clients?.let { "${it}台" },
+                        s.sched?.let { sc -> "時間帯スケジュール" to (sc.quiet?.let { "$it は止める（接続 0 台が 10 分続いたら）" } ?: "時間帯が未設定") },
                     ),
                 ),
             ),
@@ -171,9 +172,13 @@ object WebPages {
             card(
                 "電源",
                 kv(
-                    listOf(
+                    listOfNotNull(
                         "電池" to p?.let { Fmt.num(it.levelPct, "%") + if (it.charging == true) "・充電中" else "" },
                         "給電" to p?.plug?.label,
+                        s.plug?.let { sp ->
+                            "スマートプラグ" to (sp.want?.let { w -> "給電 ${if (w) "ON" else "OFF"}（${sp.why}）" } ?: "まだ切り替えていません") +
+                                "・範囲 ${sp.range}" + if (sp.stuck) "・⚠ 給電の状態が合いません" else ""
+                        },
                         "電池温度" to Fmt.temp(p?.tempC),
                         "消費（直近）" to when {
                             p == null -> "－"
@@ -320,6 +325,8 @@ object WebPages {
             "alerts" to s.alerts.map { it.label },
             "nextCheck" to s.nextCheckAt.takeIf { it > 0 }?.let { Fmt.dateTime(it) },
             "tether" to Json.Raw(Json.obj("state" to s.tether?.let { Fmt.ap(it.apState) }, "clients" to s.tether?.clients)),
+            "schedule" to s.sched?.let { Json.Raw(Json.obj("enabled" to it.enabled, "quietHours" to it.quiet, "stoppedUntil" to it.stoppedUntil)) },
+            "smartPlug" to s.plug?.let { Json.Raw(Json.obj("want" to it.want, "reason" to it.why, "range" to it.range, "stuck" to it.stuck)) },
             "mobile" to Json.Raw(
                 Json.obj(
                     "type" to l?.signalType, "band" to l?.band, "rsrp" to l?.rsrp, "rsrq" to l?.rsrq, "sinr" to l?.sinr,

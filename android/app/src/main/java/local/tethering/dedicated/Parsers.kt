@@ -8,7 +8,7 @@ object Parsers {
      * 形式: `IP address  HW type  Flags  HW address  Mask  Device`。
      * Flags 0x0（未解決）と 00:00:00:00:00:00 は除き、MAC アドレスで重複を除く（MAC 自体は保存しない）。
      */
-    fun countArp(lines: List<String>, iface: String?): Int {
+    fun countArp(lines: List<String>, iface: String?, exclude: Set<String> = emptySet()): Int {
         val macs = HashSet<String>()
         for (line in lines.drop(1)) {
             val c = line.trim().split(Regex("\\s+"))
@@ -17,7 +17,7 @@ object Parsers {
             val mac = c[3].lowercase()
             val dev = c[5]
             if (flags == "0x0" || mac == "00:00:00:00:00:00") continue
-            if (!matchesIface(dev, iface)) continue
+            if (!matchesIface(dev, iface) || c[0] in exclude) continue
             macs.add(mac)
         }
         return macs.size
@@ -26,9 +26,9 @@ object Parsers {
     /**
      * `ip neigh show` の出力から数える。
      * 例: `192.168.43.57 dev ap0 lladdr aa:bb:cc:dd:ee:ff REACHABLE`
-     * FAILED / INCOMPLETE は数えない。
+     * FAILED / INCOMPLETE は数えない。[exclude] の IP アドレス（常時つながるスマートプラグなど）も数えない。
      */
-    fun countNeigh(output: String, iface: String?): Int {
+    fun countNeigh(output: String, iface: String?, exclude: Set<String> = emptySet()): Int {
         val macs = HashSet<String>()
         for (raw in output.lines()) {
             val c = raw.trim().split(Regex("\\s+"))
@@ -37,7 +37,7 @@ object Parsers {
             if (devIdx < 0 || devIdx + 1 >= c.size || macIdx < 0 || macIdx + 1 >= c.size) continue
             val state = c.last().uppercase()
             if (state == "FAILED" || state == "INCOMPLETE") continue
-            if (!matchesIface(c[devIdx + 1], iface)) continue
+            if (!matchesIface(c[devIdx + 1], iface) || c[0] in exclude) continue
             macs.add(c[macIdx + 1].lowercase())
         }
         return macs.size

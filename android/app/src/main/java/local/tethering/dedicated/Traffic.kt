@@ -5,11 +5,25 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
-/** 使わない時間帯（例: 1-6 は 1:00〜6:00、23-5 は日をまたぐ）。終わりの時刻は含まない */
-data class QuietHours(val startHour: Int, val endHour: Int) {
-    val label: String get() = "$startHour:00〜$endHour:00"
+/**
+ * 使わない時間帯（例: 1-6 は 1:00〜6:00、23-5 は日をまたぐ、1:30-6:00 のように分も指定できる）。終わりの時刻は含まない。
+ * 待機中の通信（仕様 F-33）と時間帯スケジュール（F-37）で共通に使う
+ */
+data class QuietHours(val startHour: Int, val endHour: Int, val startMinute: Int = 0, val endMinute: Int = 0) {
+    private val startOfDay: Int get() = startHour * 60 + startMinute
+    private val endOfDay: Int get() = endHour * 60 + endMinute
 
-    fun contains(hour: Int): Boolean = if (startHour < endHour) hour in startHour until endHour else hour >= startHour || hour < endHour
+    val label: String get() = "$startHour:${pad(startMinute)}〜$endHour:${pad(endMinute)}"
+
+    /** 終わりの時刻（例: 6:00） */
+    val endLabel: String get() = "$endHour:${pad(endMinute)}"
+
+    /** その日の分（0〜1439）が時間帯に入るか */
+    fun containsMinute(minuteOfDay: Int): Boolean =
+        if (startOfDay < endOfDay) minuteOfDay in startOfDay until endOfDay else minuteOfDay >= startOfDay || minuteOfDay < endOfDay
+
+    /** 時間帯別の集計用。その時（0〜23）の半ば（h:30）が時間帯に入るか（「1-6」なら 1〜5 時） */
+    fun contains(hour: Int): Boolean = containsMinute(hour * 60 + 30)
 
     /** [from, to) と重なる時間帯の [開始, 終了)（ミリ秒・古い順） */
     fun windowsOverlapping(from: Long, to: Long, tz: TimeZone): List<Pair<Long, Long>> {
@@ -23,10 +37,14 @@ data class QuietHours(val startHour: Int, val endHour: Int) {
             add(Calendar.DAY_OF_MONTH, -1)
         }
         while (day.timeInMillis < to) {
-            val start = (day.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY, startHour) }.timeInMillis
+            val start = (day.clone() as Calendar).apply {
+                set(Calendar.HOUR_OF_DAY, startHour)
+                set(Calendar.MINUTE, startMinute)
+            }.timeInMillis
             val end = (day.clone() as Calendar).apply {
-                if (endHour <= startHour) add(Calendar.DAY_OF_MONTH, 1)
+                if (endOfDay <= startOfDay) add(Calendar.DAY_OF_MONTH, 1)
                 set(Calendar.HOUR_OF_DAY, endHour)
+                set(Calendar.MINUTE, endMinute)
             }.timeInMillis
             if (start < to && end > from) out.add(start to end)
             day.add(Calendar.DAY_OF_MONTH, 1)
@@ -34,19 +52,31 @@ data class QuietHours(val startHour: Int, val endHour: Int) {
         return out
     }
 
-    companion object {
-        /** 区切りは「-」のほか、日本語入力で入りやすい「〜」「～」「ー」「−」も受け付ける */
-        private val PATTERN = Regex("""^(\d{1,2})\s*[-〜~～ー−]\s*(\d{1,2})$""")
+    /** [now] を含む時間帯の [開始, 終了)。時間帯の外なら null */
+    fun windowAt(now: Long, tz: TimeZone): Pair<Long, Long>? = windowsOverlapping(now, now + 1, tz).firstOrNull { now >= it.first && now < it.second }
 
-        /** 「1-6」「23-5」など。空欄・不正な値は null */
+    /** [now] より後で、いちばん近い時間帯の開始 */
+    fun nextStart(now: Long, tz: TimeZone): Long? = windowsOverlapping(now, now + 2 * DAY_MS, tz).map { it.first }.firstOrNull { it > now }
+
+    companion object {
+        private const val DAY_MS = 24 * 3_600_000L
+
+        /** 区切りは「-」のほか、日本語入力で入りやすい「〜」「～」「ー」「−」も受け付ける。分の区切りは「:」「：」 */
+        private val PATTERN = Regex("""^(\d{1,2})(?:[:：](\d{2}))?\s*[-〜~～ー−]\s*(\d{1,2})(?:[:：](\d{2}))?$""")
+
+        private fun pad(m: Int) = m.toString().padStart(2, '0')
+
+        /** 「1-6」「23-5」「1:30-6:00」など。空欄・不正な値は null */
         fun parse(s: String?): QuietHours? {
             val m = PATTERN.find(s?.trim().orEmpty()) ?: return null
             val a = m.groupValues[1].toInt()
-            val b = m.groupValues[2].toInt()
-            if (a !in 0..23 || b !in 0..24) return null
+            val am = m.groupValues[2].ifEmpty { "0" }.toInt()
+            val b = m.groupValues[3].toInt()
+            val bm = m.groupValues[4].ifEmpty { "0" }.toInt()
+            if (a !in 0..23 || b !in 0..24 || am !in 0..59 || bm !in 0..59 || (b == 24 && bm != 0)) return null
             val end = b % 24
-            if (a == end) return null
-            return QuietHours(a, end)
+            if (a * 60 + am == end * 60 + bm) return null
+            return QuietHours(a, end, am, bm)
         }
     }
 }
