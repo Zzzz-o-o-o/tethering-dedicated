@@ -54,6 +54,12 @@ class DebugReceiver : BroadcastReceiver() {
                 MonitorService.send(ctx, MonitorService.ACTION_CHECK_NOW)
                 out("チェックを依頼")
             }
+            // 月の通信量を差し替えてチェックする（--el bytes N。bytes を付けなければ差し替えをやめる）
+            "cap_fake" -> {
+                MonthUsage.debugOverride = if (intent.hasExtra("bytes")) intent.getLongExtra("bytes", 0L) else null
+                MonitorService.send(ctx, MonitorService.ACTION_CHECK_NOW)
+                out("月の通信量=${MonthUsage.debugOverride}")
+            }
             "state" -> {
                 val s = StateStore.state
                 val p = Prefs(ctx)
@@ -64,6 +70,7 @@ class DebugReceiver : BroadcastReceiver() {
                 out("sched=${s.sched} stoppedWindow=${p.schedStoppedWindow} handled=${p.schedHandledWindow}")
                 out("plugView=${s.plug} want=${p.plugWant}")
                 out("ext=${s.ext} queue=${p.extQueueJson}")
+                out("cap=${s.cap} cycle=${p.capCycle} notified=${p.capNotified} stopped=${p.capStoppedCycle} handled=${p.capHandledCycle} block=${BootTether.blockedUntil(ctx)}")
                 out("tetherIssue=${s.tetherIssue} upstream=${s.upstream} alerts=${s.alerts}")
             }
             // ファイルに書き出す設定（通知先の URL などが含まれないことの確認）

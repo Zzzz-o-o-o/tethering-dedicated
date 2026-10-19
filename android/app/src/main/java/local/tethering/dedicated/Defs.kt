@@ -55,6 +55,8 @@ private object U {
     val TIMES = Tx("回", " times", " fois")
     val DBM = Tx("dBm", " dBm", " dBm")
     val DB = Tx("dB", " dB", " dB")
+    val GB = Tx("GB", " GB", " Go")
+    val DAY_OF_MONTH = Tx("日", "", "")
 }
 
 /**
@@ -378,6 +380,43 @@ object Defs {
             "Seul le nombre est compté ; les adresses MAC, etc. ne sont pas enregistrées",
         ),
     )
+    /** 月の通信量の上限（v0.8.0。DataCap） */
+    val DATA_CAP = BoolDef(
+        "data_cap",
+        Tx("月の通信量の上限を使う", "Use a monthly data cap", "Utiliser un plafond de données mensuel"), false,
+        Tx(
+            "今月のモバイル通信量（テザリングの分を含む。OS の「データ使用量」と同じ数え方）が上限の 80% と 100% になったら知らせます。" +
+                "「使用状況へのアクセス」の許可が必要です。OS の「データ上限」（モバイルデータそのものを止める）とは別の機能です",
+            "Notifies when this month's mobile data (including the hotspot, counted like the system's “Data usage”) reaches 80% and 100% of the cap. " +
+                "Requires “Usage access”. This is separate from the system's “Data limit”, which turns off mobile data itself",
+            "Avertit quand les données mobiles du mois (point d'accès compris, comptées comme dans « Consommation des données » du système) atteignent 80 % et 100 % du plafond. " +
+                "Nécessite « Accès aux données d'utilisation ». C'est distinct de la « Limite de données » du système, qui coupe les données mobiles elles-mêmes",
+        ),
+    )
+    val DATA_CAP_GB = IntDef(
+        "data_cap_gb", Tx("月の上限", "Monthly cap", "Plafond mensuel"), 50, 1, 2000, U.GB,
+        Tx("1 GB = 1024 MB", "1 GB = 1024 MB", "1 Go = 1024 Mo"),
+    )
+    val DATA_CAP_DAY = IntDef(
+        "data_cap_day", Tx("毎月の数え始める日", "Count from this day each month", "Décompte à partir de ce jour chaque mois"), 1, 1, 28, U.DAY_OF_MONTH,
+        Tx(
+            "料金プランの締め日の翌日（月末締めなら 1）", "The day after your plan's billing cutoff (1 if it resets at the start of the month)",
+            "Le lendemain de la date de clôture de votre forfait (1 s'il repart en début de mois)",
+        ),
+    )
+    val DATA_CAP_STOP = BoolDef(
+        "data_cap_stop",
+        Tx("上限を超えたらテザリングを止める", "Turn off the hotspot when the cap is exceeded", "Arrêter le point d'accès quand le plafond est dépassé"), false,
+        Tx(
+            "次の期間の始まりに再開します（このアプリが止めたときだけ）。止めている間に手で ON にしたら、その期間はもう止めません。再起動しても、その期間は ON にしません。" +
+                "「システム設定の変更」の許可が必要です",
+            "It's turned back on when the next period starts (only if this app turned it off). If you turn it on by hand while it's off, it isn't turned off again in that period. It stays off after a reboot until the period ends. " +
+                "Requires the “Modify system settings” permission",
+            "Il est réactivé au début de la période suivante (seulement si cette application l'a arrêté). Si vous l'activez à la main pendant l'arrêt, il n'est plus arrêté durant cette période. Il reste arrêté après un redémarrage jusqu'à la fin de la période. " +
+                "Nécessite l'autorisation « Modifier les paramètres système »",
+        ),
+    )
+
     /** 起動時にテザリングを ON にする（v0.7.0。BootTether） */
     val TETHER_ON_BOOT = BoolDef(
         "tether_on_boot",
@@ -468,11 +507,11 @@ object Defs {
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
         SIGNAL_WEAK_RSRP, SIGNAL_DROP_DB, IDLE_TRAFFIC_MB, QUIET_TRAFFIC_MB, WEB_PORT,
         AUTO_SAVER_PCT, IDLE_INTERVAL, IDLE_BATT,
-        PLUG_LOW, PLUG_HIGH, PLUG_HOT, PLUG_FLIPBACK,
+        PLUG_LOW, PLUG_HIGH, PLUG_HOT, PLUG_FLIPBACK, DATA_CAP_GB, DATA_CAP_DAY,
     )
     val bools = listOf(
         HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE,
-        TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG, TETHER_ON_BOOT,
+        TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG, TETHER_ON_BOOT, DATA_CAP, DATA_CAP_STOP,
     )
     val texts = listOf(URL, RECHECK, QUIET_HOURS, EXT_URL, PLUG_KIND, PLUG_HOST, PLUG_ON_URL, PLUG_OFF_URL)
 

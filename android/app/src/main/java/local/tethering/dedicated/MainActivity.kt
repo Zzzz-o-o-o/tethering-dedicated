@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     private lateinit var vBand: TextView
     private lateinit var vBandwidth: TextView
     private lateinit var vRoaming: TextView
+    private lateinit var vMonth: TextView
 
     private lateinit var vReg: TextView
     private lateinit var vIp: TextView
@@ -97,7 +98,7 @@ class MainActivity : Activity() {
         prefs = Prefs(this)
         build()
         if (prefs.monitoring) MonitorService.send(this, MonitorService.ACTION_START)
-        askPhonePermissionOnce()
+        if (!openSetupOnce()) askPhonePermissionOnce()
         handleIntent(intent)
     }
 
@@ -182,6 +183,7 @@ class MainActivity : Activity() {
             vBand = Ui.kv(c, tr("バンド", "Band", "Bande"))
             vBandwidth = Ui.kv(c, tr("帯域幅", "Bandwidth", "Largeur de bande"))
             vRoaming = Ui.kv(c, tr("ローミング・機内モード", "Roaming, airplane mode", "Itinérance, mode avion"))
+            vMonth = Ui.kv(c, tr("今月の通信量（上限）", "This month's data (cap)", "Données du mois (plafond)"))
             Ui.buttonRow(
                 c,
                 tr("設置場所アシスト", "Placement assistant", "Assistant d'emplacement") to { startActivity(Intent(this, PlacementActivity::class.java)) },
@@ -251,6 +253,7 @@ class MainActivity : Activity() {
 
         Ui.card(page).also { c ->
             Ui.heading(c, tr("操作", "Actions", "Actions"))
+            Ui.button(c, tr("はじめの設定", "Initial setup", "Configuration initiale")) { startActivity(Intent(this, SetupActivity::class.java)) }
             Ui.buttonRow(
                 c,
                 tr("比較テスト", "Comparison test", "Test comparatif") to { startActivity(Intent(this, ExperimentActivity::class.java)) },
@@ -273,9 +276,9 @@ class MainActivity : Activity() {
             Ui.small(
                 c,
                 tr(
-                    "このアプリがテザリングを切り替えるのは、設定で「起動時に Wi-Fiテザリングを ON にする」（起動時に ON）か時間帯スケジュール（止める・再開する）を ON にしたときだけです。それ以外はOS標準のテザリング機能を変更せず、状態の確認・記録・通知だけを行います。",
-                    "This app switches the hotspot only if you turn on “Turn on the Wi-Fi hotspot at startup” (on at startup) or the quiet-hours schedule (off and back on) in Settings. Otherwise it never changes the system's hotspot; it only checks, records and notifies.",
-                    "Cette application ne commande le point d'accès que si vous activez « Activer le point d'accès Wi-Fi au démarrage » (activation au démarrage) ou la planification des heures d'inactivité (arrêt et réactivation) dans les paramètres. Sinon, elle ne modifie jamais le point d'accès du système : elle vérifie, enregistre et notifie seulement.",
+                    "このアプリがテザリングを切り替えるのは、設定で「起動時に Wi-Fiテザリングを ON にする」・時間帯スケジュール・「上限を超えたらテザリングを止める」を ON にしたときと、「はじめの設定」の「今すぐ ON にする」を押したときだけです。それ以外はOS標準のテザリング機能を変更せず、状態の確認・記録・通知だけを行います。",
+                    "This app switches the hotspot only if you turn on “Turn on the Wi-Fi hotspot at startup”, the quiet-hours schedule or “Turn off the hotspot when the cap is exceeded” in Settings, or tap “Turn on now” in Initial setup. Otherwise it never changes the system's hotspot; it only checks, records and notifies.",
+                    "Cette application ne commande le point d'accès que si vous activez « Activer le point d'accès Wi-Fi au démarrage », la planification ou « Arrêter le point d'accès quand le plafond est dépassé » dans les paramètres, ou si vous touchez « Activer maintenant » dans la configuration initiale. Sinon, elle ne modifie jamais le point d'accès du système : elle vérifie, enregistre et notifie seulement.",
                 ),
             )
         }
@@ -292,6 +295,21 @@ class MainActivity : Activity() {
     private fun allow() = tr("許可する", "Allow", "Autoriser")
 
     private fun notUsed() = tr("使わない", "Not used", "Désactivé")
+
+    /** 月の通信量の上限の表示（例: 12.3 GB / 50.0 GB（24%）） */
+    private fun capText(c: StateStore.CapView): String {
+        val used = c.usedBytes
+        val main = when {
+            !c.enabled -> notUsed()
+            !c.readable -> Fmt.NA + Fmt.paren(tr("「使用状況へのアクセス」が必要", "needs “Usage access”", "nécessite « Accès aux données d'utilisation »"))
+            used == null -> tr("読み取り中…", "Reading…", "Lecture…")
+            else -> {
+                val pct = if (c.limitBytes > 0) used * 100 / c.limitBytes else 0
+                "${Fmt.gb(used)} / ${Fmt.gb(c.limitBytes)}" + Fmt.paren(Fmt.pct(pct))
+            }
+        }
+        return main + if (c.stopped) " · " + tr("テザリング停止中", "hotspot off", "point d'accès arrêté") else ""
+    }
 
     // ---- 表示の更新 ----
 
@@ -411,6 +429,7 @@ class MainActivity : Activity() {
             Fmt.onOff(it.roaming, tr("ローミング中", "Roaming", "En itinérance"), tr("なし", "No roaming", "Pas d'itinérance")) + " · " +
                 tr("機内モード", "Airplane mode", "Mode avion") + " " + Fmt.onOff(it.airplane)
         } ?: Fmt.NA
+        vMonth.text = s.cap?.let { c -> capText(c) } ?: notUsed()
 
         // 接続性
         vReg.text = c?.let { tri(it.registered) } ?: "－"
@@ -637,6 +656,31 @@ class MainActivity : Activity() {
                 ) { SystemScreens.writeSettings(this) },
             )
         }
+        val cap = StateStore.state.cap
+        if (cap != null && cap.enabled && !cap.readable) {
+            items.add(
+                Triple(
+                    tr(
+                        "月の通信量の上限が ON ですが、「使用状況へのアクセス」がないため通信量を読めません。",
+                        "The monthly data cap is on, but data use can't be read without “Usage access”.",
+                        "Le plafond de données mensuel est activé, mais la consommation ne peut pas être lue sans « Accès aux données d'utilisation ».",
+                    ),
+                    allow(),
+                ) { SystemScreens.usageAccess(this) },
+            )
+        }
+        if (prefs.bool(Defs.DATA_CAP) && prefs.bool(Defs.DATA_CAP_STOP) && !TetherControl.permitted(this)) {
+            items.add(
+                Triple(
+                    tr(
+                        "「上限を超えたらテザリングを止める」が ON ですが、「システム設定の変更」が許可されていないため止められません。",
+                        "“Turn off the hotspot when the cap is exceeded” is on, but “Modify system settings” isn't allowed, so it can't be turned off.",
+                        "« Arrêter le point d'accès quand le plafond est dépassé » est activé, mais « Modifier les paramètres système » n'est pas autorisé : il ne peut pas être arrêté.",
+                    ),
+                    allow(),
+                ) { SystemScreens.writeSettings(this) },
+            )
+        }
         if (StateStore.state.plug?.stuck == true) {
             items.add(
                 Triple(
@@ -774,6 +818,20 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /**
+     * 新しく入れたときの初回だけ、はじめの設定を開く（「電話」の権限の説明もそこで行う）。
+     * v0.7.0 までから更新した場合（「電話」の説明を済ませている）は開かない。開いたら true
+     */
+    private fun openSetupOnce(): Boolean {
+        val ui = getSharedPreferences("ui", MODE_PRIVATE)
+        if (ui.getBoolean(SetupActivity.KEY_SHOWN, false)) return false
+        val upgraded = ui.getBoolean("asked_phone", false)
+        ui.edit().putBoolean(SetupActivity.KEY_SHOWN, true).putBoolean("asked_phone", true).apply()
+        if (upgraded) return false
+        startActivity(Intent(this, SetupActivity::class.java))
+        return true
     }
 
     /** 初回だけ、OS の権限ダイアログの前に用途を説明する（OS の文言は「電話の発信と管理」で誤解されやすい） */

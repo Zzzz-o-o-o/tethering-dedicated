@@ -80,6 +80,20 @@ object StateStore {
         val stuck: Boolean,
     )
 
+    /** 月の通信量の上限（v0.8.0）の状態 */
+    data class CapView(
+        val enabled: Boolean,
+        /** 「使用状況へのアクセス」があり、通信量を読める */
+        val readable: Boolean,
+        /** この期間に使った量（読めなければ null） */
+        val usedBytes: Long?,
+        val limitBytes: Long,
+        val cycleStart: Long,
+        val cycleEnd: Long,
+        /** このアプリが上限でテザリングを止めている */
+        val stopped: Boolean,
+    )
+
     /** 外部への通知（仕様 F-44）の状態 */
     data class ExtView(
         /** 送り先（例: ntfy（ntfy.sh））。URL が正しくなければ null */
@@ -94,6 +108,7 @@ object StateStore {
         val sched: SchedView? = null,
         val plug: PlugView? = null,
         val ext: ExtView? = null,
+        val cap: CapView? = null,
         /** 待機中（チェック間隔を長くしている）の理由（仕様 F-32）。待機していなければ null */
         val idleReason: String? = null,
         val experiment: ExperimentView? = null,

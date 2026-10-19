@@ -23,6 +23,7 @@ object Notifier {
     const val ID_TRAFFIC_QUIET = 15
     const val ID_SCHEDULE = 16
     const val ID_PLUG = 17
+    const val ID_DATA_CAP = 18
     private const val ID_DEVICE_BASE = 20
 
     fun createChannels(ctx: Context) {
@@ -63,6 +64,9 @@ object Notifier {
         s.check?.let { parts.add(tr("ネット", "Internet ", "Internet ") + if (it.failure == null) "✓" else "✗") }
         s.tether?.clients?.let { parts.add(tr("端末${it}台", "$it device(s)", "$it appareil(s)")) }
         s.sched?.stoppedUntil?.let { parts.add(tr("テザリング停止中（$it に再開）", "Hotspot off (back on at $it)", "Point d'accès arrêté (réactivation à $it)")) }
+        s.cap?.takeIf { it.stopped }?.let {
+            parts.add(tr("テザリング停止中（通信量の上限）", "Hotspot off (data cap)", "Point d'accès arrêté (plafond de données)"))
+        }
         s.meter?.remainingMin?.let { m -> Fmt.duration(m * 60_000L).let { parts.add(tr("残り$it", "$it left", "reste $it")) } }
         s.experiment?.let { e ->
             parts.add(

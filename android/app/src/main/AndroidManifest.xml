@@ -81,6 +81,11 @@
             android:label="@string/title_settings"
             android:parentActivityName=".MainActivity" />
         <activity
+            android:name=".SetupActivity"
+            android:exported="false"
+            android:label="@string/title_setup"
+            android:parentActivityName=".MainActivity" />
+        <activity
             android:name=".GuideActivity"
             android:exported="false"
             android:label="@string/title_guide"

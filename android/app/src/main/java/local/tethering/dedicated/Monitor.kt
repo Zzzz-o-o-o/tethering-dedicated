@@ -136,6 +136,7 @@ class Monitor(private val ctx: Context) {
             log(Ev.START)
             recent(Ev.START, "")
             drainBootTether()
+            capRefresh()
             if (boot) markBoot(trustedBoot) else if (initialCheck) requestCheck(Trigger.START)
         } else if (boot) {
             markBoot(trustedBoot)
@@ -166,10 +167,24 @@ class Monitor(private val ctx: Context) {
                 ),
             )
         }
+        if (prefs.capStoppedCycle != 0L) {
+            TetherControl.start(ctx) { }
+            prefs.capStoppedCycle = 0L
+            BootTether.unblock(ctx)
+            log(
+                Ev.DATA_CAP,
+                result = tr(
+                    "監視の停止に合わせてテザリングを再開", "Hotspot turned back on because monitoring stopped",
+                    "Point d'accès réactivé car la surveillance s'est arrêtée",
+                ),
+            )
+        }
         smartPlug.release(tr("監視を停止", "Monitoring stopped", "Surveillance arrêtée"))
         log(Ev.STOP)
         Scheduler.cancel(ctx)
-        for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT, Notifier.ID_SCHEDULE, Notifier.ID_PLUG)) Notifier.cancel(ctx, id)
+        for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT, Notifier.ID_SCHEDULE, Notifier.ID_PLUG, Notifier.ID_DATA_CAP)) {
+            Notifier.cancel(ctx, id)
+        }
         DeviceAlert.entries.forEach { Notifier.cancel(ctx, Notifier.deviceId(it)) }
         close()
     }
@@ -253,6 +268,8 @@ class Monitor(private val ctx: Context) {
         val skipEnabled = prefs.bool(Defs.SKIP_PROBE)
         val prevRx = lastRx
         val exclude = plugExclude()
+        // 月の通信量の上限（v0.8.0）を使うときだけ、この期間の通信量を OS の記録から読む
+        val capFrom = if (prefs.bool(Defs.DATA_CAP)) capCycleNow().first else null
         worker.execute {
             val result = runCatching {
                 val p = PowerProbe.read(ctx)
@@ -261,7 +278,8 @@ class Monitor(private val ctx: Context) {
                 val rx = mobileRx()
                 val delta = if (prevRx != null && rx != null && rx >= prevRx) rx - prevRx else null
                 val skip = ProbeSkip.should(skipEnabled, trigger, troubled, t.clients, delta)
-                Probe(p, t, l, ConnectivityProbe.run(ctx, prefs, l, trigger, skipReach = skip), rx)
+                val used = capFrom?.let { from -> runCatching { MonthUsage.mobileBytes(ctx, from, System.currentTimeMillis()) }.getOrNull() }
+                Probe(p, t, l, ConnectivityProbe.run(ctx, prefs, l, trigger, skipReach = skip), rx, used, capFrom)
             }
             main.post {
                 checking = false
@@ -281,7 +299,16 @@ class Monitor(private val ctx: Context) {
         }
     }
 
-    private class Probe(val power: PowerInfo, val tether: TetherInfo, val line: LineInfo, val check: CheckResult, val rx: Long?)
+    /** [monthUsed] は月の通信量の上限の期間（[capFrom] から）に使った量。使わない・読めなければ null */
+    private class Probe(
+        val power: PowerInfo,
+        val tether: TetherInfo,
+        val line: LineInfo,
+        val check: CheckResult,
+        val rx: Long?,
+        val monthUsed: Long? = null,
+        val capFrom: Long? = null,
+    )
 
     private fun mobileRx(): Long? = TrafficStats.getMobileRxBytes().takeIf { it != TrafficStats.UNSUPPORTED.toLong() }
 
@@ -316,8 +343,10 @@ class Monitor(private val ctx: Context) {
         }
         handleAlerts(pr.power)
         if (!prefs.maintenanceActive(r.at)) handleSignal(pr.line)
+        if (pr.capFrom != null) noteCapUsage(pr.capFrom, pr.monthUsed)
         if (trigger == Trigger.BOOT) bootSummary(pr)
         schedEvaluate(pr.tether)
+        capEvaluate(pr.tether)
         smartPlug.evaluate(pr.power, pr.tether.wifiOn)
         // 回線が正常なら、送れていなかった外部への通知を送る
         if (r.failure == null) ext.flush()
@@ -482,8 +511,9 @@ class Monitor(private val ctx: Context) {
             meter.noteClients(t.clients)
         }
         if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), t)
-        // 再開できたか・利用者が手で ON にしたかを見る（仕様 F-37）
+        // 再開できたか・利用者が手で ON にしたかを見る（仕様 F-37・月の通信量の上限）
         schedEvaluate(t)
+        capEvaluate(t)
         updateWeb(t)
         publish()
         scheduleNext()
@@ -494,8 +524,8 @@ class Monitor(private val ctx: Context) {
     private fun handleTether(now: Long, t: TetherInfo, bootCheck: Boolean = false) {
         // 比較テスト「使わないときはテザリングを止める」の間は、テザリングの停止を異常としない（利用者が止めるため）
         val testingOff = exp?.candidate?.key == Candidates.KEY_TETHER_OFF
-        // 時間帯スケジュールで止めている間（再開のやり直し中を含む）も異常としない（仕様 F-37）
-        val scheduled = prefs.schedStoppedWindow != 0L
+        // 時間帯スケジュールで止めている間（再開のやり直し中を含む）・月の通信量の上限で止めている間も異常としない（仕様 F-37・v0.8.0）
+        val scheduled = prefs.schedStoppedWindow != 0L || prefs.capStoppedCycle != 0L
         if (!prefs.bool(Defs.TETHER_EXPECTED) || testingOff || scheduled) {
             if (tether.episode != null) {
                 tether.reset()
@@ -742,13 +772,26 @@ class Monitor(private val ctx: Context) {
                 )
             }
             TetherSchedule.Act.STOP -> if (w != null && q != null) schedStop(w, q)
-            TetherSchedule.Act.START -> schedStart(
-                if (enabled) {
-                    tr("時間帯の終わり", "quiet hours ended", "fin des heures d'inactivité")
-                } else {
-                    tr("スケジュールを OFF にした", "schedule turned off", "planification désactivée")
-                },
-            )
+            TetherSchedule.Act.START -> if (prefs.capStoppedCycle != 0L) {
+                // 月の通信量の上限でも止めているので、ここでは再開しない（上限の側が次の期間の始まりに再開する）
+                prefs.schedStoppedWindow = 0L
+                schedNote = null
+                log(
+                    Ev.SCHEDULE,
+                    result = tr(
+                        "時間帯は終わったが、月の通信量の上限で止めているため再開しない", "Quiet hours ended, but the hotspot stays off because of the monthly data cap",
+                        "Fin des heures d'inactivité, mais le point d'accès reste arrêté à cause du plafond de données mensuel",
+                    ),
+                )
+            } else {
+                schedStart(
+                    if (enabled) {
+                        tr("時間帯の終わり", "quiet hours ended", "fin des heures d'inactivité")
+                    } else {
+                        tr("スケジュールを OFF にした", "schedule turned off", "planification désactivée")
+                    },
+                )
+            }
             TetherSchedule.Act.CLEAR -> schedCleared()
         }
     }
@@ -874,6 +917,180 @@ class Monitor(private val ctx: Context) {
         // 境目のちょうど後に判断する。接続 0 台が 10 分に達するのを待っているなら、その時刻にも判断し直す
         val boundary = (due - nowWall).coerceAtLeast(0) + 2_000L
         return schedIdleDue?.let { minOf(boundary, (it - nowEl).coerceAtLeast(0)) } ?: boundary
+    }
+
+    // ---- 月の通信量の上限（v0.8.0）。チェック・テザリングの放送・設定の変更のたびに判断する ----
+
+    /** 最後に読んだ通信量と、それを数えた期間の開始（期間が変わったら使わない） */
+    private var capUsed: Long? = null
+    private var capUsedCycle = 0L
+
+    private fun capCycleNow(now: Long = System.currentTimeMillis()): Pair<Long, Long> =
+        DataCap.cycle(now, prefs.int(Defs.DATA_CAP_DAY), TimeZone.getDefault())
+
+    private fun noteCapUsage(cycleStart: Long, used: Long?) {
+        capUsed = used
+        capUsedCycle = cycleStart
+    }
+
+    /** 通信量を読み直してから判断する（設定を変えたとき・監視を始めたとき） */
+    private fun capRefresh() {
+        if (closed || !prefs.bool(Defs.DATA_CAP)) {
+            capEvaluate(StateStore.state.tether)
+            return
+        }
+        val from = capCycleNow().first
+        worker.execute {
+            val used = runCatching { MonthUsage.mobileBytes(ctx, from, System.currentTimeMillis()) }.getOrNull()
+            main.post {
+                if (closed) return@post
+                noteCapUsage(from, used)
+                capEvaluate(StateStore.state.tether)
+                publish()
+                refreshNotification()
+            }
+        }
+    }
+
+    private fun capEvaluate(t: TetherInfo?) {
+        if (closed) return
+        val enabled = prefs.bool(Defs.DATA_CAP)
+        val stopped = prefs.capStoppedCycle
+        if (!enabled && stopped == 0L) return
+        val now = System.currentTimeMillis()
+        val cyc = capCycleNow(now)
+        // 知らせた段階は期間ごと
+        if (prefs.capCycle != cyc.first) {
+            prefs.capCycle = cyc.first
+            prefs.capNotified = DataCap.LEVEL_NONE
+        }
+        val used = capUsed.takeIf { capUsedCycle == cyc.first }
+        val limit = prefs.int(Defs.DATA_CAP_GB) * DataCap.GB
+        val stopEnabled = prefs.bool(Defs.DATA_CAP_STOP)
+        val d = DataCap.decide(
+            DataCap.Input(
+                enabled, stopEnabled, limit, used, cyc.first, prefs.capNotified, stopped, prefs.capHandledCycle, t?.wifiOn,
+                hold = exp != null || prefs.maintenanceActive(now),
+            ),
+        )
+        // 止めた結果は、上限を超えた知らせに書き添える
+        val stopText = when (d.tether) {
+            DataCap.Tether.NONE -> null
+            DataCap.Tether.STOP -> capStop(cyc)
+            DataCap.Tether.ALREADY_OFF -> {
+                prefs.capHandledCycle = cyc.first
+                tr("テザリングはすでに OFF（止める必要なし）", "The hotspot was already off (nothing to turn off)", "Le point d'accès était déjà arrêté (rien à arrêter)")
+            }
+            DataCap.Tether.START -> {
+                capStart(
+                    when {
+                        !enabled || !stopEnabled -> tr("設定を OFF にした", "setting turned off", "réglage désactivé")
+                        stopped != cyc.first -> tr("新しい期間に入った", "a new period started", "une nouvelle période a commencé")
+                        else -> tr("上限を下回った", "below the cap now", "sous le plafond désormais")
+                    },
+                )
+                null
+            }
+            DataCap.Tether.CLEAR -> {
+                capCleared(cyc)
+                null
+            }
+        }
+        d.notify?.let { capNotify(it, used ?: 0L, limit, cyc, stopText) }
+        if (d.tether != DataCap.Tether.NONE || d.notify != null) {
+            publish()
+            scheduleNext()
+            refreshNotification()
+        }
+    }
+
+    /** 期間の表示（例: 2026-10-01〜2026-10-31） */
+    private fun capPeriod(cyc: Pair<Long, Long>): String {
+        val from = Fmt.dateTime(cyc.first).take(10)
+        val to = Fmt.dateTime(cyc.second - 1).take(10)
+        return tr("$from〜$to", "$from – $to", "$from – $to")
+    }
+
+    private fun capNotify(level: Int, used: Long, limit: Long, cyc: Pair<Long, Long>, stopText: String?) {
+        prefs.capNotified = level
+        val pct = if (limit > 0) used * 100 / limit else 0
+        val u = Fmt.gb(used)
+        val l = Fmt.gb(limit)
+        val title = if (level == DataCap.LEVEL_REACHED) {
+            tr("今月の通信量が上限を超えました", "This month's data has exceeded the cap", "Les données du mois ont dépassé le plafond")
+        } else {
+            tr("今月の通信量が上限の ${DataCap.WARN_PCT}% になりました", "This month's data has reached ${DataCap.WARN_PCT}% of the cap", "Les données du mois ont atteint ${DataCap.WARN_PCT} % du plafond")
+        }
+        val period = capPeriod(cyc)
+        val body = tr("$u / $l（${pct}%・$period）", "$u / $l ($pct%, $period)", "$u / $l ($pct %, $period)") + (stopText?.let { "\n$it" } ?: "")
+        log(Ev.DATA_CAP, anomaly = if (level == DataCap.LEVEL_REACHED) title else null, result = if (level == DataCap.LEVEL_REACHED) null else title, detail = body.replace("\n", " / "))
+        recent(Ev.DATA_CAP, title + Fmt.paren("$u / $l"))
+        if (level == DataCap.LEVEL_REACHED) {
+            if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.ID_DATA_CAP, title, body, extra = Notifier.settingsAction(ctx))
+        } else {
+            Notifier.info(ctx, Notifier.ID_DATA_CAP, title, body, Notifier.settingsAction(ctx))
+        }
+        ext.post(ExtNotify.Category.ALERT, title, body)
+    }
+
+    /** テザリングを止める。結果の文（知らせに書き添える）を返す */
+    private fun capStop(cyc: Pair<Long, Long>): String {
+        prefs.capHandledCycle = cyc.first
+        val r = TetherControl.stop(ctx)
+        val back = Fmt.dateTime(cyc.second).take(10)
+        return if (r.ok) {
+            prefs.capStoppedCycle = cyc.first
+            prefs.capStoppedAt = System.currentTimeMillis()
+            // 再起動しても、この期間は起動時の ON をしない
+            BootTether.block(ctx, cyc.second)
+            val text = tr("テザリングを止めました（$back に再開）", "The hotspot was turned off (back on $back)", "Le point d'accès a été arrêté (réactivation le $back)")
+            log(Ev.DATA_CAP, result = text)
+            recent(Ev.DATA_CAP, text)
+            text
+        } else {
+            val text = tr("テザリングを止められませんでした（${r.text}）", "Couldn't turn off the hotspot (${r.text})", "Impossible d'arrêter le point d'accès (${r.text})")
+            log(Ev.DATA_CAP, anomaly = tr("テザリングを止められない", "Can't turn off the hotspot", "Impossible d'arrêter le point d'accès"), result = r.text)
+            text
+        }
+    }
+
+    private fun capStart(why: String) {
+        val since = prefs.capStoppedAt
+        prefs.capStoppedCycle = 0L
+        BootTether.unblock(ctx)
+        val off = if (since > 0) Fmt.duration(System.currentTimeMillis() - since).let { Fmt.paren(tr("止めていた時間 $it", "off for $it", "arrêté pendant $it")) } else ""
+        TetherControl.start(ctx) { r ->
+            if (closed) return@start
+            if (r.ok) {
+                val text = tr("テザリングの再開を依頼（$why）", "Asked to turn the hotspot back on ($why)", "Réactivation du point d'accès demandée ($why)") + off
+                log(Ev.DATA_CAP, result = text)
+                recent(Ev.DATA_CAP, text)
+            } else {
+                // 再開できなければ、テザリング停止の異常として、通常の確認・通知の流れで知らせる
+                log(Ev.DATA_CAP, anomaly = tr("再開に失敗", "Failed to turn back on", "Échec de la réactivation"), result = r.text)
+            }
+        }
+    }
+
+    private fun capCleared(cyc: Pair<Long, Long>) {
+        prefs.capStoppedCycle = 0L
+        prefs.capHandledCycle = cyc.first
+        BootTether.unblock(ctx)
+        val text = tr(
+            "テザリングが ON になった（この期間はもう止めない）", "The hotspot is on again (not turned off again in this period)",
+            "Le point d'accès est réactivé (plus d'arrêt durant cette période)",
+        )
+        log(Ev.DATA_CAP, result = text)
+        recent(Ev.DATA_CAP, text)
+    }
+
+    /** 上限で止めている間は、次の期間の始まりに判断し直す（再開するため）。止めていなければ null */
+    private fun capDelay(nowWall: Long): Long? {
+        val stopped = prefs.capStoppedCycle
+        if (stopped == 0L) return null
+        val cyc = capCycleNow(nowWall)
+        // 止めた期間がもう終わっている（端末が止まっていた・数え始める日を変えた）なら、すぐ判断し直す
+        return if (stopped != cyc.first) 2_000L else (cyc.second - nowWall).coerceAtLeast(0) + 2_000L
     }
 
     // ---- スマートプラグ（仕様 F-45） ----
@@ -1130,8 +1347,9 @@ class Monitor(private val ctx: Context) {
         drainBootTether()
         val actions = ArrayList<String>()
         val schedStopped = prefs.schedStoppedWindow != 0L
+        val capStopped = prefs.capStoppedCycle != 0L
         val bootTether = if (prefs.bool(Defs.TETHER_ON_BOOT)) BootTether.status(ctx) else null
-        if (pr.tether.wifiOn == false && !schedStopped) {
+        if (pr.tether.wifiOn == false && !schedStopped && !capStopped) {
             actions.add(
                 when (bootTether) {
                     null -> tr(
@@ -1171,7 +1389,11 @@ class Monitor(private val ctx: Context) {
         if (pr.power.powerSave == true) actions.add(tr("バッテリーセーバーが ON です", "Battery Saver is on", "L'économiseur de batterie est activé"))
         val pending = pr.check.failure?.label?.let { tr("回線: $it（再確認中）", "Line: $it (rechecking)", "Ligne : $it (revérification)") }
         // 時間帯スケジュールで止めている間に再起動した場合は、時間帯の終わりに再開する（異常ではない）
-        val schedNoteText = if (schedStopped && pr.tether.wifiOn == false) {
+        val schedNoteText = if (capStopped && pr.tether.wifiOn == false) {
+            // 月の通信量の上限で止めている間に再起動した場合は、次の期間の始まりに再開する（異常ではない）
+            val back = Fmt.dateTime(capCycleNow().second).take(10)
+            tr("月の通信量の上限で停止中（$back に再開）", "Off because of the monthly data cap (back on $back)", "Arrêté à cause du plafond de données mensuel (réactivation le $back)")
+        } else if (schedStopped && pr.tether.wifiOn == false) {
             val end = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))?.endLabel
             if (end != null) {
                 tr("時間帯スケジュールで停止中（$end に再開）", "Off by schedule (back on at $end)", "Arrêté par la planification (réactivation à $end)")
@@ -1248,6 +1470,8 @@ class Monitor(private val ctx: Context) {
         // スケジュールを OFF にしたら、止めていたテザリングを再開する（時間帯を変えたときも判断し直す）
         schedWaitLogged = 0L
         schedEvaluate(StateStore.state.tether)
+        // 月の通信量の上限：上限・数え始める日を変えたら読み直して判断する（OFF にしたら止めていたテザリングを再開する）
+        capRefresh()
         // スマートプラグを OFF にしたら、止めていた給電を ON に戻す
         if (prefs.bool(Defs.PLUG)) smartPlug.evaluate(StateStore.state.power, StateStore.state.tether?.wifiOn) else smartPlug.release(tr("設定で OFF", "Turned off in Settings", "Désactivé dans les paramètres"))
         if (!prefs.bool(Defs.EXT_NOTIFY)) ext.clear() else ext.flush()
@@ -1308,7 +1532,7 @@ class Monitor(private val ctx: Context) {
         val nowEl = SystemClock.elapsedRealtime()
         val delay = if (prefs.maintenanceActive(nowWall)) {
             // メンテナンス中もスケジュールの再開だけは時刻どおりに行う
-            minOf(prefs.maintUntil - nowWall, schedDelay(nowWall, nowEl) ?: Long.MAX_VALUE)
+            minOf(prefs.maintUntil - nowWall, schedDelay(nowWall, nowEl) ?: Long.MAX_VALUE, capDelay(nowWall) ?: Long.MAX_VALUE)
         } else {
             val interval = StateStore.state.intervalMin * 60_000L
             val base = if (lastCheckElapsed == 0L) 5_000L else lastCheckElapsed + interval - nowEl
@@ -1316,7 +1540,9 @@ class Monitor(private val ctx: Context) {
             val expDelay = exp?.takeIf { it.measuring && StateStore.state.power?.plug == Plug.NONE }?.let { e ->
                 (e.remainingSec - meter.openBatterySec(e.condition)).coerceAtLeast(0) * 1000L + 5_000L
             }
-            listOfNotNull(base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl), expDelay, schedDelay(nowWall, nowEl)).min()
+            listOfNotNull(
+                base, upstreamDue?.minus(nowEl), tetherDue?.minus(nowEl), bootDue?.minus(nowEl), expDelay, schedDelay(nowWall, nowEl), capDelay(nowWall),
+            ).min()
         }
         val at = Scheduler.schedule(ctx, delay)
         StateStore.update { it.copy(nextCheckAt = at) }
@@ -1401,6 +1627,16 @@ class Monitor(private val ctx: Context) {
             null
         }
         val extView = if (prefs.bool(Defs.EXT_NOTIFY)) StateStore.ExtView(ExtNotify.parse(prefs.text(Defs.EXT_URL))?.label, ext.pending, ext.lastResult) else null
+        val capStopped = prefs.capStoppedCycle != 0L
+        val capView = if (prefs.bool(Defs.DATA_CAP) || capStopped) {
+            val cyc = capCycleNow()
+            StateStore.CapView(
+                enabled = prefs.bool(Defs.DATA_CAP), readable = AppUsageProbe.hasAccess(ctx), usedBytes = capUsed.takeIf { capUsedCycle == cyc.first },
+                limitBytes = prefs.int(Defs.DATA_CAP_GB) * DataCap.GB, cycleStart = cyc.first, cycleEnd = cyc.second, stopped = capStopped,
+            )
+        } else {
+            null
+        }
         val total = prefs.recheckDelaysMin.size
         val up = upstream.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, minOf(it.rechecks + 1, total), total, it.confirmed) }
         val te = tether.episode?.let { StateStore.EpisodeView(it.kind, it.startedAt, 1, 1, it.confirmed) }
@@ -1419,7 +1655,7 @@ class Monitor(private val ctx: Context) {
                 mode = mode, base = base, effective = eff, intervalMin = interval, maintUntil = maintUntil,
                 upstream = up, tetherIssue = te, meter = meterView, experiment = expView,
                 alerts = alerts.active.toSet() + listOfNotNull(DeviceAlert.SIGNAL_WEAK.takeIf { signal.active }),
-                auto = autoView, idleReason = reason?.label, sched = schedView, plug = plugView, ext = extView,
+                auto = autoView, idleReason = reason?.label, sched = schedView, plug = plugView, ext = extView, cap = capView,
             )
         }
     }

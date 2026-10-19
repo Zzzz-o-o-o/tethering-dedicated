@@ -102,6 +102,9 @@ object Fmt {
     /** 通信量の表示（[v] は MB 単位。フランス語は Mo） */
     fun mb(v: Double): String = dec(v) + tr(" MB", " MB", " Mo")
 
+    /** 通信量の表示（[bytes] はバイト。1 GB = 1024 MB。フランス語は Go） */
+    fun gb(bytes: Long): String = dec(bytes / (1024.0 * 1024.0 * 1024.0)) + tr(" GB", " GB", " Go")
+
     fun onOff(b: Boolean?, on: String = "ON", off: String = "OFF"): String = when (b) {
         null -> NA
         true -> on

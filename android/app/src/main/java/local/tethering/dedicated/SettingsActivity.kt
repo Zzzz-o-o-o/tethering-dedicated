@@ -86,6 +86,7 @@ class SettingsActivity : Activity() {
             listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true,
         )
         section(page, tr("待機中の通信", "Idle traffic", "Trafic au repos"), listOf(Defs.IDLE_TRAFFIC_MB))
+        capSection(page)
         scheduleSection(page)
         section(page, tr("ローカル管理画面", "Local web page", "Page web locale"), listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
         section(
@@ -192,6 +193,64 @@ class SettingsActivity : Activity() {
 
     private lateinit var bootStatus: TextView
     private lateinit var schedStatus: TextView
+    private lateinit var capStatus: TextView
+
+    /** 月の通信量の上限（v0.8.0） */
+    private fun capSection(page: LinearLayout) {
+        val c = Ui.card(page)
+        Ui.heading(c, tr("月の通信量の上限", "Monthly data cap", "Plafond de données mensuel"))
+        addBool(c, Defs.DATA_CAP)
+        addInt(c, Defs.DATA_CAP_GB)
+        addInt(c, Defs.DATA_CAP_DAY)
+        addBool(c, Defs.DATA_CAP_STOP)
+        Ui.spacer(c, 4)
+        capStatus = Ui.small(c, "")
+        Ui.button(
+            c,
+            tr(
+                "「使用状況へのアクセス」を許可する（OS の画面）", "Allow “Usage access” (system screen)",
+                "Autoriser « Accès aux données d'utilisation » (écran du système)",
+            ),
+        ) { SystemScreens.usageAccess(this) }
+    }
+
+    private fun capStatusText(): String {
+        val readable = AppUsageProbe.hasAccess(this)
+        val lines = ArrayList<String>()
+        lines.add(
+            SettingsCodec.issue(
+                tr("「使用状況へのアクセス」", "“Usage access”", "« Accès aux données d'utilisation »"),
+                if (readable) {
+                    tr("許可済み", "allowed", "autorisé")
+                } else {
+                    tr("未許可（通信量を読むのに必要）", "not allowed (needed to read data use)", "non autorisé (nécessaire pour lire la consommation)")
+                },
+            ),
+        )
+        val cap = StateStore.state.cap
+        val used = cap?.usedBytes
+        if (cap != null && used != null) {
+            val from = Fmt.dateTime(cap.cycleStart).take(10)
+            val to = Fmt.dateTime(cap.cycleEnd - 1).take(10)
+            val pct = if (cap.limitBytes > 0) used * 100 / cap.limitBytes else 0
+            lines.add(
+                tr("今月: ${Fmt.gb(used)} / ${Fmt.gb(cap.limitBytes)}（${pct}%・$from〜$to）", "This month: ${Fmt.gb(used)} / ${Fmt.gb(cap.limitBytes)} ($pct%, $from – $to)", "Ce mois-ci : ${Fmt.gb(used)} / ${Fmt.gb(cap.limitBytes)} ($pct %, $from – $to)"),
+            )
+        }
+        if (cap?.stopped == true) {
+            val back = Fmt.dateTime(cap.cycleEnd).take(10)
+            lines.add(tr("いま止めています（$back に再開）", "Off now (back on $back)", "Arrêté actuellement (réactivation le $back)"))
+        }
+        if (prefs.bool(Defs.DATA_CAP_STOP) && !TetherControl.permitted(this)) {
+            lines.add(
+                SettingsCodec.issue(
+                    tr("「システム設定の変更」", "“Modify system settings”", "« Modifier les paramètres système »"),
+                    tr("未許可（止めるのに必要）", "not allowed (needed to turn it off)", "non autorisé (nécessaire pour l'arrêter)"),
+                ),
+            )
+        }
+        return lines.joinToString("\n")
+    }
     private lateinit var plugStatus: TextView
     private lateinit var extStatus: TextView
     private lateinit var plugKind: RadioGroup
@@ -370,6 +429,7 @@ class SettingsActivity : Activity() {
         } else {
             tr("未許可（起動時の ON には許可が必要）", "not allowed (required to turn it on at startup)", "non autorisé (nécessaire pour l'activation au démarrage)")
         }
+        capStatus.text = capStatusText()
         bootStatus.text = SettingsCodec.issue(permName, bootPerm) +
             (BootTether.lastResult(this)?.let { "\n" + tr("前回の起動時: $it", "Last startup: $it", "Dernier démarrage : $it") } ?: "")
         val perm = if (permitted) {

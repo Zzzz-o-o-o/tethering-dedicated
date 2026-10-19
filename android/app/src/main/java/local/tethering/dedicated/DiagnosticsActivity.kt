@@ -348,6 +348,16 @@ object Diagnostics {
                     Fmt.paren(kv(tr("起動時に読む写し", "copy read at startup", "copie lue au démarrage"), use(BootTether.enabledCopy(ctx)))) + " / " +
                     kv(tr("前回の起動時", "last startup", "dernier démarrage"), BootTether.lastResult(ctx) ?: Fmt.NA),
             )
+            val capDay = prefs.int(Defs.DATA_CAP_DAY)
+            val capStopped = if (prefs.capStoppedCycle != 0L) tr("はい", "yes", "oui") else tr("いいえ", "no", "non")
+            appendLine(
+                kv(tr("月の通信量の上限", "Monthly data cap", "Plafond de données mensuel"), use(prefs.bool(Defs.DATA_CAP))) +
+                    Fmt.paren(Fmt.gb(prefs.int(Defs.DATA_CAP_GB) * DataCap.GB) + tr("・毎月${capDay}日から", ", from day $capDay", ", à partir du $capDay")) + " / " +
+                    kv(tr("今月", "this month", "ce mois-ci"), s.cap?.usedBytes?.let { Fmt.gb(it) } ?: Fmt.NA) + " / " +
+                    kv(tr("止める", "turn off", "arrêter"), use(prefs.bool(Defs.DATA_CAP_STOP))) + " / " +
+                    kv(tr("上限で止めている", "turned off by the cap", "arrêté par le plafond"), capStopped) +
+                    (BootTether.blockedUntil(ctx)?.let { " / " + kv(tr("起動時の ON をしない期限", "no startup ON until", "pas d'activation au démarrage avant"), Fmt.dateTime(it).take(10)) } ?: ""),
+            )
             val quiet = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))
             val stopped = if (prefs.schedStoppedWindow != 0L) {
                 val since = Fmt.time(prefs.schedStoppedAt)

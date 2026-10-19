@@ -112,6 +112,32 @@ class Prefs(context: Context) {
         get() = state.getLong("sched_handled_window", 0L)
         set(v) = state.edit().putLong("sched_handled_window", v).apply()
 
+    // 月の通信量の上限（v0.8.0）。知らせた段階は、記録した期間の開始（capCycle）と組で使う
+    var capCycle: Long
+        get() = state.getLong("cap_cycle", 0L)
+        set(v) = state.edit().putLong("cap_cycle", v).apply()
+
+    var capNotified: Int
+        get() = state.getInt("cap_notified", 0)
+        set(v) = state.edit().putInt("cap_notified", v).apply()
+
+    /** このアプリが上限でテザリングを止めた期間の開始（0 = 止めていない）。止めた直後にアプリが止まっても再開できるよう、すぐ書く */
+    @set:SuppressLint("ApplySharedPref")
+    var capStoppedCycle: Long
+        get() = state.getLong("cap_stopped_cycle", 0L)
+        set(v) {
+            state.edit().putLong("cap_stopped_cycle", v).commit()
+        }
+
+    var capStoppedAt: Long
+        get() = state.getLong("cap_stopped_at", 0L)
+        set(v) = state.edit().putLong("cap_stopped_at", v).apply()
+
+    /** 止める判断を済ませた期間の開始（同じ期間に 2 回止めない） */
+    var capHandledCycle: Long
+        get() = state.getLong("cap_handled_cycle", 0L)
+        set(v) = state.edit().putLong("cap_handled_cycle", v).apply()
+
     /** 外部への通知（仕様 F-44）で送れなかったもの（JSON） */
     var extQueueJson: String?
         get() = state.getString("ext_queue", null)

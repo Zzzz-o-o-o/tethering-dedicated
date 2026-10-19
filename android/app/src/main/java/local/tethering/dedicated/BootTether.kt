@@ -47,6 +47,9 @@ object BootTether {
 
         /** この起動で試す回数を使い切った */
         GIVE_UP,
+
+        /** 月の通信量の上限でこのアプリが止めている期間（ON にしない） */
+        BLOCKED,
     }
 
     /** 依頼のあいだの時間（秒）。n 回目の依頼で ON にならなければ、RETRY_SEC[n-1] 秒後に依頼し直す */
@@ -69,12 +72,23 @@ object BootTether {
 
     /**
      * [apState] はアクセスポイントの状態（TetherInfo.AP_*。分からなければ null）、[sinceRequestMs] はこの起動で最後に依頼してからの時間、
-     * [attempts] はこの起動で依頼した回数、[onceOn] はこの起動で ON になったことがあるか、[runs] はこの起動で動いた回数（今回を含む）
+     * [attempts] はこの起動で依頼した回数、[onceOn] はこの起動で ON になったことがあるか、[runs] はこの起動で動いた回数（今回を含む）、
+     * [blocked] は月の通信量の上限でこのアプリが止めている期間か
      */
-    fun decide(enabled: Boolean, permitted: Boolean, apState: Int?, sinceRequestMs: Long?, attempts: Int, onceOn: Boolean, runs: Int): Act = when {
+    fun decide(
+        enabled: Boolean,
+        permitted: Boolean,
+        apState: Int?,
+        sinceRequestMs: Long?,
+        attempts: Int,
+        onceOn: Boolean,
+        runs: Int,
+        blocked: Boolean = false,
+    ): Act = when {
         !enabled -> Act.DISABLED
         onceOn -> Act.DONE
         apState == TetherInfo.AP_ENABLED -> Act.ALREADY_ON
+        blocked -> Act.BLOCKED
         runs > MAX_RUNS -> Act.GIVE_UP
         apState == TetherInfo.AP_ENABLING -> Act.WAIT
         // アラームは予約した時刻ちょうどか少しあとに届く。誤差で早く届いても重ねて依頼しないよう 1 秒の幅をとる
@@ -107,6 +121,7 @@ object BootTether {
     private const val KEY_REPORTED = "reported"
     private const val KEY_RESULTS = "results"
     private const val KEY_LAST = "last"
+    private const val KEY_BLOCK_UNTIL = "block_until"
     private const val MAX_RESULTS = 8
 
     private fun store(ctx: Context): SharedPreferences =
@@ -123,6 +138,25 @@ object BootTether {
 
     /** 設定の写し（起動時に読むもの） */
     fun enabledCopy(ctx: Context): Boolean = store(ctx).getBoolean(KEY_ENABLED, false)
+
+    /**
+     * 月の通信量の上限でテザリングを止めている間は、起動しても ON にしない（[untilWall] は期間の終わり。壁時計のミリ秒）。
+     * 止めたとき・再開したときにすぐ書く（再起動しても読めるように）
+     */
+    @SuppressLint("ApplySharedPref")
+    fun block(ctx: Context, untilWall: Long) {
+        val sp = store(ctx)
+        if (sp.getLong(KEY_BLOCK_UNTIL, 0L) != untilWall) sp.edit().putLong(KEY_BLOCK_UNTIL, untilWall).commit()
+    }
+
+    @SuppressLint("ApplySharedPref")
+    fun unblock(ctx: Context) {
+        val sp = store(ctx)
+        if (sp.contains(KEY_BLOCK_UNTIL)) sp.edit().remove(KEY_BLOCK_UNTIL).commit()
+    }
+
+    /** 起動しても ON にしない期間の終わり（なければ null） */
+    fun blockedUntil(ctx: Context): Long? = store(ctx).getLong(KEY_BLOCK_UNTIL, 0L).takeIf { it > System.currentTimeMillis() }
 
     /** 直近の結果（日付・時刻つき。設定画面・診断情報に出す。ログへ移しても消さない） */
     fun lastResult(ctx: Context): String? = store(ctx).getString(KEY_LAST, null)
@@ -218,7 +252,8 @@ object BootTether {
         val since = sp.getLong(KEY_REQUESTED, 0L).takeIf { it > 0 }?.let { SystemClock.elapsedRealtime() - it }
         val reported = sp.getBoolean(KEY_REPORTED, false)
         val ap = TetherProbe.apState(ctx)
-        val act = decide(true, TetherControl.permitted(ctx), ap, since, attempts, sp.getBoolean(KEY_DONE, false), runs)
+        val blockUntil = sp.getLong(KEY_BLOCK_UNTIL, 0L).takeIf { it > System.currentTimeMillis() }
+        val act = decide(true, TetherControl.permitted(ctx), ap, since, attempts, sp.getBoolean(KEY_DONE, false), runs, blocked = blockUntil != null)
         if (act != Act.DONE) sp.edit().putInt(KEY_RUNS, runs).commit()
         fun markReported() = sp.edit().putBoolean(KEY_REPORTED, true).commit()
         when (act) {
@@ -236,6 +271,18 @@ object BootTether {
                 )
             }
             Act.WAIT -> schedule(ctx, waitMs(ap, since, attempts))
+            Act.BLOCKED -> if (!reported) {
+                markReported()
+                cancel(ctx)
+                val until = blockUntil?.let { Fmt.dateTime(it).take(10) } ?: Fmt.NA
+                addResult(
+                    ctx,
+                    tr(
+                        "月の通信量の上限で止めているため、ON にしない（$until まで）", "Not turned on: off because of the monthly data cap (until $until)",
+                        "Pas activé : arrêté à cause du plafond de données mensuel (jusqu'au $until)",
+                    ),
+                )
+            }
             Act.NO_PERMISSION -> if (!reported) {
                 markReported()
                 addResult(

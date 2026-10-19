@@ -6,7 +6,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 - No root required. The app does not change carrier settings.
 - It uses the phone's own hotspot as is. It never toggles airplane mode, mobile data or Data Saver, and never reboots the phone.
-- It turns the hotspot on or off only if you enable one of the optional features **Turn on the hotspot at startup** and **quiet-hours schedule**.
+- It turns the hotspot on or off only if you enable one of the optional features **Turn on the hotspot at startup**, **quiet-hours schedule** and **monthly data cap**, or tap **Turn on now** in the initial setup.
 
 **Languages:** English, French and Japanese. The app follows the phone's language (Settings → System → Languages & input → Languages); any other language shows English. The PC script follows the PC's display language.
 
@@ -16,37 +16,50 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | | |
 |---|---|
-| Phone | Android 10, with a SIM/plan that allows tethering |
-| PC | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)). Needed for installation and for the optional permissions |
-| Cable | USB cable, with **USB debugging** enabled on the phone |
+| Phone | Android 10, with a SIM/plan that allows tethering. **That's all you need** |
+| PC (optional) | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)) and a USB cable — only for the extra setup from a PC (see below) |
 
 ## Files
 
 | File | Contents |
 |---|---|
-| `TetheringDedicated-v0.7.0.apk` | The app |
-| `tools\adb-setup.bat` | PC script: install, apply recommended phone settings, grant permissions, undo |
+| `TetheringDedicated-v0.8.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
+| `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
 | `LICENSE` | MIT License |
 
 ---
 
-## Quick start
+## Quick start (phone only)
+
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.8.0.apk`.
+2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
+3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
+   1. **Phone** permission — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS.
+   2. **Battery optimization** — exclude the app so that checks are not delayed while the screen is off.
+   3. **Modify system settings** — lets the app turn the hotspot on and off (at startup, quiet-hours schedule, data cap).
+   4. **Hotspot auto turn-off** — turn it off so the hotspot doesn't stop when nobody is connected. The hotspot name and password are on the same screen.
+   5. **Turn on the Wi-Fi hotspot at startup** — turns it back on automatically after every reboot.
+   6. **Turn on the Wi-Fi hotspot** — turns it on now.
+   7. *(optional)* **Usage access** — for the monthly data cap and the data use per app.
+   8. *(optional)* **Monthly data cap** — if your plan has one.
+4. Done. Monitoring runs from now on and restarts by itself after a reboot or an app update. You can open **Initial setup** again from the main screen at any time.
+
+If the phone has a PIN, pattern or password lock, monitoring starts only after you unlock the phone once after a reboot (an Android restriction). Turning the hotspot on at startup works even before you unlock.
+
+**Nothing is lost without a PC.** Every feature works with the APK alone, except the automatic Battery Saver/Doze switching on battery (its permission can only be granted with ADB). The power-saving system settings that the PC script changes in one go can also be changed one by one from the app's **Setup guide**.
+
+### Optional: setup from a PC
+
+The PC script applies the recommended system settings in one go, can undo them, and shows a few things the app can't read (the hotspot band and hardware acceleration support).
 
 1. **Enable USB debugging** on the phone: Settings → About phone → tap *Build number* seven times, then Settings → System → Advanced → Developer options → *USB debugging*. Connect the phone to the PC and allow the "Allow USB debugging?" prompt on the phone.
-2. **Install and set up** from the project folder on the PC:
+2. From the project folder on the PC:
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.7.0.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.8.0.apk -Apply
    ```
-   This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. (To install only: `adb install -r TetheringDedicated-v0.7.0.apk`.)
-3. **Open the app** and follow the **Action needed** card at the top, if shown:
-   - **Phone** permission: used only to read the state of the mobile line. Android describes it as "make and manage phone calls", but the app never makes calls or sends SMS.
-   - **Battery optimization**: exclude the app so that checks are not delayed while the screen is off.
-4. **Turn on the Wi-Fi hotspot** in the phone's settings. To have it turned on again automatically after every reboot, see [Turn on the hotspot at startup](#turn-on-the-hotspot-at-startup).
-
-From then on, monitoring restarts by itself after a reboot or an app update.
-If the phone has a PIN, pattern or password lock, monitoring starts only after you unlock the phone once after a reboot (an Android restriction). Turning the hotspot on at startup works even before you unlock.
+   This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
 ---
 
@@ -99,6 +112,7 @@ All thresholds and intervals can be changed in **Settings**.
 | **Power analysis** | Consumption by signal strength and band, standby power with no devices connected (with a suggestion), and mobile data per app, separating hotspot traffic from the phone's own (needs *Usage access*, which `-Apply` grants) |
 | **Comparison test** | Measures the effect of one change (for example, turning off Bluetooth or switching the hotspot band): before (A) and after (B), alternately, on battery. Tells you whether to keep the change |
 | **Daily report** | Average consumption, estimated runtime from a full charge, data used, uptime and alerts per day. CSV export |
+| **Initial setup** | The permissions and settings needed to start, in order, each with its state and a button (opens by itself the first time) |
 | **Setup guide** | Current value and recommended value of each phone setting that matters, with buttons to open the right settings screen. It never changes settings itself |
 | **App list** (from the Setup guide) | Apps you installed, to review and uninstall unused ones |
 | **Diagnostics** | What this phone can and cannot report. Copy or share it when asking for help. Contains no phone number, IMEI, SSID or MAC address, and nothing about connected devices |
@@ -135,6 +149,20 @@ What it does:
 - It doesn't work on lines where the carrier must approve each hotspot use (Android refuses the request). The check button in step 2 tells you.
 
 On the tested phone (UMIDIGI A9 Pro with a PIN lock), the hotspot came on about 20 seconds after power-on, before unlocking, and connected devices rejoined it.
+
+### Monthly data cap
+
+For plans with a monthly data allowance. Settings → **Monthly data cap**:
+
+1. Allow **Usage access** with the button below the section (the app reads this month's mobile data from the system's records — the same count as Settings → Network & internet → Data usage, hotspot traffic included).
+2. Turn on **Use a monthly data cap**, enter the **Monthly cap** in GB (1 GB = 1024 MB) and the day your plan's count starts (**Count from this day each month**, 1 if it resets at the start of the month), and tap **Save**.
+3. Optionally turn on **Turn off the hotspot when the cap is exceeded** (needs "Modify system settings").
+
+What it does:
+
+- You are notified once at **80 %** and once at **100 %** of the cap in each period (also sent to ntfy/Discord/Slack if external notifications are on). The main screen shows this month's data next to the cap.
+- With **Turn off the hotspot when the cap is exceeded**, the hotspot is turned off at 100 % and turned back on when the next period starts — only if the app turned it off. If you turn it on by hand, it stays on for the rest of the period. The app doesn't turn it on at startup during that period either. Turning the option or the cap off, raising the cap above the usage, or stopping monitoring turns it back on.
+- The count is the phone's own; your carrier's count may differ slightly. This is separate from Android's own "Data limit", which turns off mobile data itself.
 
 ### Quiet-hours schedule — turn the hotspot off when you don't use it
 
@@ -263,6 +291,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 - The hotspot band (2.4/5 GHz) can't be read by the app. Tethering hardware acceleration has an effect only on phones that support it.
 - Turning the hotspot on at startup and the quiet-hours schedule use a system function that some carriers or manufacturers block. Use the check button to find out.
 - Notifications to ntfy/Discord/Slack can't be sent while the mobile line is down; they are sent after it recovers.
+- The monthly data cap needs "Usage access" and is checked at each scheduled check, so a notification can come up to one check interval after the cap is reached.
 - If you change the phone's language, texts already written (log entries, notifications already shown) stay in the language they were written in; screens, event names and CSV headers switch to the new language.
 
 ---
@@ -272,7 +301,9 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 | Problem | What to do |
 |---|---|
 | Monitoring doesn't start after a reboot | Unlock the phone once. If it still doesn't start, open the app |
-| The hotspot is off after a reboot | Turn on **Turn on the Wi-Fi hotspot at startup** in Settings → Tethering. If it is on, check that "Modify system settings" is allowed and read the last result below it |
+| The hotspot is off after a reboot | Turn on **Turn on the Wi-Fi hotspot at startup** in Settings → Tethering. If it is on, check that "Modify system settings" is allowed and read the last result below it. While the data cap has the hotspot off, it isn't turned on at startup |
+| The monthly data shows "N/A" | Allow "Usage access" (Settings → Monthly data cap, or Initial setup step 7) |
+| The APK won't install | Allow the browser or Files app to install unknown apps. If Google Play Protect blocks it, choose to install anyway |
 | **Action needed** is shown | Follow the message and its button |
 | "Data used with no devices connected" | The phone's own apps or system are using data (app updates, sync). See **Power analysis** for data per app |
 | The schedule didn't turn the hotspot off | Check that "Modify system settings" is allowed and the check button succeeds. It waits until no device has been connected for 10 minutes |
@@ -284,7 +315,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 
 ## Update and uninstall
 
-- **Update:** `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z.apk` (or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
+- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z.apk`, or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
 - **Uninstall:**
   1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup.
   2. `adb uninstall local.tethering.dedicated`

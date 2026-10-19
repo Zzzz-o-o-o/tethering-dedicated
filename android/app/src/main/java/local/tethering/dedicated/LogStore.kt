@@ -44,12 +44,13 @@ object Ev {
     const val SCHEDULE = "時間帯スケジュール"
     const val PLUG = "スマートプラグ"
     const val EXT = "外部への通知"
+    const val DATA_CAP = "通信量の上限"
 
     /** 画面の「直近の記録」に出すもの（定期チェックの行は出さない） */
     val recentKinds = setOf(
         START, STOP, BOOT, SUSPECT, RECHECK_BAD, CONFIRMED, CONTINUING, RECOVERED, BLIP, TETHER,
         POWER, PROFILE, ALERT, ALERT_CLEAR, MAINT_ON, MAINT_OFF, SETTINGS, RESTORE, BOOT_CHECK,
-        EXP_START, EXP_SWITCH, EXP_END, PLACE, TRAFFIC, WEB, AUTO, SCHEDULE, PLUG, EXT,
+        EXP_START, EXP_SWITCH, EXP_END, PLACE, TRAFFIC, WEB, AUTO, SCHEDULE, PLUG, EXT, DATA_CAP,
     )
 
     /** 接続性チェックの行（日次レポートの稼働率に使う） */
@@ -90,6 +91,7 @@ object Ev {
             SCHEDULE to Tx(SCHEDULE, "Quiet-hours schedule", "Planification"),
             PLUG to Tx(PLUG, "Smart plug", "Prise connectée"),
             EXT to Tx(EXT, "External notification", "Notification externe"),
+            DATA_CAP to Tx(DATA_CAP, "Data cap", "Plafond de données"),
         )
     }
 
