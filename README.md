@@ -28,6 +28,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 | `tools\adb-setup.bat` | PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
+| `LICENSE` | MIT License |
 
 ---
 
@@ -292,3 +293,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 ---
 
 For build instructions, design notes and test records, see `developer-memo.md` (Japanese).
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
