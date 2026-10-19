@@ -33,57 +33,123 @@ object Candidates {
     /** 自動で試すときのチェック間隔の倍率 */
     const val INTERVAL_FACTOR = 4
 
-    val all = listOf(
+    /** 候補の一覧（表示の言語で作る） */
+    val all: List<Candidate> get() = listOf(
         Candidate(
-            "bluetooth", "Bluetooth を OFF", "Bluetooth ON", "Bluetooth OFF",
-            "クイック設定または 設定 → Bluetooth で OFF にしてください。", "Bluetooth を ON に戻してください。",
+            "bluetooth", tr("Bluetooth を OFF", "Turn off Bluetooth", "Désactiver le Bluetooth"),
+            tr("Bluetooth ON", "Bluetooth on", "Bluetooth activé"), tr("Bluetooth OFF", "Bluetooth off", "Bluetooth désactivé"),
+            tr(
+                "クイック設定または 設定 → Bluetooth で OFF にしてください。", "Turn it off in Quick Settings or Settings → Bluetooth.",
+                "Désactivez-le dans les réglages rapides ou dans Paramètres → Bluetooth.",
+            ),
+            tr("Bluetooth を ON に戻してください。", "Turn Bluetooth back on.", "Réactivez le Bluetooth."),
         ),
         Candidate(
-            "location", "位置情報を OFF", "位置情報 ON", "位置情報 OFF",
-            "クイック設定または 設定 → 位置情報 で OFF にしてください。", "位置情報を ON に戻してください。",
+            "location", tr("位置情報を OFF", "Turn off Location", "Désactiver la localisation"),
+            tr("位置情報 ON", "Location on", "Localisation activée"), tr("位置情報 OFF", "Location off", "Localisation désactivée"),
+            tr(
+                "クイック設定または 設定 → 位置情報 で OFF にしてください。", "Turn it off in Quick Settings or Settings → Location.",
+                "Désactivez-la dans les réglages rapides ou dans Paramètres → Localisation.",
+            ),
+            tr("位置情報を ON に戻してください。", "Turn Location back on.", "Réactivez la localisation."),
         ),
         Candidate(
-            "battery_saver", "バッテリーセーバーを ON", "セーバー OFF", "セーバー ON",
-            "設定 → 電池 → バッテリーセーバー を ON にしてください（データセーバーは ON にしないこと）。", "バッテリーセーバーを OFF に戻してください。",
+            "battery_saver", tr("バッテリーセーバーを ON", "Turn on Battery Saver", "Activer l'économiseur de batterie"),
+            tr("セーバー OFF", "Saver off", "Économiseur désactivé"), tr("セーバー ON", "Saver on", "Économiseur activé"),
+            tr(
+                "設定 → 電池 → バッテリーセーバー を ON にしてください（データセーバーは ON にしないこと）。",
+                "Turn on Settings → Battery → Battery Saver (don't turn on Data Saver).",
+                "Activez Paramètres → Batterie → Économiseur de batterie (n'activez pas l'économiseur de données).",
+            ),
+            tr("バッテリーセーバーを OFF に戻してください。", "Turn Battery Saver back off.", "Désactivez à nouveau l'économiseur de batterie."),
         ),
         // 帯域ごとの消費の比較（仕様 F-38）。アプリからは今の帯域を読めないので、今の帯域に合わせて選んでもらう
         Candidate(
-            "ap_5g", "アクセスポイントを 5GHz にする（今は 2.4GHz）", "2.4GHz", "5GHz",
-            "テザリング設定 → Wi-Fi アクセスポイント → AP の帯域 を「5.0 GHz」にしてください（接続端末はつなぎ直しになります）。",
-            "AP の帯域を「2.4 GHz」に戻してください。",
+            "ap_5g", tr("アクセスポイントを 5GHz にする（今は 2.4GHz）", "Switch the hotspot to 5 GHz (now 2.4 GHz)", "Passer le point d'accès en 5 GHz (actuellement 2,4 GHz)"),
+            tr("2.4GHz", "2.4 GHz", "2,4 GHz"), tr("5GHz", "5 GHz", "5 GHz"),
+            apBand(tr("5.0 GHz", "5.0 GHz", "5,0 GHz")), apBack(tr("2.4 GHz", "2.4 GHz", "2,4 GHz")),
         ),
         Candidate(
-            "ap_24g", "アクセスポイントを 2.4GHz にする（今は 5GHz）", "5GHz", "2.4GHz",
-            "テザリング設定 → Wi-Fi アクセスポイント → AP の帯域 を「2.4 GHz」にしてください（接続端末はつなぎ直しになります）。",
-            "AP の帯域を「5.0 GHz」に戻してください。",
+            "ap_24g", tr("アクセスポイントを 2.4GHz にする（今は 5GHz）", "Switch the hotspot to 2.4 GHz (now 5 GHz)", "Passer le point d'accès en 2,4 GHz (actuellement 5 GHz)"),
+            tr("5GHz", "5 GHz", "5 GHz"), tr("2.4GHz", "2.4 GHz", "2,4 GHz"),
+            apBand(tr("2.4 GHz", "2.4 GHz", "2,4 GHz")), apBack(tr("5.0 GHz", "5.0 GHz", "5,0 GHz")),
         ),
         Candidate(
-            "tether_offload", "テザリングのハードウェアアクセラレーションを ON（対応端末のみ）", "アクセラレーション OFF", "アクセラレーション ON",
-            "開発者向けオプション →「テザリング ハードウェア アクセラレーション」を ON にしてから、テザリングを OFF → ON してください。",
-            "「テザリング ハードウェア アクセラレーション」を OFF に戻し、テザリングを OFF → ON してください。",
+            "tether_offload",
+            tr(
+                "テザリングのハードウェアアクセラレーションを ON（対応端末のみ）", "Turn on tethering hardware acceleration (supported phones only)",
+                "Activer l'accélération matérielle du partage de connexion (téléphones compatibles)",
+            ),
+            tr("アクセラレーション OFF", "Acceleration off", "Accélération désactivée"), tr("アクセラレーション ON", "Acceleration on", "Accélération activée"),
+            tr(
+                "開発者向けオプション →「テザリング ハードウェア アクセラレーション」を ON にしてから、テザリングを OFF → ON してください。",
+                "Turn on Developer options → “Tethering hardware acceleration”, then turn the hotspot off and on again.",
+                "Activez Options pour les développeurs → « Accélération matérielle pour le partage de connexion », puis désactivez et réactivez le point d'accès.",
+            ),
+            tr(
+                "「テザリング ハードウェア アクセラレーション」を OFF に戻し、テザリングを OFF → ON してください。",
+                "Turn “Tethering hardware acceleration” back off, then turn the hotspot off and on again.",
+                "Désactivez à nouveau « Accélération matérielle pour le partage de connexion », puis désactivez et réactivez le point d'accès.",
+            ),
         ),
         Candidate(
-            "volte", "VoLTE を OFF（データ専用 SIM）", "VoLTE ON", "VoLTE OFF",
-            "設定 → ネットワークとインターネット → モバイル ネットワーク で VoLTE を OFF にしてください。", "VoLTE を ON に戻してください。",
+            "volte", tr("VoLTE を OFF（データ専用 SIM）", "Turn off VoLTE (data-only SIM)", "Désactiver la VoLTE (SIM données uniquement)"),
+            tr("VoLTE ON", "VoLTE on", "VoLTE activée"), tr("VoLTE OFF", "VoLTE off", "VoLTE désactivée"),
+            tr(
+                "設定 → ネットワークとインターネット → モバイル ネットワーク で VoLTE を OFF にしてください。",
+                "Turn off VoLTE in Settings → Network & internet → Mobile network.",
+                "Désactivez la VoLTE dans Paramètres → Réseau et Internet → Réseau mobile.",
+            ),
+            tr("VoLTE を ON に戻してください。", "Turn VoLTE back on.", "Réactivez la VoLTE."),
         ),
         Candidate(
-            "sync", "自動同期を OFF", "自動同期 ON", "自動同期 OFF",
-            "設定 → アカウント →「アプリデータを自動的に同期する」を OFF にしてください。", "自動同期を ON に戻してください。",
+            "sync", tr("自動同期を OFF", "Turn off auto-sync", "Désactiver la synchronisation automatique"),
+            tr("自動同期 ON", "Auto-sync on", "Synchro auto activée"), tr("自動同期 OFF", "Auto-sync off", "Synchro auto désactivée"),
+            tr(
+                "設定 → アカウント →「アプリデータを自動的に同期する」を OFF にしてください。",
+                "Turn off Settings → Accounts → “Automatically sync app data”.",
+                "Désactivez Paramètres → Comptes → « Synchroniser automatiquement les données des applications ».",
+            ),
+            tr("自動同期を ON に戻してください。", "Turn auto-sync back on.", "Réactivez la synchronisation automatique."),
         ),
         Candidate(
-            KEY_TETHER_OFF, "使わないときにテザリングを止める（待機電力の測定）", "テザリング ON（接続 0 台）", "テザリング OFF",
-            "接続端末をすべて切断してから、Wi-Fi テザリングを OFF にしてください（このテストの間は停止の通知を出しません）。",
-            "Wi-Fi テザリングを ON に戻してください。",
+            KEY_TETHER_OFF,
+            tr(
+                "使わないときにテザリングを止める（待機電力の測定）", "Turn off the hotspot when unused (standby power test)",
+                "Arrêter le point d'accès inutilisé (mesure de la consommation en veille)",
+            ),
+            tr("テザリング ON（接続 0 台）", "Hotspot on (no devices)", "Point d'accès activé (aucun appareil)"),
+            tr("テザリング OFF", "Hotspot off", "Point d'accès désactivé"),
+            tr(
+                "接続端末をすべて切断してから、Wi-Fi テザリングを OFF にしてください（このテストの間は停止の通知を出しません）。",
+                "Disconnect all devices, then turn off the Wi-Fi hotspot (no hotspot alerts are shown during this test).",
+                "Déconnectez tous les appareils, puis désactivez le point d'accès Wi-Fi (aucune alerte d'arrêt pendant ce test).",
+            ),
+            tr("Wi-Fi テザリングを ON に戻してください。", "Turn the Wi-Fi hotspot back on.", "Réactivez le point d'accès Wi-Fi."),
         ),
         Candidate(
-            KEY_INTERVAL, "このアプリのチェック間隔（自動）", "今の間隔", "間隔を ${INTERVAL_FACTOR} 倍",
-            "（自動で切り替えます）", "（自動で元に戻します）", auto = true,
+            KEY_INTERVAL,
+            tr("このアプリのチェック間隔（自動）", "This app's check interval (automatic)", "Intervalle de vérification de cette application (automatique)"),
+            tr("今の間隔", "Current interval", "Intervalle actuel"),
+            tr("間隔を ${INTERVAL_FACTOR} 倍", "Interval × $INTERVAL_FACTOR", "Intervalle × $INTERVAL_FACTOR"),
+            tr("（自動で切り替えます）", "(switched automatically)", "(changement automatique)"),
+            tr("（自動で元に戻します）", "(restored automatically)", "(rétabli automatiquement)"), auto = true,
         ),
         Candidate(
-            KEY_CUSTOM, "その他（自由に指定）", "今の設定", "試す設定",
-            "試したい設定に切り替えてください。", "元の設定に戻してください。",
+            KEY_CUSTOM, tr("その他（自由に指定）", "Other (your choice)", "Autre (au choix)"),
+            tr("今の設定", "Current setting", "Réglage actuel"), tr("試す設定", "Setting to test", "Réglage à tester"),
+            tr("試したい設定に切り替えてください。", "Switch to the setting you want to test.", "Passez au réglage à tester."),
+            tr("元の設定に戻してください。", "Switch back to your original setting.", "Revenez à votre réglage d'origine."),
         ),
     )
+
+    private fun apBand(band: String) = tr(
+        "テザリング設定 → Wi-Fi アクセスポイント → AP の帯域 を「$band」にしてください（接続端末はつなぎ直しになります）。",
+        "Set Hotspot settings → Wi-Fi hotspot → AP Band to “$band” (connected devices will reconnect).",
+        "Réglez Point d'accès → Point d'accès Wi-Fi → Bande du point d'accès sur « $band » (les appareils connectés se reconnecteront).",
+    )
+
+    private fun apBack(band: String) = tr("AP の帯域を「$band」に戻してください。", "Set the AP Band back to “$band”.", "Remettez la bande du point d'accès sur « $band ».")
 
     fun of(key: String): Candidate? = all.firstOrNull { it.key == key }
 }
@@ -107,12 +173,14 @@ class PhaseResult(val condition: Char) {
     val rsrpAvg: Double? get() = if (rsrpN > 0) rsrpSum.toDouble() / rsrpN else null
 }
 
-enum class Decision(val label: String) {
-    ADOPT("効果あり：試した設定（B）のままにする"),
-    REVERT("効果なし：元の設定（A）に戻す"),
-    WORSE("通信が悪化：元の設定（A）に戻す"),
-    INCONCLUSIVE("判定できない：元の設定（A）に戻す"),
-    ABORTED("中止：元の設定（A）に戻す"),
+enum class Decision(private val tx: Tx) {
+    ADOPT(Tx("効果あり：試した設定（B）のままにする", "Effective: keep the tested setting (B)", "Efficace : garder le réglage testé (B)")),
+    REVERT(Tx("効果なし：元の設定（A）に戻す", "No effect: go back to the original setting (A)", "Sans effet : revenir au réglage d'origine (A)")),
+    WORSE(Tx("通信が悪化：元の設定（A）に戻す", "Connection got worse: go back to the original setting (A)", "Connexion dégradée : revenir au réglage d'origine (A)")),
+    INCONCLUSIVE(Tx("判定できない：元の設定（A）に戻す", "Inconclusive: go back to the original setting (A)", "Non concluant : revenir au réglage d'origine (A)")),
+    ABORTED(Tx("中止：元の設定（A）に戻す", "Stopped: go back to the original setting (A)", "Arrêté : revenir au réglage d'origine (A)"));
+
+    val label: String get() = tx.get()
 }
 
 data class Outcome(
@@ -225,16 +293,37 @@ class ExperimentRun(
         val bytesB = b.sumOf { it.bytes } / (b.sumOf { it.sec }.coerceAtLeast(1) / 3600.0)
         val mbPerH = 1_000_000.0
         if (maxOf(bytesA, bytesB) > 5 * mbPerH && maxOf(bytesA, bytesB) > 2 * minOf(bytesA, bytesB)) {
-            notes.add("通信量が条件で大きく違います（A ${"%.0f".format(bytesA / mbPerH)} MB/h・B ${"%.0f".format(bytesB / mbPerH)} MB/h）")
+            val x = "%.0f".format(bytesA / mbPerH)
+            val y = "%.0f".format(bytesB / mbPerH)
+            notes.add(
+                tr(
+                    "通信量が条件で大きく違います（A $x MB/h・B $y MB/h）", "Data use differs a lot between conditions (A $x MB/h, B $y MB/h)",
+                    "La consommation de données diffère beaucoup entre les conditions (A $x Mo/h, B $y Mo/h)",
+                ),
+            )
         }
         val rA = a.mapNotNull { it.rsrpAvg }.takeIf { it.isNotEmpty() }?.average()
         val rB = b.mapNotNull { it.rsrpAvg }.takeIf { it.isNotEmpty() }?.average()
         if (rA != null && rB != null && abs(rA - rB) >= 6) {
-            notes.add("電波が条件で違います（RSRP A ${"%.0f".format(rA)}・B ${"%.0f".format(rB)} dBm）")
+            val x = "%.0f".format(rA)
+            val y = "%.0f".format(rB)
+            notes.add(
+                tr(
+                    "電波が条件で違います（RSRP A $x・B $y dBm）", "Signal differs between conditions (RSRP A $x, B $y dBm)",
+                    "Le signal diffère entre les conditions (RSRP A $x, B $y dBm)",
+                ),
+            )
         }
         val cA = a.mapNotNull { it.clientsMax }.maxOrNull()
         val cB = b.mapNotNull { it.clientsMax }.maxOrNull()
-        if (cA != null && cB != null && cA != cB) notes.add("接続端末数が条件で違います（最大 A ${cA}台・B ${cB}台）")
+        if (cA != null && cB != null && cA != cB) {
+            notes.add(
+                tr(
+                    "接続端末数が条件で違います（最大 A ${cA}台・B ${cB}台）", "The number of devices differs between conditions (max A $cA, B $cB)",
+                    "Le nombre d'appareils diffère entre les conditions (max A $cA, B $cB)",
+                ),
+            )
+        }
 
         val measuredEnough = phases.all { it.sec * 2 >= phaseSec }
         // 複数回なら「B のどの回も、A のどの回より少ない」ときだけ一貫しているとみなす
@@ -256,8 +345,18 @@ class ExperimentRun(
             saving >= minGainPct && consistent -> Decision.ADOPT
             else -> Decision.REVERT
         }
-        if (worse) notes.add(0, "B の間にインターネット確認の失敗が増えました（A ${failA}回・B ${failB}回）")
-        if (!measuredEnough && !aborted) notes.add("計測時間が足りない条件があります")
+        if (worse) {
+            notes.add(
+                0,
+                tr(
+                    "B の間にインターネット確認の失敗が増えました（A ${failA}回・B ${failB}回）", "More internet check failures during B (A $failA, B $failB)",
+                    "Plus d'échecs du test Internet pendant B (A $failA, B $failB)",
+                ),
+            )
+        }
+        if (!measuredEnough && !aborted) {
+            notes.add(tr("計測時間が足りない条件があります", "Some conditions weren't measured long enough", "Certaines conditions n'ont pas été mesurées assez longtemps"))
+        }
         return Outcome(avgA, avgB, unit, saving, consistent, notes, decision)
     }
 }

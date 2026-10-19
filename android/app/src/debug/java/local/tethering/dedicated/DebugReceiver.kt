@@ -45,6 +45,8 @@ class DebugReceiver : BroadcastReceiver() {
                     else -> sp.remove(key)
                 }
                 sp.commit()
+                // 起動時のテザリング ON は、ロック解除前でも読める写しを使う（設定画面の「保存」と同じく写す）
+                BootTether.sync(ctx, Prefs(ctx).bool(Defs.TETHER_ON_BOOT))
                 if (Prefs(ctx).monitoring) MonitorService.send(ctx, MonitorService.ACTION_SETTINGS)
                 out("$key を設定")
             }

@@ -10,7 +10,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.telephony.ServiceState
 import android.telephony.TelephonyManager
-import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 
@@ -116,9 +115,12 @@ class Monitor(private val ctx: Context) {
 
     // ---- 開始・停止 ----
 
-    fun ensureStarted(boot: Boolean, initialCheck: Boolean = true) {
+    /** [trustedBoot] は OS だけが送れる起動の通知（BOOT_COMPLETED）で起こされたとき */
+    fun ensureStarted(boot: Boolean, initialCheck: Boolean = true, trustedBoot: Boolean = false) {
         if (!started) {
             started = true
+            // 起動時のテザリング ON は設定の写し（ロック解除前でも読める領域）を読むので、設定に合わせておく
+            BootTether.sync(ctx, prefs.bool(Defs.TETHER_ON_BOOT))
             StateStore.update { it.copy(running = true) }
             publish()
             val s = StateStore.state
@@ -127,14 +129,24 @@ class Monitor(private val ctx: Context) {
             ExperimentStore.load(prefs)?.let { interrupted(it) }
             LogStore.loadRecent(ctx, 20) { list ->
                 StateStore.update { s ->
-                    s.copy(recent = (s.recent + list).distinctBy { it.at to it.kind }.sortedByDescending { it.at }.take(30))
+                    // 同じ時刻・同じ種類でも内容が違えば別の記録（起動時のテザリング ON の結果と「起動後チェックの予約」など）
+                    s.copy(recent = (s.recent + list).distinctBy { Triple(it.at, it.kind, it.text) }.sortedByDescending { it.at }.take(30))
                 }
             }
             log(Ev.START)
             recent(Ev.START, "")
-            if (boot) markBoot() else if (initialCheck) requestCheck(Trigger.START)
+            drainBootTether()
+            if (boot) markBoot(trustedBoot) else if (initialCheck) requestCheck(Trigger.START)
         } else if (boot) {
-            markBoot()
+            markBoot(trustedBoot)
+        }
+    }
+
+    /** 起動時のテザリング ON の結果（ロック解除前にも記録する）をログへ移す */
+    private fun drainBootTether() {
+        for (line in BootTether.takeResults(ctx)) {
+            log(Ev.BOOT, result = line)
+            recent(Ev.BOOT, line)
         }
     }
 
@@ -146,9 +158,15 @@ class Monitor(private val ctx: Context) {
         if (prefs.schedStoppedWindow != 0L) {
             TetherControl.start(ctx) { }
             prefs.schedStoppedWindow = 0L
-            log(Ev.SCHEDULE, result = "監視の停止に合わせてテザリングを再開")
+            log(
+                Ev.SCHEDULE,
+                result = tr(
+                    "監視の停止に合わせてテザリングを再開", "Hotspot turned back on because monitoring stopped",
+                    "Point d'accès réactivé car la surveillance s'est arrêtée",
+                ),
+            )
         }
-        smartPlug.release("監視を停止")
+        smartPlug.release(tr("監視を停止", "Monitoring stopped", "Surveillance arrêtée"))
         log(Ev.STOP)
         Scheduler.cancel(ctx)
         for (id in listOf(Notifier.ID_UPSTREAM, Notifier.ID_TETHER, Notifier.ID_BOOT, Notifier.ID_SCHEDULE, Notifier.ID_PLUG)) Notifier.cancel(ctx, id)
@@ -171,14 +189,26 @@ class Monitor(private val ctx: Context) {
         StateStore.update { it.copy(running = false, checking = false, nextCheckAt = 0L, web = null) }
     }
 
-    private fun markBoot() {
-        // 起動直後（30 分以内）だけを本物の起動とみなす（他アプリから送られた QUICKBOOT で誤動作しないように）
-        if (bootPending || SystemClock.elapsedRealtime() > 30 * 60_000L) return
+    private fun markBoot(trusted: Boolean) {
+        // OS だけが送れる BOOT_COMPLETED は、いつ届いても本物の起動（画面ロックがあると、解除するまで届かない）。
+        // 他アプリからも送れる QUICKBOOT は、起動直後（30 分以内）だけを本物とみなす（誤動作しないように）
+        val sinceBoot = SystemClock.elapsedRealtime()
+        if (bootPending || (!trusted && sinceBoot > 30 * 60_000L)) return
         bootPending = true
         val delaySec = prefs.int(Defs.BOOT_DELAY)
         bootDue = SystemClock.elapsedRealtime() + delaySec * 1000L
-        log(Ev.BOOT, action = "${delaySec}秒後に起動後チェック")
-        recent(Ev.BOOT, "${delaySec}秒後に起動後チェック")
+        val late = if (sinceBoot > 5 * 60_000L) {
+            Fmt.paren(
+                Fmt.duration(sinceBoot).let {
+                    tr("起動の${it}後に監視を開始", "monitoring started $it after startup", "surveillance démarrée $it après le démarrage")
+                },
+            )
+        } else {
+            ""
+        }
+        val text = tr("${delaySec}秒後に起動後チェック", "After-reboot check in $delaySec s", "Vérification après redémarrage dans $delaySec s") + late
+        log(Ev.BOOT, action = text)
+        recent(Ev.BOOT, text)
         scheduleNext()
     }
 
@@ -238,7 +268,7 @@ class Monitor(private val ctx: Context) {
                 if (!closed) {
                     result.onSuccess { handle(trigger, it) }.onFailure { e ->
                         StateStore.update { it.copy(checking = false) }
-                        log(trigger.label, result = "チェックに失敗", detail = e.javaClass.simpleName)
+                        log(trigger.key, result = tr("チェックに失敗", "Check failed", "Échec de la vérification"), detail = e.javaClass.simpleName)
                         scheduleNext()
                     }
                 }
@@ -269,6 +299,8 @@ class Monitor(private val ctx: Context) {
 
     private fun handle(trigger: Trigger, pr: Probe) {
         val r = pr.check
+        // 監視の開始後に記録された、起動時のテザリング ON の結果（やり直しの結果など）
+        drainBootTether()
         lastCheckElapsed = SystemClock.elapsedRealtime()
         lastRx = pr.rx
         StateStore.update { it.copy(checking = false, power = pr.power, tether = pr.tether, line = pr.line, check = r) }
@@ -276,11 +308,11 @@ class Monitor(private val ctx: Context) {
         autoEvaluate(pr.power)
         noteProfileChange(pr.power.plug)
         publish() // ログの「プロファイル」欄が、取得したばかりの給電状態を反映するように
-        log(trigger.label, includeCheck = true, anomaly = r.failure?.label, result = r.diagnosis, detail = r.detail.ifEmpty { null })
+        log(trigger.key, includeCheck = true, anomaly = r.failure?.label, result = r.diagnosis, detail = r.detail.ifEmpty { null })
         recordSegment(pr.power, pr.line, pr.tether, check = r)
         if (!prefs.maintenanceActive(r.at)) {
             handleUpstream(r)
-            handleTether(r.at, pr.tether)
+            handleTether(r.at, pr.tether, bootCheck = trigger == Trigger.BOOT)
         }
         handleAlerts(pr.power)
         if (!prefs.maintenanceActive(r.at)) handleSignal(pr.line)
@@ -312,62 +344,100 @@ class Monitor(private val ctx: Context) {
             is RecoveryMachine.Step.Suspect -> {
                 upstreamDue = SystemClock.elapsedRealtime() + step.nextDelayMs
                 val k = step.episode.kind.label
-                log(Ev.SUSPECT, anomaly = k, action = "${step.nextDelayMs / 60_000}分後に再確認（1/$total）", result = r.diagnosis)
+                log(Ev.SUSPECT, anomaly = k, action = recheckIn(step.nextDelayMs, 1, total), result = r.diagnosis)
                 recent(Ev.SUSPECT, k)
             }
             is RecoveryMachine.Step.Recheck -> {
                 upstreamDue = SystemClock.elapsedRealtime() + step.nextDelayMs
-                var action = "${step.nextDelayMs / 60_000}分後に再確認（${step.episode.rechecks + 1}/$total）"
-                if (step.revalidate && revalidate()) action = "ネットワークの再検証を依頼・$action"
+                var action = recheckIn(step.nextDelayMs, step.episode.rechecks + 1, total)
+                if (step.revalidate && revalidate()) {
+                    action = tr("ネットワークの再検証を依頼・$action", "Asked the system to revalidate the network; $action", "Revalidation du réseau demandée ; $action")
+                }
                 log(Ev.RECHECK_BAD, anomaly = step.episode.kind.label, action = action, result = r.diagnosis)
             }
             is RecoveryMachine.Step.Confirmed -> {
                 upstreamDue = null
                 val ep = step.episode
-                log(Ev.CONFIRMED, anomaly = ep.kind.label, action = "通知", result = r.diagnosis)
+                log(Ev.CONFIRMED, anomaly = ep.kind.label, action = Ev.NOTIFIED.get(), result = r.diagnosis)
                 recent(Ev.CONFIRMED, ep.kind.label)
-                if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.ID_UPSTREAM, "異常：${ep.kind.label}", upstreamText(ep, r))
+                if (prefs.bool(Defs.NOTIFY_ALERT)) {
+                    val k = ep.kind.label
+                    Notifier.alert(ctx, Notifier.ID_UPSTREAM, tr("異常：$k", "Error: $k", "Erreur : $k"), upstreamText(ep, r))
+                }
             }
             is RecoveryMachine.Step.StillBad -> {
                 upstreamDue = null
                 if (step.remind) {
-                    log(Ev.CONTINUING, anomaly = step.episode.kind.label, action = "再通知", result = r.diagnosis)
+                    log(Ev.CONTINUING, anomaly = step.episode.kind.label, action = tr("再通知", "Notified again", "Notifié à nouveau"), result = r.diagnosis)
                     if (prefs.bool(Defs.NOTIFY_ALERT)) {
-                        Notifier.alert(ctx, Notifier.ID_UPSTREAM, "まだ復旧していません：${step.episode.kind.label}", upstreamText(step.episode, r))
+                        val k = step.episode.kind.label
+                        Notifier.alert(
+                            ctx, Notifier.ID_UPSTREAM, tr("まだ復旧していません：$k", "Still not recovered: $k", "Toujours pas rétabli : $k"),
+                            upstreamText(step.episode, r),
+                        )
                     }
                 }
             }
             is RecoveryMachine.Step.Recovered -> {
                 upstreamDue = null
                 val ep = step.episode
+                val k = ep.kind.label
                 val dur = Fmt.duration(step.durationMs)
                 if (ep.confirmed) {
-                    log(Ev.RECOVERED, anomaly = ep.kind.label, result = "所要 $dur")
-                    recent(Ev.RECOVERED, "${ep.kind.label}（$dur）")
+                    log(Ev.RECOVERED, anomaly = k, result = tr("所要 $dur", "Took $dur", "Durée : $dur"))
+                    recent(Ev.RECOVERED, k + Fmt.paren(dur))
                     Notifier.cancel(ctx, Notifier.ID_UPSTREAM)
-                    if (prefs.bool(Defs.NOTIFY_RECOVERY)) Notifier.info(ctx, Notifier.ID_UPSTREAM, "復旧しました", "${ep.kind.label}は${dur}で復旧しました")
+                    if (prefs.bool(Defs.NOTIFY_RECOVERY)) {
+                        Notifier.info(
+                            ctx, Notifier.ID_UPSTREAM, tr("復旧しました", "Recovered", "Rétabli"),
+                            tr("${k}は${dur}で復旧しました", "$k: recovered after $dur", "$k : rétabli après $dur"),
+                        )
+                    }
                     // 止まっている間は外へ送れないので、復旧してから止まっていた時間を送る（仕様 F-44）
+                    val from = Fmt.hm(ep.startedAt)
+                    val to = Fmt.hm(r.at)
                     ext.post(
-                        ExtNotify.Category.RECOVERY, "回線が復旧しました",
-                        "${ep.kind.label}が続いていました。止まっていた時間: $dur（${Fmt.hm(ep.startedAt)}〜${Fmt.hm(r.at)}）",
+                        ExtNotify.Category.RECOVERY, tr("回線が復旧しました", "Line recovered", "Ligne rétablie"),
+                        tr(
+                            "${k}が続いていました。止まっていた時間: $dur（$from〜$to）", "$k. Downtime: $dur ($from–$to)",
+                            "$k. Durée de coupure : $dur ($from–$to)",
+                        ),
                     )
                 } else {
-                    log(Ev.BLIP, anomaly = ep.kind.label, result = "再確認${ep.rechecks}回目で正常")
-                    recent(Ev.BLIP, ep.kind.label)
+                    val n = ep.rechecks
+                    log(Ev.BLIP, anomaly = k, result = tr("再確認${n}回目で正常", "OK at recheck $n", "OK à la revérification $n"))
+                    recent(Ev.BLIP, k)
                 }
             }
         }
     }
 
+    private fun recheckIn(delayMs: Long, n: Int, total: Int): String {
+        val min = delayMs / 60_000
+        return tr("${min}分後に再確認（$n/$total）", "Recheck in $min min ($n/$total)", "Revérification dans $min min ($n/$total)")
+    }
+
     private fun upstreamText(ep: RecoveryMachine.Episode, r: CheckResult): String {
         val advice = when (ep.kind) {
-            Anomaly.SIM -> "SIMの挿し直し・接点を確認してください。"
-            Anomaly.NO_SERVICE -> "電波状況、回線の契約状態、APN設定を確認してください。"
-            Anomaly.NO_DATA -> "モバイルデータがONか、APN設定を確認してください。"
-            Anomaly.DNS, Anomaly.INTERNET -> "しばらく待っても直らなければ、機内モードのON/OFFを手動で試してください（このアプリは自動では切り替えません）。"
+            Anomaly.SIM -> tr("SIMの挿し直し・接点を確認してください。", "Reinsert the SIM and check its contacts.", "Réinsérez la carte SIM et vérifiez ses contacts.")
+            Anomaly.NO_SERVICE -> tr(
+                "電波状況、回線の契約状態、APN設定を確認してください。", "Check the signal, the status of your plan and the APN settings.",
+                "Vérifiez le signal, l'état de votre forfait et les paramètres APN.",
+            )
+            Anomaly.NO_DATA -> tr(
+                "モバイルデータがONか、APN設定を確認してください。", "Check that mobile data is on and the APN settings are correct.",
+                "Vérifiez que les données mobiles sont activées et que les paramètres APN sont corrects.",
+            )
+            Anomaly.DNS, Anomaly.INTERNET -> tr(
+                "しばらく待っても直らなければ、機内モードのON/OFFを手動で試してください（このアプリは自動では切り替えません）。",
+                "If it doesn't recover after a while, turn airplane mode on and off manually (this app never does it automatically).",
+                "Si la connexion ne revient pas après un moment, activez puis désactivez le mode avion manuellement (cette application ne le fait jamais automatiquement).",
+            )
             else -> ""
         }
-        return "${r.diagnosis}\n${Fmt.time(ep.startedAt)}から続いています。\n$advice".trim()
+        val t = Fmt.time(ep.startedAt)
+        val since = tr("${t}から続いています。", "Ongoing since $t.", "En cours depuis $t.")
+        return "${r.diagnosis}\n$since\n$advice".trim()
     }
 
     /** 低リスクの復旧処理：システムにモバイル回線の再検証を依頼する（接続を切ったりはしない） */
@@ -401,7 +471,8 @@ class Monitor(private val ctx: Context) {
         StateStore.update { it.copy(tether = t) }
         noteZero(t)
         if (!prefs.bool(Defs.TETHER_EXPECTED) && prev != null && prev != t.wifiOn) {
-            log(Ev.TETHER, result = "Wi-Fiテザリング ${Fmt.ap(t.apState)}")
+            val ap = Fmt.ap(t.apState)
+            log(Ev.TETHER, result = tr("Wi-Fiテザリング $ap", "Wi-Fi hotspot $ap", "Point d'accès Wi-Fi : $ap"))
         }
         // テザリングの ON/OFF で消費が大きく変わるので、区間を分ける
         if (prev != null && t.wifiOn != null && prev != t.wifiOn) {
@@ -419,7 +490,8 @@ class Monitor(private val ctx: Context) {
         refreshNotification()
     }
 
-    private fun handleTether(now: Long, t: TetherInfo) {
+    /** [bootCheck] は起動後チェック（仕様 F-14）のとき */
+    private fun handleTether(now: Long, t: TetherInfo, bootCheck: Boolean = false) {
         // 比較テスト「使わないときはテザリングを止める」の間は、テザリングの停止を異常としない（利用者が止めるため）
         val testingOff = exp?.candidate?.key == Candidates.KEY_TETHER_OFF
         // 時間帯スケジュールで止めている間（再開のやり直し中を含む）も異常としない（仕様 F-37）
@@ -432,6 +504,8 @@ class Monitor(private val ctx: Context) {
             }
             return
         }
+        // 再起動の直後は OFF で始まり、起動時の ON にも時間がかかる。テザリングの停止は起動後チェックでまとめて知らせる（重ねて通知しない）
+        if (bootPending && !bootCheck) return
         val failure = when {
             t.apState == TetherInfo.AP_FAILED -> Anomaly.TETHER_FAILED
             t.wifiOn == false -> Anomaly.TETHER_OFF
@@ -444,20 +518,28 @@ class Monitor(private val ctx: Context) {
             is RecoveryMachine.Step.Ok -> tetherDue = null
             is RecoveryMachine.Step.Suspect -> {
                 tetherDue = SystemClock.elapsedRealtime() + step.nextDelayMs
-                log(Ev.TETHER, anomaly = step.episode.kind.label, action = "1分後に再確認")
-                recent(Ev.TETHER, step.episode.kind.label + "（確認中）")
+                log(Ev.TETHER, anomaly = step.episode.kind.label, action = tr("1分後に再確認", "Recheck in 1 min", "Revérification dans 1 min"))
+                recent(Ev.TETHER, step.episode.kind.label + Fmt.paren(tr("確認中", "checking", "vérification")))
             }
             is RecoveryMachine.Step.Recheck -> tetherDue = SystemClock.elapsedRealtime() + step.nextDelayMs
             is RecoveryMachine.Step.Confirmed -> {
                 tetherDue = null
-                log(Ev.TETHER, anomaly = step.episode.kind.label, action = "通知")
+                log(Ev.TETHER, anomaly = step.episode.kind.label, action = Ev.NOTIFIED.get())
                 recent(Ev.TETHER, step.episode.kind.label)
                 val failed = resumeFailed
                 resumeFailed = null
                 val text = if (failed != null) {
-                    "時間帯スケジュールで再開できませんでした（$failed）。テザリングを手動で ON にしてください。"
+                    tr(
+                        "時間帯スケジュールで再開できませんでした（$failed）。テザリングを手動で ON にしてください。",
+                        "The schedule couldn't turn the hotspot back on ($failed). Turn it on manually.",
+                        "La planification n'a pas pu réactiver le point d'accès ($failed). Activez-le manuellement.",
+                    )
                 } else {
-                    "再起動や自動OFFで止まった可能性があります。テザリングをONにしてください（このアプリは自動では ON にしません）。"
+                    tr(
+                        "自動OFF・手での操作・不具合で止まった可能性があります。テザリングを ON にしてください（このアプリは、止まったテザリングを自動では ON にしません）。",
+                        "It may have been stopped by the automatic turn-off, by hand or by a fault. Turn the hotspot on (this app doesn't turn a stopped hotspot back on by itself).",
+                        "Il a peut-être été arrêté par la désactivation automatique, à la main ou par une panne. Activez le point d'accès (cette application ne réactive pas d'elle-même un point d'accès arrêté).",
+                    )
                 }
                 if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.ID_TETHER, step.episode.kind.label, text, openTether = true)
                 // テザリングが止まってもモバイル回線は使えることが多いので、外へも知らせる（仕様 F-44）
@@ -466,19 +548,31 @@ class Monitor(private val ctx: Context) {
             is RecoveryMachine.Step.StillBad -> {
                 tetherDue = null
                 if (step.remind && prefs.bool(Defs.NOTIFY_ALERT)) {
-                    Notifier.alert(ctx, Notifier.ID_TETHER, "まだ停止しています：${step.episode.kind.label}", "テザリングをONにしてください。", openTether = true)
+                    val k = step.episode.kind.label
+                    Notifier.alert(
+                        ctx, Notifier.ID_TETHER, tr("まだ停止しています：$k", "Still off: $k", "Toujours arrêté : $k"),
+                        tr("テザリングをONにしてください。", "Turn the hotspot on.", "Activez le point d'accès."), openTether = true,
+                    )
                 }
             }
             is RecoveryMachine.Step.Recovered -> {
                 tetherDue = null
                 val ep = step.episode
                 val dur = Fmt.duration(step.durationMs)
-                log(Ev.TETHER, anomaly = ep.kind.label, result = "再開（$dur）")
-                recent(Ev.TETHER, "Wi-Fiテザリング再開")
+                log(Ev.TETHER, anomaly = ep.kind.label, result = tr("再開（$dur）", "Back on ($dur)", "Rétabli ($dur)"))
+                recent(Ev.TETHER, tr("Wi-Fiテザリング再開", "Wi-Fi hotspot back on", "Point d'accès Wi-Fi rétabli"))
                 Notifier.cancel(ctx, Notifier.ID_TETHER)
-                if (ep.confirmed && prefs.bool(Defs.NOTIFY_RECOVERY)) Notifier.info(ctx, Notifier.ID_TETHER, "Wi-Fiテザリングが再開しました", "停止していた時間: $dur")
+                val title = tr("Wi-Fiテザリングが再開しました", "Wi-Fi hotspot is back on", "Le point d'accès Wi-Fi est rétabli")
+                if (ep.confirmed && prefs.bool(Defs.NOTIFY_RECOVERY)) {
+                    Notifier.info(ctx, Notifier.ID_TETHER, title, tr("停止していた時間: $dur", "Downtime: $dur", "Durée d'arrêt : $dur"))
+                }
                 if (ep.confirmed) {
-                    ext.post(ExtNotify.Category.RECOVERY, "Wi-Fiテザリングが再開しました", "停止していた時間: $dur（${Fmt.hm(ep.startedAt)}〜${Fmt.hm(now)}）")
+                    val from = Fmt.hm(ep.startedAt)
+                    val to = Fmt.hm(now)
+                    ext.post(
+                        ExtNotify.Category.RECOVERY, title,
+                        tr("停止していた時間: $dur（$from〜$to）", "Downtime: $dur ($from–$to)", "Durée d'arrêt : $dur ($from–$to)"),
+                    )
                 }
             }
         }
@@ -575,7 +669,7 @@ class Monitor(private val ctx: Context) {
         // 比較テストの間は変えない（条件をそろえるため）
         for (c in auto.evaluate(p, hold = exp != null)) {
             val why = when {
-                p?.plug == Plug.NONE -> "バッテリー駆動・残量 ${Fmt.num(p.levelPct, "%")}"
+                p?.plug == Plug.NONE -> Fmt.pct(p.levelPct).let { tr("バッテリー駆動・残量 $it", "On battery, $it", "Sur batterie, $it") }
                 else -> p?.plug?.label ?: Fmt.NA
             }
             log(Ev.AUTO, result = c, detail = why)
@@ -588,8 +682,9 @@ class Monitor(private val ctx: Context) {
         prefs.put(Defs.AUTO_SAVER, false)
         prefs.put(Defs.AUTO_DOZE, false)
         val done = auto.restoreAll()
-        log(Ev.AUTO, result = "すべて元に戻した", detail = done.joinToString(" / ").ifEmpty { "変えていた設定はなし" })
-        recent(Ev.AUTO, "すべて元に戻した")
+        val text = tr("すべて元に戻した", "Restored everything", "Tout a été rétabli")
+        log(Ev.AUTO, result = text, detail = done.joinToString(" / ").ifEmpty { tr("変えていた設定はなし", "Nothing had been changed", "Aucun réglage n'avait été modifié") })
+        recent(Ev.AUTO, text)
         publish()
     }
 
@@ -625,23 +720,35 @@ class Monitor(private val ctx: Context) {
                 val idle = apIdleSince
                 if (t?.clients == 0 && idle != null) schedIdleDue = idle + TetherSchedule.MIN_ZERO_MS + 1_000L
                 val why = when (t?.clients) {
-                    null -> "接続端末の数が分からない"
-                    0 -> "接続 0 台になってから 10 分たっていない"
-                    else -> "接続端末が ${t.clients} 台ある"
+                    null -> tr("接続端末の数が分からない", "the number of connected devices is unknown", "le nombre d'appareils connectés est inconnu")
+                    0 -> tr("接続 0 台になってから 10 分たっていない", "not yet 10 minutes without devices", "pas encore 10 minutes sans appareil")
+                    else -> tr("接続端末が ${t.clients} 台ある", "${t.clients} device(s) connected", "${t.clients} appareil(s) connecté(s)")
                 }
-                schedNote = "${why}ため、止めるのを待っています"
+                schedNote = tr("${why}ため、止めるのを待っています", "Waiting to turn off: $why", "En attente d'arrêt : $why")
                 // 記録は 1 つの時間帯につき 1 回だけ
                 if (w != null && schedWaitLogged != w.first) {
                     schedWaitLogged = w.first
-                    log(Ev.SCHEDULE, result = "止めるのを待つ（$why）")
+                    log(Ev.SCHEDULE, result = tr("止めるのを待つ（$why）", "Waiting to turn off ($why)", "En attente d'arrêt ($why)"))
                 }
             }
             TetherSchedule.Act.ALREADY_OFF -> if (w != null) {
                 prefs.schedHandledWindow = w.first
-                log(Ev.SCHEDULE, result = "時間帯に入った（テザリングはすでに OFF のため何もしない）")
+                log(
+                    Ev.SCHEDULE,
+                    result = tr(
+                        "時間帯に入った（テザリングはすでに OFF のため何もしない）", "Quiet hours started (hotspot already off; nothing to do)",
+                        "Début des heures d'inactivité (point d'accès déjà arrêté ; rien à faire)",
+                    ),
+                )
             }
             TetherSchedule.Act.STOP -> if (w != null && q != null) schedStop(w, q)
-            TetherSchedule.Act.START -> schedStart(if (enabled) "時間帯の終わり" else "スケジュールを OFF にした")
+            TetherSchedule.Act.START -> schedStart(
+                if (enabled) {
+                    tr("時間帯の終わり", "quiet hours ended", "fin des heures d'inactivité")
+                } else {
+                    tr("スケジュールを OFF にした", "schedule turned off", "planification désactivée")
+                },
+            )
             TetherSchedule.Act.CLEAR -> schedCleared()
         }
     }
@@ -653,23 +760,30 @@ class Monitor(private val ctx: Context) {
             prefs.schedStoppedWindow = w.first
             prefs.schedStoppedAt = System.currentTimeMillis()
             schedNote = null
-            val text = "テザリングを止めた（${q.endLabel} に再開）"
+            val end = q.endLabel
+            val text = tr("テザリングを止めた（$end に再開）", "Hotspot turned off (back on at $end)", "Point d'accès arrêté (réactivation à $end)")
             log(Ev.SCHEDULE, result = text)
             recent(Ev.SCHEDULE, text)
             Notifier.cancel(ctx, Notifier.ID_SCHEDULE)
         } else {
             // この時間帯はもう試さない（許可がないときに何度も記録しない）
-            schedNote = "止められませんでした（${r.text}）"
-            log(Ev.SCHEDULE, anomaly = "テザリングを止められない", result = r.text)
-            recent(Ev.SCHEDULE, "止められない（${r.reason?.label ?: r.text}）")
+            schedNote = tr("止められませんでした（${r.text}）", "Couldn't turn it off (${r.text})", "Arrêt impossible (${r.text})")
+            log(Ev.SCHEDULE, anomaly = tr("テザリングを止められない", "Can't turn off the hotspot", "Impossible d'arrêter le point d'accès"), result = r.text)
+            val why = r.reason?.label ?: r.text
+            recent(Ev.SCHEDULE, tr("止められない（$why）", "Can't turn off ($why)", "Arrêt impossible ($why)"))
+            val title = tr(
+                "時間帯スケジュール：テザリングを止められませんでした", "Schedule: couldn't turn off the hotspot",
+                "Planification : impossible d'arrêter le point d'accès",
+            )
             // 夜中に鳴らさないよう、音のないお知らせにする
             if (prefs.bool(Defs.NOTIFY_ALERT)) {
-                Notifier.silent(
-                    ctx, Notifier.ID_SCHEDULE, "時間帯スケジュール：テザリングを止められませんでした",
-                    "${r.text}\n設定の「使わない時間帯」で、許可と動作を確認してください。", Notifier.settingsAction(ctx),
+                val hint = tr(
+                    "設定の「使わない時間帯」で、許可と動作を確認してください。", "Check the permission and test it under “Quiet hours” in Settings.",
+                    "Vérifiez l'autorisation et faites un essai dans « Heures d'inactivité » des paramètres.",
                 )
+                Notifier.silent(ctx, Notifier.ID_SCHEDULE, title, "${r.text}\n$hint", Notifier.settingsAction(ctx))
             }
-            ext.post(ExtNotify.Category.ALERT, "時間帯スケジュール：テザリングを止められませんでした", r.text)
+            ext.post(ExtNotify.Category.ALERT, title, r.text)
         }
     }
 
@@ -680,7 +794,7 @@ class Monitor(private val ctx: Context) {
         TetherControl.start(ctx) { r ->
             if (closed) return@start
             if (r.ok) {
-                log(Ev.SCHEDULE, result = "テザリングの再開を依頼（$why）")
+                log(Ev.SCHEDULE, result = tr("テザリングの再開を依頼（$why）", "Asked to turn the hotspot back on ($why)", "Réactivation du point d'accès demandée ($why)"))
                 // アクセスポイントが ON になったことは放送で確かめる（CLEAR）。90 秒たっても ON でなければ失敗として扱う
                 main.postDelayed({ schedVerify() }, 90_000L)
             } else {
@@ -699,16 +813,18 @@ class Monitor(private val ctx: Context) {
             refreshNotification()
             return
         }
-        schedResumeFailed("アクセスポイントが ON になりませんでした")
+        schedResumeFailed(tr("アクセスポイントが ON になりませんでした", "The hotspot didn't turn on", "Le point d'accès ne s'est pas activé"))
     }
 
     private fun schedResumeFailed(reason: String) {
         val delays = TetherSchedule.RETRY_MIN
+        val failed = tr("再開に失敗", "Failed to turn back on", "Échec de la réactivation")
         resumeTries++
         if (resumeTries <= delays.size) {
             val min = delays[resumeTries - 1]
             resumeNextAt = SystemClock.elapsedRealtime() + min * 60_000L
-            log(Ev.SCHEDULE, anomaly = "再開に失敗", action = "${min}分後にやり直し（$resumeTries/${delays.size}）", result = reason)
+            val n = "$resumeTries/${delays.size}"
+            log(Ev.SCHEDULE, anomaly = failed, action = tr("${min}分後にやり直し（$n）", "Retry in $min min ($n)", "Nouvel essai dans $min min ($n)"), result = reason)
             scheduleNext()
             return
         }
@@ -717,9 +833,13 @@ class Monitor(private val ctx: Context) {
         resumeNextAt = 0L
         prefs.schedStoppedWindow = 0L
         resumeFailed = reason
-        schedNote = "再開できませんでした（$reason）"
-        log(Ev.SCHEDULE, anomaly = "再開に失敗", action = "やり直しをやめた（手動で ON にしてください）", result = reason)
-        recent(Ev.SCHEDULE, "再開に失敗（$reason）")
+        schedNote = tr("再開できませんでした（$reason）", "Couldn't turn it back on ($reason)", "Réactivation impossible ($reason)")
+        log(
+            Ev.SCHEDULE, anomaly = failed,
+            action = tr("やり直しをやめた（手動で ON にしてください）", "Stopped retrying (turn it on manually)", "Abandon des essais (activez-le manuellement)"),
+            result = reason,
+        )
+        recent(Ev.SCHEDULE, failed + Fmt.paren(reason))
         StateStore.state.tether?.let { if (!prefs.maintenanceActive()) handleTether(System.currentTimeMillis(), it) }
         publish()
         scheduleNext()
@@ -733,7 +853,13 @@ class Monitor(private val ctx: Context) {
         resumeTries = 0
         resumeNextAt = 0L
         schedNote = null
-        val text = "テザリングが ON に戻った" + if (since > 0) "（止めていた時間 ${Fmt.duration(System.currentTimeMillis() - since)}）" else ""
+        val off = if (since > 0) {
+            val d = Fmt.duration(System.currentTimeMillis() - since)
+            Fmt.paren(tr("止めていた時間 $d", "off for $d", "arrêté pendant $d"))
+        } else {
+            ""
+        }
+        val text = tr("テザリングが ON に戻った", "Hotspot back on", "Point d'accès réactivé") + off
         log(Ev.SCHEDULE, result = text)
         recent(Ev.SCHEDULE, text)
     }
@@ -806,17 +932,18 @@ class Monitor(private val ctx: Context) {
             val value = when (a) {
                 DeviceAlert.TEMP_WARN, DeviceAlert.TEMP_CRIT -> Fmt.temp(p.tempC)
                 DeviceAlert.THERMAL -> Fmt.thermal(p.thermalStatus)
-                DeviceAlert.BATT_LOW -> Fmt.num(p.levelPct, "%")
-                DeviceAlert.RUNTIME_LOW -> remainingMin?.let { "残り" + Fmt.duration(it * 60_000L) } ?: Fmt.NA
+                DeviceAlert.BATT_LOW -> Fmt.pct(p.levelPct)
+                DeviceAlert.RUNTIME_LOW -> remainingMin?.let { Fmt.duration(it * 60_000L) }?.let { tr("残り$it", "$it left", "reste $it") } ?: Fmt.NA
                 // 電波は handleSignal で扱う（ここには来ない）
                 DeviceAlert.SIGNAL_WEAK -> Fmt.NA
             }
+            val title = a.label + Fmt.paren(value)
             if (c.entered) {
                 log(Ev.ALERT, anomaly = a.label, result = value)
-                recent(Ev.ALERT, "${a.label}（$value）")
+                recent(Ev.ALERT, title)
                 if (a == DeviceAlert.TEMP_CRIT) Notifier.cancel(ctx, Notifier.deviceId(DeviceAlert.TEMP_WARN))
-                if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.deviceId(a), "${a.label}（$value）", advice(a))
-                ext.post(ExtNotify.Category.ALERT, "${a.label}（$value）", advice(a))
+                if (prefs.bool(Defs.NOTIFY_ALERT)) Notifier.alert(ctx, Notifier.deviceId(a), title, advice(a))
+                ext.post(ExtNotify.Category.ALERT, title, advice(a))
             } else {
                 log(Ev.ALERT_CLEAR, anomaly = a.label, result = value)
                 recent(Ev.ALERT_CLEAR, a.label)
@@ -826,12 +953,35 @@ class Monitor(private val ctx: Context) {
     }
 
     private fun advice(a: DeviceAlert) = when (a) {
-        DeviceAlert.TEMP_WARN -> "直射日光・布の上・ケースでの熱こもりを避け、風通しのよい場所に置いてください。"
-        DeviceAlert.TEMP_CRIT -> "高温が続くと電池の劣化や膨張、端末の停止につながります。給電を一時的に外す・涼しい場所へ移すなどしてください。"
-        DeviceAlert.THERMAL -> "端末が熱による制限をかけています。速度低下やテザリング停止が起きることがあります。"
-        DeviceAlert.BATT_LOW -> "給電してください。電池が切れるとテザリングが止まります。"
-        DeviceAlert.RUNTIME_LOW -> "今の消費ペースが続くと、まもなく電池が切れてテザリングが止まります。給電してください。"
-        DeviceAlert.SIGNAL_WEAK -> "電波が弱いと端末の送信電力が上がり、消費と発熱が増え、速度も落ちます。置き場所を見直してください（設置場所アシストで比べられます）。"
+        DeviceAlert.TEMP_WARN -> tr(
+            "直射日光・布の上・ケースでの熱こもりを避け、風通しのよい場所に置いてください。",
+            "Keep it out of direct sunlight, off fabric and out of heat-trapping cases, somewhere well ventilated.",
+            "Évitez le soleil direct, les tissus et les coques qui retiennent la chaleur ; placez-le dans un endroit bien aéré.",
+        )
+        DeviceAlert.TEMP_CRIT -> tr(
+            "高温が続くと電池の劣化や膨張、端末の停止につながります。給電を一時的に外す・涼しい場所へ移すなどしてください。",
+            "Sustained heat wears out or swells the battery and can shut the phone down. Unplug the charger for a while or move it somewhere cooler.",
+            "Une chaleur prolongée use ou fait gonfler la batterie et peut éteindre le téléphone. Débranchez le chargeur un moment ou placez-le dans un endroit plus frais.",
+        )
+        DeviceAlert.THERMAL -> tr(
+            "端末が熱による制限をかけています。速度低下やテザリング停止が起きることがあります。",
+            "The phone is throttling because of heat. Speed may drop or the hotspot may stop.",
+            "Le téléphone se bride à cause de la chaleur. Le débit peut baisser ou le point d'accès s'arrêter.",
+        )
+        DeviceAlert.BATT_LOW -> tr(
+            "給電してください。電池が切れるとテザリングが止まります。", "Plug in the charger. The hotspot stops when the battery runs out.",
+            "Branchez le chargeur. Le point d'accès s'arrête quand la batterie est vide.",
+        )
+        DeviceAlert.RUNTIME_LOW -> tr(
+            "今の消費ペースが続くと、まもなく電池が切れてテザリングが止まります。給電してください。",
+            "At the current rate, the battery will soon run out and the hotspot will stop. Plug in the charger.",
+            "Au rythme actuel, la batterie sera bientôt vide et le point d'accès s'arrêtera. Branchez le chargeur.",
+        )
+        DeviceAlert.SIGNAL_WEAK -> tr(
+            "電波が弱いと端末の送信電力が上がり、消費と発熱が増え、速度も落ちます。置き場所を見直してください（設置場所アシストで比べられます）。",
+            "With a weak signal, the phone transmits at higher power: it uses more battery, runs hotter and gets slower. Try another spot (compare spots with Placement assistant).",
+            "Avec un signal faible, le téléphone émet plus fort : il consomme plus, chauffe davantage et ralentit. Essayez un autre emplacement (comparez-les avec l'assistant d'emplacement).",
+        )
     }
 
     // ---- 電波の悪化（仕様 F-29）。定期チェックのときだけ判定する ----
@@ -843,14 +993,16 @@ class Monitor(private val ctx: Context) {
         val lim = SignalWatch.Limits(prefs.bool(Defs.SIGNAL_ALERT), prefs.int(Defs.SIGNAL_WEAK_RSRP), prefs.int(Defs.SIGNAL_DROP_DB), base?.rsrp)
         val entered = signal.evaluate(l.rsrp, lim) ?: return
         val a = DeviceAlert.SIGNAL_WEAK
-        val value = (l.rsrp?.let { "RSRP $it dBm" } ?: Fmt.NA) + (base?.rsrp?.let { "・設置時 $it dBm" } ?: "")
+        val value = (l.rsrp?.let { "RSRP $it dBm" } ?: Fmt.NA) +
+            (base?.rsrp?.let { tr("・設置時 $it dBm", ", $it dBm when placed", ", $it dBm à l'installation") } ?: "")
+        val title = a.label + Fmt.paren(value)
         if (entered) {
             log(Ev.ALERT, anomaly = a.label, result = value, detail = l.band)
-            recent(Ev.ALERT, "${a.label}（$value）")
+            recent(Ev.ALERT, title)
             if (prefs.bool(Defs.NOTIFY_ALERT)) {
-                Notifier.alert(ctx, Notifier.deviceId(a), "${a.label}（$value）", advice(a), extra = Notifier.placementAction(ctx))
+                Notifier.alert(ctx, Notifier.deviceId(a), title, advice(a), extra = Notifier.placementAction(ctx))
             }
-            ext.post(ExtNotify.Category.ALERT, "${a.label}（$value）", advice(a))
+            ext.post(ExtNotify.Category.ALERT, title, advice(a))
         } else {
             log(Ev.ALERT_CLEAR, anomaly = a.label, result = value)
             recent(Ev.ALERT_CLEAR, a.label)
@@ -869,33 +1021,65 @@ class Monitor(private val ctx: Context) {
             when (f) {
                 is TrafficWatch.Finding.Idle -> {
                     prefs.trafficIdleAlertAt = traffic.lastIdleAlertAt
-                    val text = "${Fmt.hm(f.fromMs)}〜${Fmt.hm(f.toMs)} に約 ${mb(f.mb)}（1 時間あたり約 ${mb(f.mbPerHour)}）"
-                    log(Ev.TRAFFIC, anomaly = "接続端末なしの通信", result = text)
-                    recent(Ev.TRAFFIC, "接続端末なしで ${mb(f.mb)}")
+                    val from = Fmt.hm(f.fromMs)
+                    val to = Fmt.hm(f.toMs)
+                    val mb = Fmt.mb(f.mb)
+                    val perHour = Fmt.mb(f.mbPerHour)
+                    val text = tr(
+                        "$from〜$to に約 $mb（1 時間あたり約 $perHour）", "about $mb from $from to $to (about $perHour per hour)",
+                        "environ $mb de $from à $to (environ $perHour par heure)",
+                    )
+                    log(Ev.TRAFFIC, anomaly = tr("接続端末なしの通信", "Data use with no devices", "Données sans appareil connecté"), result = text)
+                    recent(Ev.TRAFFIC, tr("接続端末なしで $mb", "$mb with no devices", "$mb sans appareil connecté"))
                     // メンテナンス中（更新作業など）の通信は知らせない
                     if (!prefs.maintenanceActive() && prefs.bool(Defs.NOTIFY_ALERT)) {
                         Notifier.info(
-                            ctx, Notifier.ID_TRAFFIC_IDLE, "接続端末がないのに通信しています（${mb(f.mb)}）",
-                            "${text}の通信がありました。この端末自身のアプリ・OS の通信です（自動更新・同期など）。" +
-                                "設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。",
+                            ctx, Notifier.ID_TRAFFIC_IDLE,
+                            tr("接続端末がないのに通信しています（$mb）", "Data used with no devices connected ($mb)", "Données utilisées sans appareil connecté ($mb)"),
+                            tr(
+                                "${text}の通信がありました。この端末自身のアプリ・OS の通信です（自動更新・同期など）。" +
+                                    "設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。",
+                                "Used $text. This is traffic from this phone's own apps and system (auto-updates, sync, etc.). " +
+                                    "Check “App background restrictions” and “Auto-sync” in the Setup guide.",
+                                "Trafic : $text. Il provient des applications et du système de ce téléphone (mises à jour, synchronisation, etc.). " +
+                                    "Vérifiez « Restrictions d'arrière-plan des applications » et « Synchronisation automatique » dans le guide de configuration.",
+                            ),
                             Notifier.trafficAction(ctx),
                         )
                     }
                 }
                 is TrafficWatch.Finding.Quiet -> {
-                    val text = "使わない時間帯（${f.quiet.label}）に約 ${mb(f.mb)}" + if (f.idleMb >= 1) "（うち接続端末なし ${mb(f.idleMb)}）" else ""
-                    log(Ev.TRAFFIC, anomaly = "使わない時間帯の通信", result = text)
+                    val q = f.quiet.label
+                    val mb = Fmt.mb(f.mb)
+                    val idle = if (f.idleMb >= 1) {
+                        val i = Fmt.mb(f.idleMb)
+                        Fmt.paren(tr("うち接続端末なし $i", "$i with no devices", "dont $i sans appareil connecté"))
+                    } else {
+                        ""
+                    }
+                    val text = tr("使わない時間帯（$q）に約 $mb", "about $mb during quiet hours ($q)", "environ $mb pendant les heures d'inactivité ($q)") + idle
+                    log(Ev.TRAFFIC, anomaly = tr("使わない時間帯の通信", "Data use during quiet hours", "Données pendant les heures d'inactivité"), result = text)
                     recent(Ev.TRAFFIC, text)
                     if (prefs.bool(Defs.NOTIFY_ALERT)) {
                         // ほとんどが接続端末なしの通信なら、原因はこの端末自身（接続端末の設定では減らない）
                         val own = f.idleMb >= f.mb * 0.8
+                        val cause = if (own) {
+                            tr(
+                                "ほとんどがこの端末自身のアプリ・OS の通信です。設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。",
+                                "Most of it is from this phone's own apps and system. Check “App background restrictions” and “Auto-sync” in the Setup guide.",
+                                "La plupart provient des applications et du système de ce téléphone. Vérifiez « Restrictions d'arrière-plan des applications » et « Synchronisation automatique » dans le guide de configuration.",
+                            )
+                        } else {
+                            tr(
+                                "接続端末の OS 更新・クラウド同期の可能性があります。接続端末で「従量制」にすると減らせます。",
+                                "Connected devices may be running system updates or cloud sync. Setting this network as “metered” on them reduces it.",
+                                "Les appareils connectés font peut-être des mises à jour ou une synchronisation cloud. Définir ce réseau comme « limité » sur ces appareils réduit ce trafic.",
+                            )
+                        }
                         Notifier.info(
-                            ctx, Notifier.ID_TRAFFIC_QUIET, "使わない時間帯の通信：${mb(f.mb)}",
-                            "${text}の通信がありました。" + if (own) {
-                                "ほとんどがこの端末自身のアプリ・OS の通信です。設定ガイドの「アプリのバックグラウンド制限」「自動同期」を確認してください。"
-                            } else {
-                                "接続端末の OS 更新・クラウド同期の可能性があります。接続端末で「従量制」にすると減らせます。"
-                            },
+                            ctx, Notifier.ID_TRAFFIC_QUIET,
+                            tr("使わない時間帯の通信：$mb", "Data use during quiet hours: $mb", "Données pendant les heures d'inactivité : $mb"),
+                            tr("${text}の通信がありました。", "Used $text. ", "Trafic : $text. ") + cause,
                             if (own) Notifier.trafficAction(ctx) else Notifier.clientGuideAction(ctx),
                         )
                     }
@@ -903,8 +1087,6 @@ class Monitor(private val ctx: Context) {
             }
         }
     }
-
-    private fun mb(v: Double) = String.format(Locale.US, "%.1f MB", v)
 
     // ---- ローカル管理画面（仕様 F-43） ----
 
@@ -921,7 +1103,12 @@ class Monitor(private val ctx: Context) {
         StateStore.update { it.copy(web = st) }
         // 記録には IP アドレスを残さない（ログの方針）
         if ((prev?.url != null) != (st.url != null)) {
-            val text = if (st.url != null) "待ち受け開始（ポート ${prefs.int(Defs.WEB_PORT)}）" else "停止（${st.message}）"
+            val port = prefs.int(Defs.WEB_PORT)
+            val text = if (st.url != null) {
+                tr("待ち受け開始（ポート $port）", "Listening (port $port)", "En écoute (port $port)")
+            } else {
+                tr("停止（${st.message}）", "Stopped (${st.message})", "Arrêtée (${st.message})")
+            }
             log(Ev.WEB, result = text)
             recent(Ev.WEB, text)
         }
@@ -940,49 +1127,111 @@ class Monitor(private val ctx: Context) {
         bootPending = false
         bootDue = null
         prefs.lastBootCheckAt = System.currentTimeMillis()
+        drainBootTether()
         val actions = ArrayList<String>()
         val schedStopped = prefs.schedStoppedWindow != 0L
+        val bootTether = if (prefs.bool(Defs.TETHER_ON_BOOT)) BootTether.status(ctx) else null
         if (pr.tether.wifiOn == false && !schedStopped) {
-            actions.add("Wi-Fiテザリングが OFF です（手動でONにしてください）")
+            actions.add(
+                when (bootTether) {
+                    null -> tr(
+                        "Wi-Fiテザリングが OFF です（手動で ON にしてください。設定で、起動時に自動で ON にできます）",
+                        "Wi-Fi hotspot is off (turn it on manually; Settings can turn it on automatically at startup)",
+                        "Le point d'accès Wi-Fi est désactivé (activez-le manuellement ; les paramètres permettent de l'activer automatiquement au démarrage)",
+                    )
+                    BootTether.Status.TRYING -> tr(
+                        "Wi-Fiテザリングが OFF です（起動時の ON をやり直しています）", "Wi-Fi hotspot is off (still trying to turn it on at startup)",
+                        "Le point d'accès Wi-Fi est désactivé (nouvel essai d'activation au démarrage en cours)",
+                    )
+                    BootTether.Status.TURNED_ON, BootTether.Status.WAS_ON -> tr(
+                        "Wi-Fiテザリングが OFF です（起動時は ON でしたが、そのあと止まりました。手動で ON にしてください）",
+                        "Wi-Fi hotspot is off (it was on at startup but stopped later; turn it on manually)",
+                        "Le point d'accès Wi-Fi est désactivé (il était activé au démarrage puis s'est arrêté ; activez-le manuellement)",
+                    )
+                    BootTether.Status.NONE, BootTether.Status.FAILED -> tr(
+                        "Wi-Fiテザリングが OFF です（起動時に ON にできませんでした。手動で ON にしてください）",
+                        "Wi-Fi hotspot is off (couldn't turn it on at startup; turn it on manually)",
+                        "Le point d'accès Wi-Fi est désactivé (activation au démarrage impossible ; activez-le manuellement)",
+                    )
+                },
+            )
             // この通知で知らせるので、テザリング停止の通知は重ねて出さない
             tether.markNotified(pr.check.at)
             tetherDue = null
         }
-        if (pr.power.dataSaver == true) actions.add("データセーバーが ON です（テザリングが使えません）")
-        if (pr.power.batteryOptExempt == false) actions.add("電池の最適化から除外されていません")
-        if (pr.tether.autoOff == true) actions.add("アクセスポイントの自動OFFが有効です")
-        if (pr.power.powerSave == true) actions.add("バッテリーセーバーが ON です")
-        val pending = pr.check.failure?.let { "回線: ${it.label}（再確認中）" }
+        if (pr.power.dataSaver == true) {
+            actions.add(tr("データセーバーが ON です（テザリングが使えません）", "Data Saver is on (the hotspot can't be used)", "L'économiseur de données est activé (le point d'accès est inutilisable)"))
+        }
+        if (pr.power.batteryOptExempt == false) {
+            actions.add(tr("電池の最適化から除外されていません", "Not excluded from battery optimization", "Non exclue de l'optimisation de la batterie"))
+        }
+        if (pr.tether.autoOff == true) {
+            actions.add(tr("アクセスポイントの自動OFFが有効です", "Hotspot auto turn-off is enabled", "La désactivation automatique du point d'accès est activée"))
+        }
+        if (pr.power.powerSave == true) actions.add(tr("バッテリーセーバーが ON です", "Battery Saver is on", "L'économiseur de batterie est activé"))
+        val pending = pr.check.failure?.label?.let { tr("回線: $it（再確認中）", "Line: $it (rechecking)", "Ligne : $it (revérification)") }
         // 時間帯スケジュールで止めている間に再起動した場合は、時間帯の終わりに再開する（異常ではない）
         val schedNoteText = if (schedStopped && pr.tether.wifiOn == false) {
-            "時間帯スケジュールで停止中（${QuietHours.parse(prefs.text(Defs.QUIET_HOURS))?.endLabel ?: "時間帯の終わり"} に再開）"
+            val end = QuietHours.parse(prefs.text(Defs.QUIET_HOURS))?.endLabel
+            if (end != null) {
+                tr("時間帯スケジュールで停止中（$end に再開）", "Off by schedule (back on at $end)", "Arrêté par la planification (réactivation à $end)")
+            } else {
+                tr(
+                    "時間帯スケジュールで停止中（時間帯の終わりに再開）", "Off by schedule (back on when quiet hours end)",
+                    "Arrêté par la planification (réactivation à la fin des heures d'inactivité)",
+                )
+            }
+        } else {
+            null
+        }
+        // 起動時にこのアプリがテザリングを ON にした（知らせるだけで、異常ではない）
+        val bootNote = if (bootTether == BootTether.Status.TURNED_ON && pr.tether.wifiOn == true) {
+            tr("起動時にテザリングを ON にしました", "The hotspot was turned on at startup", "Le point d'accès a été activé au démarrage")
         } else {
             null
         }
         val lines = actions + listOfNotNull(pending)
-        log(
-            Ev.BOOT_CHECK,
-            result = if (lines.isEmpty()) "問題なし" else "要確認 ${lines.size}件",
-            detail = (lines + listOfNotNull(schedNoteText)).joinToString(" / ").ifEmpty { null },
-        )
-        recent(Ev.BOOT_CHECK, if (lines.isEmpty()) "問題なし" else "要確認 ${lines.size}件")
+        val summary = if (lines.isEmpty()) {
+            tr("問題なし", "No problems", "Aucun problème")
+        } else {
+            tr("要確認 ${lines.size}件", "${lines.size} to check", "${lines.size} à vérifier")
+        }
+        log(Ev.BOOT_CHECK, result = summary, detail = (lines + listOfNotNull(schedNoteText, bootNote)).joinToString(" / ").ifEmpty { null })
+        recent(Ev.BOOT_CHECK, summary)
+        val allOk = tr("テザリング・回線・設定の状態は正常です", "Hotspot, line and settings are all OK", "Point d'accès, ligne et paramètres sont OK")
+        val okNote = (listOfNotNull(pending, schedNoteText).ifEmpty { listOf(allOk) } + listOfNotNull(bootNote)).joinToString("\n")
         // 再起動したことは、離れた場所の管理者には大事な情報なので外へも送る（仕様 F-44）
         if (actions.isEmpty()) {
-            ext.post(ExtNotify.Category.RECOVERY, "再起動しました（起動後チェック：問題なし）", listOfNotNull(pending, schedNoteText).joinToString("\n").ifEmpty { "テザリング・回線・設定の状態は正常です" })
+            ext.post(
+                ExtNotify.Category.RECOVERY,
+                tr("再起動しました（起動後チェック：問題なし）", "Rebooted (after-reboot check: no problems)", "Redémarré (vérification après redémarrage : aucun problème)"),
+                okNote,
+            )
         } else {
-            ext.post(ExtNotify.Category.ALERT, "再起動しました（起動後チェック：要確認）", lines.joinToString("\n"))
+            ext.post(
+                ExtNotify.Category.ALERT,
+                tr("再起動しました（起動後チェック：要確認）", "Rebooted (after-reboot check: action needed)", "Redémarré (vérification après redémarrage : action requise)"),
+                (lines + listOfNotNull(bootNote)).joinToString("\n"),
+            )
         }
         if (!prefs.bool(Defs.NOTIFY_BOOT)) return
         if (actions.isEmpty()) {
-            Notifier.info(ctx, Notifier.ID_BOOT, "起動後チェック：問題なし", listOfNotNull(pending, schedNoteText).joinToString("\n").ifEmpty { "テザリング・回線・設定の状態は正常です" })
+            Notifier.info(
+                ctx, Notifier.ID_BOOT,
+                tr("起動後チェック：問題なし", "After-reboot check: no problems", "Vérification après redémarrage : aucun problème"), okNote,
+            )
         } else {
-            Notifier.alert(ctx, Notifier.ID_BOOT, "起動後チェック：要確認", lines.joinToString("\n"), openTether = pr.tether.wifiOn == false)
+            Notifier.alert(
+                ctx, Notifier.ID_BOOT, tr("起動後チェック：要確認", "After-reboot check: action needed", "Vérification après redémarrage : action requise"),
+                (lines + listOfNotNull(bootNote)).joinToString("\n"), openTether = pr.tether.wifiOn == false,
+            )
         }
     }
 
     // ---- 設定・メンテナンス（仕様 F-02 / F-22） ----
 
     fun onSettingsChanged() {
+        BootTether.sync(ctx, prefs.bool(Defs.TETHER_ON_BOOT))
         if (!started || closed) return
         if (!prefs.bool(Defs.TETHER_EXPECTED) && tether.episode != null) {
             tether.reset()
@@ -1000,11 +1249,23 @@ class Monitor(private val ctx: Context) {
         schedWaitLogged = 0L
         schedEvaluate(StateStore.state.tether)
         // スマートプラグを OFF にしたら、止めていた給電を ON に戻す
-        if (prefs.bool(Defs.PLUG)) smartPlug.evaluate(StateStore.state.power, StateStore.state.tether?.wifiOn) else smartPlug.release("設定で OFF")
+        if (prefs.bool(Defs.PLUG)) smartPlug.evaluate(StateStore.state.power, StateStore.state.tether?.wifiOn) else smartPlug.release(tr("設定で OFF", "Turned off in Settings", "Désactivé dans les paramètres"))
         if (!prefs.bool(Defs.EXT_NOTIFY)) ext.clear() else ext.flush()
         updateWeb(StateStore.state.tether)
         publish()
         scheduleNext()
+        refreshNotification()
+    }
+
+    /**
+     * 端末の言語が変わった。状態の表示（待機の理由・スケジュール・管理画面など）と常駐通知を新しい言語で作り直す。
+     * 判定の文（診断・接続端末の数え方など）は次のチェックで新しい言語になる
+     */
+    fun onLanguageChanged() {
+        if (!started || closed) return
+        I18n.sync(ctx.resources)
+        updateWeb(StateStore.state.tether)
+        publish()
         refreshNotification()
     }
 
@@ -1021,8 +1282,10 @@ class Monitor(private val ctx: Context) {
         tether.reset()
         upstreamDue = null
         tetherDue = null
-        log(Ev.MAINT_ON, result = "〜${Fmt.hm(until)}")
-        recent(Ev.MAINT_ON, "〜${Fmt.hm(until)}")
+        val hm = Fmt.hm(until)
+        val text = tr("〜$hm", "until $hm", "jusqu'à $hm")
+        log(Ev.MAINT_ON, result = text)
+        recent(Ev.MAINT_ON, text)
         publish()
         scheduleNext()
         refreshNotification()
@@ -1030,7 +1293,7 @@ class Monitor(private val ctx: Context) {
 
     private fun endMaintenance(auto: Boolean) {
         prefs.maintUntil = 0L
-        val why = if (auto) "時間切れ" else "手動で終了"
+        val why = if (auto) tr("時間切れ", "Time's up", "Délai écoulé") else tr("手動で終了", "Ended manually", "Terminée manuellement")
         log(Ev.MAINT_OFF, result = why)
         recent(Ev.MAINT_OFF, why)
         publish()
@@ -1072,7 +1335,10 @@ class Monitor(private val ctx: Context) {
         }
         if (prevBase != null && prevBase != base) {
             val interval = Profiles.intervalMin(base, prefs.int(Defs.INTERVAL_NORMAL), prefs.int(Defs.INTERVAL_SAVER))
-            log(Ev.PROFILE, result = "${prevBase.label} → ${base.label}", detail = "チェック間隔 ${interval}分")
+            log(
+                Ev.PROFILE, result = "${prevBase.label} → ${base.label}",
+                detail = tr("チェック間隔 ${interval}分", "Check interval $interval min", "Intervalle de vérification $interval min"),
+            )
             recent(Ev.PROFILE, "${prevBase.label} → ${base.label}")
             publish()
             scheduleNext()
@@ -1098,7 +1364,13 @@ class Monitor(private val ctx: Context) {
         if (reason != idleReason) {
             val prevReason = idleReason
             idleReason = reason
-            val text = if (reason != null) "待機（${reason.label}）：チェック間隔 ${interval}分" else "待機を終了（${prevReason?.label ?: ""}）"
+            val text = if (reason != null) {
+                val r = reason.label
+                tr("待機（$r）：チェック間隔 ${interval}分", "Idle ($r): check interval $interval min", "Veille ($r) : intervalle de vérification $interval min")
+            } else {
+                val r = prevReason?.label.orEmpty()
+                tr("待機を終了（$r）", "Idle ended ($r)", "Fin de la veille ($r)")
+            }
             log(Ev.PROFILE, result = text)
             recent(Ev.PROFILE, text)
         }
@@ -1113,16 +1385,17 @@ class Monitor(private val ctx: Context) {
         val schedView = if (prefs.bool(Defs.TETHER_SCHEDULE) || stoppedWindow != 0L) {
             StateStore.SchedView(
                 enabled = prefs.bool(Defs.TETHER_SCHEDULE), permitted = TetherControl.permitted(ctx), quiet = quiet?.label,
-                stoppedUntil = if (stoppedWindow != 0L) quiet?.endLabel ?: "まもなく" else null, note = schedNote,
+                stoppedUntil = if (stoppedWindow != 0L) quiet?.endLabel ?: tr("まもなく", "soon", "bientôt") else null, note = schedNote,
             )
         } else {
             null
         }
         val plugView = if (prefs.bool(Defs.PLUG)) {
             val low = prefs.int(Defs.PLUG_LOW)
+            val high = PlugPolicy.high(PlugPolicy.Config(low, prefs.int(Defs.PLUG_HIGH), 0, 0, 0))
             StateStore.PlugView(
                 smartPlug.want?.on, smartPlug.want?.why?.label,
-                "$low〜${PlugPolicy.high(PlugPolicy.Config(low, prefs.int(Defs.PLUG_HIGH), 0, 0, 0))}%", smartPlug.lastResult, smartPlug.stuck,
+                tr("$low〜$high%", "$low–$high%", "$low–$high %"), smartPlug.lastResult, smartPlug.stuck,
             )
         } else {
             null
@@ -1191,7 +1464,11 @@ class Monitor(private val ctx: Context) {
         val cand = if (key == Candidates.KEY_CUSTOM) {
             val a = customA?.trim()?.ifEmpty { null } ?: base.labelA
             val b = customB?.trim()?.ifEmpty { null } ?: base.labelB
-            base.copy(title = "$a → $b", labelA = a, labelB = b, toB = "「$b」に切り替えてください。", toA = "「$a」に戻してください。")
+            base.copy(
+                title = "$a → $b", labelA = a, labelB = b,
+                toB = tr("「$b」に切り替えてください。", "Switch to “$b”.", "Passez à « $b »."),
+                toA = tr("「$a」に戻してください。", "Switch back to “$a”.", "Revenez à « $a »."),
+            )
         } else {
             base
         }
@@ -1203,7 +1480,15 @@ class Monitor(private val ctx: Context) {
             intervalFactor = 1
             ExperimentStore.save(prefs, run)
         })
-        log(Ev.EXP_START, result = cand.title, detail = "1条件 ${run.phaseSec / 60}分 × ${run.repeats}回（バッテリー駆動中だけ計測）")
+        val min = run.phaseSec / 60
+        val n = run.repeats
+        log(
+            Ev.EXP_START, result = cand.title,
+            detail = tr(
+                "1条件 ${min}分 × ${n}回（バッテリー駆動中だけ計測）", "$min min per condition × $n (measured only on battery)",
+                "$min min par condition × $n (mesuré uniquement sur batterie)",
+            ),
+        )
         recent(Ev.EXP_START, cand.title)
         publish()
         scheduleNext()
@@ -1220,7 +1505,8 @@ class Monitor(private val ctx: Context) {
             ExperimentStore.save(prefs, e)
         })
         val cond = e.condition ?: return
-        log(Ev.EXP_SWITCH, result = "条件$cond（${label(e, cond)}）の計測を開始")
+        val l = label(e, cond)
+        log(Ev.EXP_SWITCH, result = tr("条件$cond（$l）の計測を開始", "Started measuring condition $cond ($l)", "Début de la mesure de la condition $cond ($l)"))
         Notifier.cancel(ctx, Notifier.ID_EXPERIMENT)
         publish()
         scheduleNext()
@@ -1246,14 +1532,19 @@ class Monitor(private val ctx: Context) {
             finishExperiment(aborted = false)
             return
         }
+        val l = label(e, next)
         if (e.candidate.auto) {
             intervalFactor = if (next == 'B') Candidates.INTERVAL_FACTOR else 1
-            log(Ev.EXP_SWITCH, result = "条件$next（${label(e, next)}）を自動で開始")
+            log(Ev.EXP_SWITCH, result = tr("条件$next（$l）を自動で開始", "Started condition $next ($l) automatically", "Condition $next ($l) démarrée automatiquement"))
         } else {
-            log(Ev.EXP_SWITCH, result = "条件$next（${label(e, next)}）への切り替え待ち")
+            log(Ev.EXP_SWITCH, result = tr("条件$next（$l）への切り替え待ち", "Waiting for the switch to condition $next ($l)", "En attente du passage à la condition $next ($l)"))
+            val howTo = if (next == 'B') e.candidate.toB else e.candidate.toA
             Notifier.experiment(
-                ctx, "比較テスト：条件$next に切り替えてください",
-                "${if (next == 'B') e.candidate.toB else e.candidate.toA}\n切り替えたら「切り替えた」を押してください（押すまで計測しません）。",
+                ctx, tr("比較テスト：条件$next に切り替えてください", "Comparison test: switch to condition $next", "Test comparatif : passez à la condition $next"),
+                howTo + "\n" + tr(
+                    "切り替えたら「切り替えた」を押してください（押すまで計測しません）。", "Then tap “Switched” (nothing is measured until you do).",
+                    "Touchez ensuite « C'est fait » (rien n'est mesuré avant).",
+                ),
                 confirm = true,
             )
         }
@@ -1269,19 +1560,23 @@ class Monitor(private val ctx: Context) {
         ExperimentStore.save(prefs, null)
         val summary = experimentSummary(o)
         log(Ev.EXP_END, anomaly = e.candidate.title, result = o.decision.label, detail = summary)
-        recent(Ev.EXP_END, "${e.candidate.title}：${o.decision.label}")
-        val text = when {
-            e.candidate.auto -> "$summary\nチェック間隔は元に戻しました。"
-            o.decision == Decision.ADOPT -> "$summary\nこの設定（${e.candidate.labelB}）のままにしてください。"
-            settingIsB -> "$summary\n${e.candidate.toA}"
-            else -> "$summary\n設定は元のままです。"
+        val t = e.candidate.title
+        val d = o.decision.label
+        recent(Ev.EXP_END, tr("$t：$d", "$t: $d", "$t : $d"))
+        val next = when {
+            e.candidate.auto -> tr("チェック間隔は元に戻しました。", "The check interval is back to normal.", "L'intervalle de vérification est rétabli.")
+            o.decision == Decision.ADOPT -> e.candidate.labelB.let { tr("この設定（$it）のままにしてください。", "Keep this setting ($it).", "Gardez ce réglage ($it).") }
+            settingIsB -> e.candidate.toA
+            else -> unchanged()
         }
-        Notifier.experiment(ctx, "比較テストの結果：${o.decision.label}", text, confirm = false)
+        Notifier.experiment(ctx, tr("比較テストの結果：$d", "Comparison test result: $d", "Résultat du test comparatif : $d"), "$summary\n$next", confirm = false)
     }
+
+    private fun unchanged() = tr("設定は元のままです。", "Your settings are unchanged.", "Vos réglages sont inchangés.")
 
     private fun experimentSummary(o: Outcome): String {
         fun v(x: Double?) = x?.let { "%.0f %s".format(it, o.unit) } ?: Fmt.NA
-        val saving = o.savingPct?.let { "（%+.1f%%）".format(-it) } ?: ""
+        val saving = o.savingPct?.let { Fmt.paren(String.format(I18n.locale, "%+.1f", -it) + tr("%", "%", " %")) } ?: ""
         return (listOf("A ${v(o.avgA)} → B ${v(o.avgB)}$saving") + o.notes).joinToString("\n")
     }
 
@@ -1290,12 +1585,23 @@ class Monitor(private val ctx: Context) {
         val o = run.outcome(aborted = true)
         ExperimentStore.addHistory(prefs, run, o, System.currentTimeMillis())
         ExperimentStore.save(prefs, null)
-        log(Ev.EXP_END, anomaly = run.candidate.title, result = o.decision.label, detail = "アプリの再起動で中断")
-        recent(Ev.EXP_END, "中断：${run.candidate.title}")
+        val t = run.candidate.title
+        log(
+            Ev.EXP_END, anomaly = t, result = o.decision.label,
+            detail = tr("アプリの再起動で中断", "Interrupted by an app restart", "Interrompu par un redémarrage de l'application"),
+        )
+        recent(Ev.EXP_END, tr("中断：$t", "Interrupted: $t", "Interrompu : $t"))
         // 本アプリのチェック間隔はメモリにだけ持っていたので、すでに元に戻っている
         if (!run.candidate.auto) {
-            val text = if (run.settingIsB) run.candidate.toA else "設定は元のままです。"
-            Notifier.experiment(ctx, "比較テストを中断しました", "アプリが再起動したため「${run.candidate.title}」を中止しました。\n$text", confirm = false)
+            val text = if (run.settingIsB) run.candidate.toA else unchanged()
+            Notifier.experiment(
+                ctx, tr("比較テストを中断しました", "Comparison test interrupted", "Test comparatif interrompu"),
+                tr(
+                    "アプリが再起動したため「$t」を中止しました。", "“$t” was stopped because the app restarted.",
+                    "« $t » a été arrêté car l'application a redémarré.",
+                ) + "\n$text",
+                confirm = false,
+            )
         }
     }
 

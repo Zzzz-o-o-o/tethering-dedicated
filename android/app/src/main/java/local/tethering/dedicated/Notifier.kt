@@ -46,26 +46,40 @@ object Notifier {
     /** 常駐通知の本文（状態が変わったときだけ更新するため、比較用に文字列で返す） */
     fun ongoingText(s: StateStore.State): Pair<String, String> {
         val o = s.overall()
+        val ol = o.label
         val title = when {
-            o == Overall.MAINT -> "メンテナンス中（〜${Fmt.hm(s.maintUntil)}）"
-            s.upstream != null && !s.upstream.confirmed -> "${o.label}：再確認中（${s.upstream.rechecks}/${s.upstream.total}）"
-            s.upstream != null -> "${o.label}：${s.upstream.kind.label}"
-            s.tetherIssue != null -> "${o.label}：${s.tetherIssue.kind.label}"
-            else -> o.label
+            o == Overall.MAINT -> Fmt.hm(s.maintUntil).let { tr("メンテナンス中（〜$it）", "Maintenance (until $it)", "Maintenance (jusqu'à $it)") }
+            s.upstream != null && !s.upstream.confirmed -> {
+                val n = "${s.upstream.rechecks}/${s.upstream.total}"
+                tr("$ol：再確認中（$n）", "$ol: rechecking ($n)", "$ol : revérification ($n)")
+            }
+            s.upstream != null -> withColon(ol, s.upstream.kind.label)
+            s.tetherIssue != null -> withColon(ol, s.tetherIssue.kind.label)
+            else -> ol
         }
         val parts = ArrayList<String>()
         val l = s.line
         if (l != null) parts.add(Fmt.signalSummary(l))
-        s.check?.let { parts.add(if (it.failure == null) "ネット✓" else "ネット✗") }
-        s.tether?.clients?.let { parts.add("端末${it}台") }
-        s.sched?.stoppedUntil?.let { parts.add("テザリング停止中（$it に再開）") }
-        s.meter?.remainingMin?.let { parts.add("残り" + Fmt.duration(it * 60_000L)) }
+        s.check?.let { parts.add(tr("ネット", "Internet ", "Internet ") + if (it.failure == null) "✓" else "✗") }
+        s.tether?.clients?.let { parts.add(tr("端末${it}台", "$it device(s)", "$it appareil(s)")) }
+        s.sched?.stoppedUntil?.let { parts.add(tr("テザリング停止中（$it に再開）", "Hotspot off (back on at $it)", "Point d'accès arrêté (réactivation à $it)")) }
+        s.meter?.remainingMin?.let { m -> Fmt.duration(m * 60_000L).let { parts.add(tr("残り$it", "$it left", "reste $it")) } }
         s.experiment?.let { e ->
-            parts.add(if (e.waitingSwitch) "比較テスト：切り替え待ち" else "比較テスト ${e.condition} ${e.measuredSec / 60}/${e.phaseSec / 60}分")
+            parts.add(
+                if (e.waitingSwitch) {
+                    tr("比較テスト：切り替え待ち", "Comparison test: waiting for switch", "Test comparatif : en attente du changement")
+                } else {
+                    val p = "${e.condition} ${e.measuredSec / 60}/${e.phaseSec / 60}"
+                    tr("比較テスト ${p}分", "Comparison test $p min", "Test comparatif $p min")
+                },
+            )
         }
-        if (s.nextCheckAt > 0 && o != Overall.MAINT) parts.add("次回 ${Fmt.hm(s.nextCheckAt)}")
-        return title to parts.joinToString(" · ").ifEmpty { "状態を確認しています" }
+        if (s.nextCheckAt > 0 && o != Overall.MAINT) Fmt.hm(s.nextCheckAt).let { parts.add(tr("次回 $it", "Next $it", "Prochaine $it")) }
+        return title to parts.joinToString(" · ").ifEmpty { tr("状態を確認しています", "Checking status", "Vérification de l'état") }
     }
+
+    /** 「状態：内容」（フランス語はコロンの前に空白） */
+    private fun withColon(a: String, b: String) = tr("$a：$b", "$a: $b", "$a : $b")
 
     /** 比較テストの案内。[confirm] なら「切り替えた」「中止」のボタンを付ける */
     fun experiment(ctx: Context, title: String, text: String, confirm: Boolean) {
@@ -83,8 +97,8 @@ object Notifier {
             .setAutoCancel(!confirm)
             .setOngoing(confirm)
         if (confirm) {
-            b.addAction(action(ctx, "切り替えた", service(ctx, 4, MonitorService.ACTION_EXP_CONFIRM)))
-            b.addAction(action(ctx, "中止して元に戻す", service(ctx, 5, MonitorService.ACTION_EXP_ABORT)))
+            b.addAction(action(ctx, tr("切り替えた", "Switched", "C'est fait"), service(ctx, 4, MonitorService.ACTION_EXP_CONFIRM)))
+            b.addAction(action(ctx, tr("中止して元に戻す", "Stop and revert", "Arrêter et rétablir"), service(ctx, 5, MonitorService.ACTION_EXP_ABORT)))
         }
         ctx.getSystemService(NotificationManager::class.java)?.notify(ID_EXPERIMENT, b.build())
     }
@@ -104,7 +118,7 @@ object Notifier {
             .setCategory(Notification.CATEGORY_SERVICE)
             .setColor(ctx.getColor(R.color.brand))
             .setContentIntent(openApp(ctx))
-            .addAction(action(ctx, "今すぐチェック", checkNow(ctx)))
+            .addAction(action(ctx, tr("今すぐチェック", "Check now", "Vérifier maintenant"), checkNow(ctx)))
             .build()
     }
 
@@ -133,10 +147,15 @@ object Notifier {
         PendingIntent.getActivity(ctx, req, Intent(ctx, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), FLAGS),
     )
 
-    fun placementAction(ctx: Context) = openScreen(ctx, "設置場所アシストを開く", PlacementActivity::class.java, 6)
-    fun trafficAction(ctx: Context) = openScreen(ctx, "通信量を見る", TrafficActivity::class.java, 7)
-    fun clientGuideAction(ctx: Context) = openScreen(ctx, "接続端末の設定ガイド", ClientGuideActivity::class.java, 8)
-    fun settingsAction(ctx: Context) = openScreen(ctx, "設定を開く", SettingsActivity::class.java, 9)
+    fun placementAction(ctx: Context) =
+        openScreen(ctx, tr("設置場所アシストを開く", "Open Placement assistant", "Ouvrir l'assistant d'emplacement"), PlacementActivity::class.java, 6)
+
+    fun trafficAction(ctx: Context) = openScreen(ctx, tr("通信量を見る", "View traffic", "Voir le trafic"), TrafficActivity::class.java, 7)
+
+    fun clientGuideAction(ctx: Context) =
+        openScreen(ctx, tr("接続端末の設定ガイド", "Client device guide", "Guide des appareils connectés"), ClientGuideActivity::class.java, 8)
+
+    fun settingsAction(ctx: Context) = openScreen(ctx, tr("設定を開く", "Open Settings", "Ouvrir les paramètres"), SettingsActivity::class.java, 9)
 
     private fun post(ctx: Context, channel: String, id: Int, title: String, text: String, openTether: Boolean, extra: Notification.Action?) {
         val b = Notification.Builder(ctx, channel)
@@ -147,7 +166,9 @@ object Notifier {
             .setColor(ctx.getColor(R.color.brand))
             .setContentIntent(openApp(ctx))
             .setAutoCancel(true)
-        if (openTether) b.addAction(action(ctx, "テザリング設定を開く", openTetherSettings(ctx)))
+        if (openTether) {
+            b.addAction(action(ctx, tr("テザリング設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès"), openTetherSettings(ctx)))
+        }
         if (extra != null) b.addAction(extra)
         ctx.getSystemService(NotificationManager::class.java)?.notify(id, b.build())
     }

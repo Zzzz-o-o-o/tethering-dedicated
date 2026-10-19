@@ -31,7 +31,7 @@ data class PowerRow(
     val condition: String?,
 ) {
     fun fields(): List<String?> = listOf(
-        start, end, sec.toString(), if (onBattery) BATTERY else POWERED, method?.label,
+        start, end, sec.toString(), if (onBattery) BATTERY else POWERED, method?.key,
         levelStart?.toString(), levelEnd?.toString(), mah?.let { f(it, 1) }, avgMa?.let { f(it, 0) }, avgMv?.toString(),
         avgMw?.let { f(it, 0) }, tempC?.let { f(it, 1) }, screenSec.toString(), tether?.let { if (it) "ON" else "OFF" },
         clientsMax?.toString(), rsrp?.toString(), sinr?.let { f(it, 1) }, band, mobileKb?.toString(), profile, experiment, condition,
@@ -41,14 +41,43 @@ data class PowerRow(
     val day: String get() = end.take(10).replace("-", "")
 
     companion object {
+        // 保存する値（言語によらず同じ。読み戻すため）
         const val BATTERY = "バッテリー駆動"
         const val POWERED = "給電中"
 
+        /** 保存するファイルの見出し（言語によらず同じ。見出しの行を見分けるのに使う） */
         val HEADER = listOf(
             "開始", "終了", "秒", "電源", "方法", "電池%開始", "電池%終了", "消費mAh", "平均電流mA", "平均電圧mV",
             "平均消費mW", "電池温度℃", "画面点灯秒", "テザリング", "接続端末最大", "RSRP(dBm)", "SINR(dB)", "バンド",
             "モバイル通信KB", "プロファイル", "比較テスト", "条件",
         )
+
+        /** 書き出す CSV の見出し（今の言語） */
+        val exportHeader: List<String>
+            get() = listOf(
+                tr("開始", "Start", "Début"), tr("終了", "End", "Fin"), tr("秒", "Seconds", "Secondes"),
+                tr("電源", "Power", "Alimentation"), tr("方法", "Method", "Méthode"),
+                tr("電池%開始", "Battery % start", "Batterie % début"), tr("電池%終了", "Battery % end", "Batterie % fin"),
+                tr("消費mAh", "Used mAh", "Consommé mAh"), tr("平均電流mA", "Avg current mA", "Courant moyen mA"),
+                tr("平均電圧mV", "Avg voltage mV", "Tension moyenne mV"), tr("平均消費mW", "Avg power mW", "Puissance moyenne mW"),
+                tr("電池温度℃", "Battery temp ℃", "Temp. batterie ℃"), tr("画面点灯秒", "Screen on (s)", "Écran allumé (s)"),
+                tr("テザリング", "Hotspot", "Point d'accès"), tr("接続端末最大", "Max devices", "Appareils max"),
+                "RSRP(dBm)", "SINR(dB)", tr("バンド", "Band", "Bande"), tr("モバイル通信KB", "Mobile data KB", "Données mobiles Ko"),
+                tr("プロファイル", "Profile", "Profil"), tr("比較テスト", "Comparison test", "Test comparatif"), tr("条件", "Condition", "Condition"),
+            )
+
+        /** 保存された 1 行を、書き出し用に今の言語にする（電源・方法の値） */
+        fun exportRow(c: List<String>): List<String> = c.mapIndexed { i, v ->
+            when (i) {
+                3 -> when (v) {
+                    BATTERY -> Plug.NONE.label
+                    POWERED -> tr("給電中", "Charging", "En charge")
+                    else -> v
+                }
+                4 -> Method.entries.firstOrNull { it.key == v }?.label ?: v
+                else -> v
+            }
+        }
 
         private fun f(v: Double, digits: Int) = String.format(Locale.US, "%.${digits}f", v)
 
@@ -57,7 +86,7 @@ data class PowerRow(
             fun s(i: Int) = c[i].takeIf { it.isNotEmpty() }
             return PowerRow(
                 start = c[0], end = c[1], sec = c[2].toLongOrNull() ?: return null, onBattery = c[3] == BATTERY,
-                method = Method.entries.firstOrNull { it.label == c[4] }, levelStart = c[5].toIntOrNull(), levelEnd = c[6].toIntOrNull(),
+                method = Method.entries.firstOrNull { it.key == c[4] }, levelStart = c[5].toIntOrNull(), levelEnd = c[6].toIntOrNull(),
                 mah = c[7].toDoubleOrNull(), avgMa = c[8].toDoubleOrNull(), avgMv = c[9].toIntOrNull(), avgMw = c[10].toDoubleOrNull(),
                 tempC = c[11].toDoubleOrNull(), screenSec = c[12].toLongOrNull() ?: 0, tether = s(13)?.let { it == "ON" },
                 clientsMax = c[14].toIntOrNull(), rsrp = c[15].toIntOrNull(), sinr = c[16].toDoubleOrNull(), band = s(17),
@@ -124,11 +153,19 @@ object Reports {
         )
     }
 
-    val CSV_HEADER = listOf(
-        "日付", "バッテリー駆動(時間)", "給電(時間)", "計測できた時間(時間)", "平均消費mW", "平均電流mA", "満充電からの推定稼働(時間)",
-        "モバイル通信MB", "テザリングON(時間)", "接続端末最大", "画面点灯(分)", "チェック回数", "チェック成功", "異常(確定)",
-        "電池温度最大℃", "RSRP平均(dBm)",
-    )
+    /** 日別の CSV の見出し（書き出しにだけ使うので今の言語） */
+    val CSV_HEADER: List<String>
+        get() = listOf(
+            tr("日付", "Date", "Date"), tr("バッテリー駆動(時間)", "On battery (h)", "Sur batterie (h)"),
+            tr("給電(時間)", "Charging (h)", "En charge (h)"), tr("計測できた時間(時間)", "Measured (h)", "Mesuré (h)"),
+            tr("平均消費mW", "Avg power mW", "Puissance moyenne mW"), tr("平均電流mA", "Avg current mA", "Courant moyen mA"),
+            tr("満充電からの推定稼働(時間)", "Est. runtime from full (h)", "Autonomie estimée depuis plein (h)"),
+            tr("モバイル通信MB", "Mobile data MB", "Données mobiles Mo"), tr("テザリングON(時間)", "Hotspot on (h)", "Point d'accès actif (h)"),
+            tr("接続端末最大", "Max devices", "Appareils max"), tr("画面点灯(分)", "Screen on (min)", "Écran allumé (min)"),
+            tr("チェック回数", "Checks", "Vérifications"), tr("チェック成功", "Checks OK", "Vérifications OK"),
+            tr("異常(確定)", "Confirmed problems", "Problèmes confirmés"), tr("電池温度最大℃", "Max battery temp ℃", "Temp. batterie max ℃"),
+            tr("RSRP平均(dBm)", "Avg RSRP (dBm)", "RSRP moyen (dBm)"),
+        )
 
     fun csvFields(r: DailyReport): List<String?> {
         fun h(sec: Long) = String.format(Locale.US, "%.2f", sec / 3600.0)

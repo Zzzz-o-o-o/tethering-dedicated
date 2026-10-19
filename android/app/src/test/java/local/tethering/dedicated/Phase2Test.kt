@@ -255,7 +255,7 @@ class WebPagesTest {
     )
 
     private fun check(diagnosis: String) = CheckResult(
-        at(11, 50), Trigger.SCHEDULED, Tri.OK, Tri.OK, Tri.OK, Tri.OK, Tri.OK, 204, 80, true, "モバイル回線", null, diagnosis, "",
+        at(11, 50), Trigger.SCHEDULED, Tri.OK, Tri.OK, Tri.OK, Tri.OK, Tri.OK, 204, 80, true, ConnectivityProbe.ROUTE_CELLULAR, null, diagnosis, "",
     )
 
     @Test

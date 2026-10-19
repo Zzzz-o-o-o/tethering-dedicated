@@ -148,5 +148,24 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          起動時のテザリング ON（v0.7.0）。画面ロックの解除前（Direct Boot）にも届くよう directBootAware にする。
+          LOCKED_BOOT_COMPLETED / BOOT_COMPLETED は保護ブロードキャスト（OS だけが送れる）
+        -->
+        <receiver
+            android:name=".BootTetherReceiver"
+            android:directBootAware="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <!-- 起動時のテザリング ON のやり直し・確認（このアプリのアラームだけが送る） -->
+        <receiver
+            android:name=".BootTetherRetryReceiver"
+            android:directBootAware="true"
+            android:exported="false" />
     </application>
 </manifest>

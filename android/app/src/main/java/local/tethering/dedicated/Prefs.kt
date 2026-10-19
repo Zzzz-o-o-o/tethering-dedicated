@@ -22,7 +22,10 @@ class Prefs(context: Context) {
     fun text(d: TextDef): String = sp.getString(d.key, null)?.takeIf { d.check(it) == null } ?: d.def
 
     fun put(d: IntDef, v: Int) = sp.edit().putInt(d.key, v.coerceIn(d.min, d.max)).apply()
-    fun put(d: BoolDef, v: Boolean) = sp.edit().putBoolean(d.key, v).apply()
+    fun put(d: BoolDef, v: Boolean) {
+        sp.edit().putBoolean(d.key, v).apply()
+        if (d == Defs.TETHER_ON_BOOT) syncBootTether()
+    }
     fun put(d: TextDef, v: String) {
         if (d.check(v) == null) sp.edit().putString(d.key, v.trim()).apply()
     }
@@ -166,9 +169,16 @@ class Prefs(context: Context) {
             }
         }
         e.apply()
+        syncBootTether()
     }
 
-    fun resetToDefaults() = sp.edit().clear().apply()
+    fun resetToDefaults() {
+        sp.edit().clear().apply()
+        syncBootTether()
+    }
+
+    /** 起動時のテザリング ON は、ロック解除前でも読める写しを使う（BootTether）。設定を変えたらすぐ写す */
+    private fun syncBootTether() = BootTether.sync(app, bool(Defs.TETHER_ON_BOOT))
 
     /** [includeSecrets] は端末内の巻き戻し用だけ true（ファイルに書き出す設定には、通知先の URL などを含めない） */
     fun toJson(includeSecrets: Boolean = false): JSONObject {
@@ -187,10 +197,15 @@ class Prefs(context: Context) {
         /** バックアップファイルを読む。形式が違えば理由つきで例外 */
         fun readBackup(json: JSONObject, packageName: String): Map<String, Any?> {
             val appId = json.optString("app")
-            require(appId.isEmpty() || appId == packageName) { "別のアプリのバックアップです（$appId）" }
+            require(appId.isEmpty() || appId == packageName) {
+                tr("別のアプリのバックアップです（$appId）", "This is a backup of another app ($appId)", "Sauvegarde d'une autre application ($appId)")
+            }
             val schema = json.optInt("schema", 0)
-            require(schema in 1..SettingsCodec.SCHEMA) { "対応していない形式です（schema=$schema）" }
-            val s = json.optJSONObject("settings") ?: throw IllegalArgumentException("settings がありません")
+            require(schema in 1..SettingsCodec.SCHEMA) {
+                tr("対応していない形式です（schema=$schema）", "Unsupported format (schema=$schema)", "Format non pris en charge (schema=$schema)")
+            }
+            val s = json.optJSONObject("settings")
+                ?: throw IllegalArgumentException(tr("settings がありません", "No \"settings\" found", "« settings » introuvable"))
             val out = LinkedHashMap<String, Any?>()
             s.keys().forEach { k -> out[k] = s.get(k) }
             return out

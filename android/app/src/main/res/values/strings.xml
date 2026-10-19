@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 既定（英語）。日本語は values-ja、フランス語は values-fr。画面の文言の多くはコード（I18n.kt の tr / Tx）にある -->
 <resources>
-    <string name="app_name">テザリング専用化</string>
-    <string name="title_settings">設定</string>
-    <string name="title_guide">設定ガイド</string>
-    <string name="title_apps">アプリの整理</string>
-    <string name="title_diagnostics">診断情報</string>
-    <string name="title_experiment">比較テスト</string>
-    <string name="title_report">日次レポート</string>
-    <string name="title_placement">設置場所アシスト</string>
-    <string name="title_traffic">通信量（時間帯別）</string>
-    <string name="title_client_guide">接続端末の設定ガイド</string>
-    <string name="title_analysis">省電力の分析</string>
-    <string name="channel_monitor">監視中の表示</string>
-    <string name="channel_monitor_desc">監視サービスの常駐通知（音・振動なし）</string>
-    <string name="channel_alert">異常・警告</string>
-    <string name="channel_alert_desc">回線・インターネット・テザリングの異常、温度・電池の警告</string>
-    <string name="channel_info">お知らせ</string>
-    <string name="channel_info_desc">復旧のお知らせ、起動後チェックの結果</string>
+    <!-- 表示の言語（I18n.sync がこれを読む。リソースの選び方と画面の言語をそろえるため） -->
+    <string name="lang_code">en</string>
+    <string name="app_name">Tethering Dedicated</string>
+    <string name="title_settings">Settings</string>
+    <string name="title_guide">Setup guide</string>
+    <string name="title_apps">App list</string>
+    <string name="title_diagnostics">Diagnostics</string>
+    <string name="title_experiment">Comparison test</string>
+    <string name="title_report">Daily report</string>
+    <string name="title_placement">Placement assistant</string>
+    <string name="title_traffic">Traffic by hour</string>
+    <string name="title_client_guide">Client device guide</string>
+    <string name="title_analysis">Power analysis</string>
+    <string name="channel_monitor">Monitoring</string>
+    <string name="channel_monitor_desc">Ongoing notification of the monitoring service (no sound or vibration)</string>
+    <string name="channel_alert">Errors and alerts</string>
+    <string name="channel_alert_desc">Mobile line, internet and hotspot errors; temperature and battery alerts</string>
+    <string name="channel_info">Notices</string>
+    <string name="channel_info_desc">Recovery notices and after-reboot check results</string>
 </resources>

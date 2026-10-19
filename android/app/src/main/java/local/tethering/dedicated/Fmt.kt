@@ -6,35 +6,36 @@ import java.util.Locale
 
 /** 画面・ログ・通知で共通に使う表示の言い回し */
 object Fmt {
-    const val NA = "取得不可"
+    /** 取得できない値の表示 */
+    val NA: String get() = tr("取得不可", "N/A", "Indisponible")
 
     fun sim(s: Int?): String = when (s) {
         null -> NA
-        0 -> "不明"
-        1 -> "SIMなし"
-        2 -> "PINロック"
-        3 -> "PUKロック"
-        4 -> "ネットワークロック"
-        5 -> "使用可"
-        6 -> "準備中"
-        7 -> "無効"
-        8 -> "読み取りエラー"
-        9 -> "制限あり"
-        else -> "状態$s"
+        0 -> tr("不明", "Unknown", "Inconnu")
+        1 -> tr("SIMなし", "No SIM", "Pas de SIM")
+        2 -> tr("PINロック", "PIN locked", "Verrouillée (PIN)")
+        3 -> tr("PUKロック", "PUK locked", "Verrouillée (PUK)")
+        4 -> tr("ネットワークロック", "Network locked", "Verrouillée (réseau)")
+        5 -> tr("使用可", "Ready", "Prête")
+        6 -> tr("準備中", "Not ready", "Pas prête")
+        7 -> tr("無効", "Disabled", "Désactivée")
+        8 -> tr("読み取りエラー", "Card error", "Erreur de carte")
+        9 -> tr("制限あり", "Restricted", "Restreinte")
+        else -> tr("状態$s", "State $s", "État $s")
     }
 
     fun voice(s: Int?): String = when (s) {
         null -> NA
-        LineInfo.STATE_IN_SERVICE -> "圏内"
-        LineInfo.STATE_OUT_OF_SERVICE -> "圏外"
-        LineInfo.STATE_EMERGENCY_ONLY -> "緊急通報のみ"
-        LineInfo.STATE_POWER_OFF -> "電源OFF"
-        else -> "状態$s"
+        LineInfo.STATE_IN_SERVICE -> tr("圏内", "In service", "En service")
+        LineInfo.STATE_OUT_OF_SERVICE -> tr("圏外", "No service", "Hors service")
+        LineInfo.STATE_EMERGENCY_ONLY -> tr("緊急通報のみ", "Emergency calls only", "Appels d'urgence uniquement")
+        LineInfo.STATE_POWER_OFF -> tr("電源OFF", "Radio off", "Radio désactivée")
+        else -> tr("状態$s", "State $s", "État $s")
     }
 
     fun rat(t: Int?): String = when (t) {
         null -> NA
-        0 -> "未登録"
+        0 -> tr("未登録", "Not registered", "Non enregistré")
         1 -> "GPRS"
         2 -> "EDGE"
         3 -> "UMTS"
@@ -48,46 +49,58 @@ object Fmt {
         18 -> "IWLAN"
         19 -> "LTE-CA"
         20 -> "5G"
-        else -> "種別$t"
+        else -> tr("種別$t", "Type $t", "Type $t")
     }
 
     fun dataState(s: Int?): String = when (s) {
         null -> NA
-        0 -> "切断"
-        1 -> "接続中"
-        2 -> "接続"
-        3 -> "一時停止"
-        4 -> "切断中"
-        else -> "状態$s"
+        0 -> tr("切断", "Disconnected", "Déconnecté")
+        1 -> tr("接続中", "Connecting", "Connexion en cours")
+        2 -> tr("接続", "Connected", "Connecté")
+        3 -> tr("一時停止", "Suspended", "Suspendu")
+        4 -> tr("切断中", "Disconnecting", "Déconnexion en cours")
+        else -> tr("状態$s", "State $s", "État $s")
     }
 
     fun ap(s: Int?): String = when (s) {
         null -> NA
-        TetherInfo.AP_DISABLING -> "停止中"
+        TetherInfo.AP_DISABLING -> tr("停止中", "Stopping", "Arrêt en cours")
         TetherInfo.AP_DISABLED -> "OFF"
-        TetherInfo.AP_ENABLING -> "起動中"
+        TetherInfo.AP_ENABLING -> tr("起動中", "Starting", "Démarrage en cours")
         TetherInfo.AP_ENABLED -> "ON"
-        TetherInfo.AP_FAILED -> "起動失敗"
-        else -> "状態$s"
+        TetherInfo.AP_FAILED -> tr("起動失敗", "Failed to start", "Échec du démarrage")
+        else -> tr("状態$s", "State $s", "État $s")
     }
 
     fun thermal(s: Int?): String = when (s) {
         null -> NA
-        0 -> "正常"
-        1 -> "軽度"
-        2 -> "中程度"
-        3 -> "重度"
-        4 -> "危険"
-        5 -> "緊急"
-        6 -> "停止寸前"
-        else -> "状態$s"
+        0 -> tr("正常", "Normal", "Normal")
+        1 -> tr("軽度", "Light", "Léger")
+        2 -> tr("中程度", "Moderate", "Modéré")
+        3 -> tr("重度", "Severe", "Sévère")
+        4 -> tr("危険", "Critical", "Critique")
+        5 -> tr("緊急", "Emergency", "Urgence")
+        6 -> tr("停止寸前", "About to shut down", "Arrêt imminent")
+        else -> tr("状態$s", "State $s", "État $s")
     }
 
-    fun temp(c: Double?): String = c?.let { String.format(Locale.US, "%.1f℃", it) } ?: NA
+    fun temp(c: Double?): String = c?.let { dec(it) + tr("℃", "°C", " °C") } ?: NA
 
     fun num(v: Number?, unit: String = ""): String = v?.let { "$it$unit" } ?: NA
 
-    fun db(v: Double?): String = v?.let { String.format(Locale.US, "%.1f dB", it) } ?: NA
+    /** 電波の点数（0〜100） */
+    fun points(v: Int): String = tr("$v 点", "$v pts", "$v pts")
+
+    /** 百分率（フランス語は % の前に空白） */
+    fun pct(v: Number?): String = v?.let { tr("$it%", "$it%", "$it %") } ?: NA
+
+    fun db(v: Double?): String = v?.let { dec(it) + " dB" } ?: NA
+
+    /** 小数の表示（表示言語の書式。フランス語は小数点がカンマ）。ログ・CSV に書く数値には使わない */
+    fun dec(v: Double, digits: Int = 1): String = String.format(I18n.locale, "%.${digits}f", v)
+
+    /** 通信量の表示（[v] は MB 単位。フランス語は Mo） */
+    fun mb(v: Double): String = dec(v) + tr(" MB", " MB", " Mo")
 
     fun onOff(b: Boolean?, on: String = "ON", off: String = "OFF"): String = when (b) {
         null -> NA
@@ -97,8 +110,8 @@ object Fmt {
 
     fun tethered(list: List<String>?): String = when {
         list == null -> NA
-        list.isEmpty() -> "なし"
-        else -> list.map { Ifaces.label(it) }.distinct().joinToString("・")
+        list.isEmpty() -> tr("なし", "None", "Aucun")
+        else -> list.map { Ifaces.label(it) }.distinct().joinToString(tr("・", ", ", ", "))
     }
 
     fun time(ms: Long): String = if (ms <= 0) "－" else SimpleDateFormat("HH:mm:ss", Locale.JAPAN).format(Date(ms))
@@ -113,20 +126,27 @@ object Fmt {
     fun duration(ms: Long): String {
         val min = (ms + 30_000) / 60_000
         return when {
-            min < 1 -> "1分未満"
-            min < 60 -> "約${min}分"
-            else -> "${min / 60}時間${min % 60}分"
+            min < 1 -> tr("1分未満", "under 1 min", "moins d'1 min")
+            min < 60 -> tr("約${min}分", "about $min min", "environ $min min")
+            else -> tr("${min / 60}時間${min % 60}分", "${min / 60} h ${min % 60} min", "${min / 60} h ${min % 60} min")
         }
+    }
+
+    /** 「約◯」の経過時間（推定残り時間など） */
+    fun approx(ms: Long): String {
+        val d = duration(ms)
+        if (ms < 30_000) return d
+        return tr("約" + d.removePrefix("約"), "about " + d.removePrefix("about "), "environ " + d.removePrefix("environ "))
     }
 
     fun bandwidths(list: List<Double>?): String = when {
         list == null -> NA
         list.size == 1 -> fmtMhz(list[0])
-        else -> list.joinToString("+") { fmtMhz(it) } + "（キャリアアグリゲーション）"
+        else -> list.joinToString("+") { fmtMhz(it) } + tr("（キャリアアグリゲーション）", " (carrier aggregation)", " (agrégation de porteuses)")
     }
 
     private fun fmtMhz(v: Double): String =
-        if (v % 1.0 == 0.0) "${v.toInt()} MHz" else String.format(Locale.US, "%.1f MHz", v)
+        if (v % 1.0 == 0.0) "${v.toInt()} MHz" else dec(v) + " MHz"
 
     /** 全角の英数字・記号と全角スペースを半角にする（入力欄用） */
     fun halfWidth(s: String): String = buildString(s.length) {
@@ -153,4 +173,10 @@ object Fmt {
         }
         return if (parts.isEmpty()) NA else parts.joinToString(" · ")
     }
+
+    /** 「・」で並べる（日本語）／「, 」（英語・フランス語） */
+    fun join(items: List<String>): String = items.joinToString(tr("・", ", ", ", "))
+
+    /** かっこ書き（日本語は全角、英語・フランス語は半角で前に空白） */
+    fun paren(s: String): String = tr("（$s）", " ($s)", " ($s)")
 }

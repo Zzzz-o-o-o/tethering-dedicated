@@ -10,12 +10,15 @@ import java.util.concurrent.Executors
  * 電池残量が [Config.low]〜[Config.high] に収まるよう給電を ON／OFF し、高温のときは給電を止める（充電上限のない端末の代わり）。
  */
 object PlugPolicy {
-    enum class Why(val label: String) {
-        LOW("残量が下限以下"),
-        HIGH("残量が上限に達した"),
-        HOT("電池温度が高い"),
-        CRIT("電池温度が非常に高い"),
-        EMERGENCY("高温だが残量が少ない"),
+    /** 目標の理由。保存は [name] で行う（表示は [label]。かっこ書きで使う） */
+    enum class Why(private val tx: Tx) {
+        LOW(Tx("残量が下限以下", "battery at or below the lower limit", "batterie au seuil bas ou en dessous")),
+        HIGH(Tx("残量が上限に達した", "battery reached the upper limit", "batterie au seuil haut")),
+        HOT(Tx("電池温度が高い", "battery hot", "batterie chaude")),
+        CRIT(Tx("電池温度が非常に高い", "battery very hot", "batterie très chaude")),
+        EMERGENCY(Tx("高温だが残量が少ない", "hot but battery low", "chaude mais batterie faible"));
+
+        val label: String get() = tx.get()
     }
 
     data class Config(
@@ -78,11 +81,15 @@ object PlugUrls {
     const val TASMOTA = "tasmota"
     const val CUSTOM = "url"
 
-    val kinds = listOf(
-        SHELLY2 to "Shelly（第 2 世代以降: Plus・Pro・Gen3 など）",
-        SHELLY1 to "Shelly（第 1 世代: Plug S など）",
+    /** 種類と表示名（表示の言語で作る） */
+    val kinds: List<Pair<String, String>> get() = listOf(
+        SHELLY2 to tr("Shelly（第 2 世代以降: Plus・Pro・Gen3 など）", "Shelly (Gen 2 or later: Plus, Pro, Gen3…)", "Shelly (2e génération ou plus : Plus, Pro, Gen3…)"),
+        SHELLY1 to tr("Shelly（第 1 世代: Plug S など）", "Shelly (Gen 1: Plug S…)", "Shelly (1re génération : Plug S…)"),
         TASMOTA to "Tasmota",
-        CUSTOM to "URL を指定（そのほかのプラグ・Home Assistant など）",
+        CUSTOM to tr(
+            "URL を指定（そのほかのプラグ・Home Assistant など）", "Custom URL (other plugs, Home Assistant…)",
+            "URL personnalisée (autres prises, Home Assistant…)",
+        ),
     )
 
     fun label(kind: String): String = kinds.firstOrNull { it.first == kind }?.second ?: kind
@@ -121,15 +128,30 @@ object PlugUrls {
         return WebClient.parse(url)?.let { Req(method, it) }
     }
 
-    fun checkSpec(s: String): String? = if (s.isBlank() || spec(s) != null) null else "http:// または https:// で始まる URL を入れてください（POST で送るときは先頭に「POST 」）"
+    fun checkSpec(s: String): String? =
+        if (s.isBlank() || spec(s) != null) {
+            null
+        } else {
+            tr(
+                "http:// または https:// で始まる URL を入れてください（POST で送るときは先頭に「POST 」）",
+                "Enter a URL starting with http:// or https:// (start with “POST ” to send it as POST)",
+                "Saisissez une URL commençant par http:// ou https:// (commencez par « POST » pour un envoi en POST)",
+            )
+        }
 
     fun checkHost(s: String): String? {
         val h = s.trim().removePrefix("http://").removeSuffix("/")
-        return if (h.isEmpty() || (!h.contains('/') && !h.contains(' ') && WebClient.parse("http://$h/") != null)) null
-        else "IP アドレスかホスト名だけを入れてください（例: 192.168.43.50）"
+        return if (h.isEmpty() || (!h.contains('/') && !h.contains(' ') && WebClient.parse("http://$h/") != null)) {
+            null
+        } else {
+            tr(
+                "IP アドレスかホスト名だけを入れてください（例: 192.168.43.50）", "Enter only an IP address or host name (e.g. 192.168.43.50)",
+                "Saisissez seulement une adresse IP ou un nom d'hôte (ex. 192.168.43.50)",
+            )
+        }
     }
 
-    fun checkKind(s: String): String? = if (kinds.any { it.first == s }) null else "種類を選んでください"
+    fun checkKind(s: String): String? = if (kinds.any { it.first == s }) null else tr("種類を選んでください", "Choose a type", "Choisissez un type")
 
     /** 接続端末の数から除くプラグの IP アドレス（IPv4 で書かれているときだけ） */
     fun ipv4(kind: String, host: String, onUrl: String): String? {
@@ -210,7 +232,16 @@ class PlugSwitch(private val prefs: Prefs) {
             prefs.plugWant = PlugPolicy.encode(w)
             attempts = 0
             if (w != null && (prev == null || prev.on != w.on)) {
-                onEvent?.invoke(Event("給電を${if (w.on) "ON" else "OFF"}にする（${w.why.label}）", "残量 ${Fmt.num(p.levelPct, "%")}・電池 ${Fmt.temp(p.tempC)}", Level.INFO))
+                val onOff = if (w.on) "ON" else "OFF"
+                val why = w.why.label
+                val lvl = Fmt.pct(p.levelPct)
+                val temp = Fmt.temp(p.tempC)
+                onEvent?.invoke(
+                    Event(
+                        tr("給電を${onOff}にする（$why）", "Charging $onOff ($why)", "Charge $onOff ($why)"),
+                        tr("残量 $lvl・電池 $temp", "Battery $lvl, $temp", "Batterie $lvl, $temp"), Level.INFO,
+                    ),
+                )
             }
         }
         val target = w?.on ?: return
@@ -220,7 +251,10 @@ class PlugSwitch(private val prefs: Prefs) {
             attempts = 0
             if (alerted) {
                 alerted = false
-                onEvent?.invoke(Event("給電の状態が目標に戻りました（${if (target) "ON" else "OFF"}）", null, Level.CLEAR))
+                val onOff = if (target) "ON" else "OFF"
+                onEvent?.invoke(
+                    Event(tr("給電の状態が目標に戻りました（$onOff）", "Charging is as intended again ($onOff)", "La charge est de nouveau conforme ($onOff)"), null, Level.CLEAR),
+                )
             }
             // 動いている間は、OFF のあと自動で ON に戻るタイマーを延長し続ける
             val flip = prefs.int(Defs.PLUG_FLIPBACK)
@@ -234,10 +268,19 @@ class PlugSwitch(private val prefs: Prefs) {
         if (attempts >= MAX_ATTEMPTS) {
             if (!alerted) {
                 alerted = true
+                val last = lastResult ?: "－"
                 onEvent?.invoke(
                     Event(
-                        "スマートプラグで給電を${if (target) "始め" else "止め"}られません",
-                        "${MAX_ATTEMPTS}回送っても給電の状態が変わりません（${lastResult ?: "－"}）。プラグの電源・ネットワーク・ケーブルを確認してください",
+                        if (target) {
+                            tr("スマートプラグで給電を始められません", "Can't start charging with the smart plug", "Impossible de démarrer la charge avec la prise connectée")
+                        } else {
+                            tr("スマートプラグで給電を止められません", "Can't stop charging with the smart plug", "Impossible d'arrêter la charge avec la prise connectée")
+                        },
+                        tr(
+                            "${MAX_ATTEMPTS}回送っても給電の状態が変わりません（$last）。プラグの電源・ネットワーク・ケーブルを確認してください",
+                            "Charging didn't change after $MAX_ATTEMPTS commands ($last). Check the plug's power, its network and the cable",
+                            "La charge n'a pas changé après $MAX_ATTEMPTS commandes ($last). Vérifiez l'alimentation de la prise, son réseau et le câble",
+                        ),
                         Level.ALERT,
                     ),
                 )
@@ -251,7 +294,7 @@ class PlugSwitch(private val prefs: Prefs) {
         val kind = prefs.text(Defs.PLUG_KIND)
         val req = PlugUrls.request(kind, prefs.text(Defs.PLUG_HOST), prefs.text(Defs.PLUG_ON_URL), prefs.text(Defs.PLUG_OFF_URL), on, flipSec(kind))
         if (req == null) {
-            lastResult = "プラグのアドレス・URL が未設定"
+            lastResult = tr("プラグのアドレス・URL が未設定", "Plug address or URL not set", "Adresse ou URL de la prise non définie")
             return
         }
         inFlight = true
@@ -262,10 +305,19 @@ class PlugSwitch(private val prefs: Prefs) {
             main.post {
                 inFlight = false
                 if (closed) return@post
-                lastResult = "${Fmt.hm(System.currentTimeMillis())} ${if (on) "ON" else "OFF"}${if (rearm) "（タイマー延長）" else ""}: ${r.text}"
+                val onOff = if (on) "ON" else "OFF"
+                val timer = if (rearm) Fmt.paren(tr("タイマー延長", "timer extended", "minuteur prolongé")) else ""
+                lastResult = "${Fmt.hm(System.currentTimeMillis())} $onOff$timer: ${r.text}"
                 // テザリング OFF の間は、このテザリングにつないだプラグには届かないので数えない
                 if (!rearm && !(tetherOn == false && !r.ok)) attempts++
-                if (!r.ok && !rearm) onEvent?.invoke(Event("スマートプラグに送れませんでした（${if (on) "ON" else "OFF"}）", r.text, Level.INFO))
+                if (!r.ok && !rearm) {
+                    onEvent?.invoke(
+                        Event(
+                            tr("スマートプラグに送れませんでした（$onOff）", "Couldn't reach the smart plug ($onOff)", "Impossible de joindre la prise connectée ($onOff)"),
+                            r.text, Level.INFO,
+                        ),
+                    )
+                }
                 onChanged?.invoke()
                 // 結果を確かめる（給電の変化は電池の放送で届く。届かなければこの時点で見直す）
                 main.postDelayed({ if (!closed) evaluate(StateStore.state.power, StateStore.state.tether?.wifiOn) }, RESEND_MS + 5_000L)
@@ -288,7 +340,7 @@ class PlugSwitch(private val prefs: Prefs) {
         if (w?.on != false) return
         val kind = prefs.text(Defs.PLUG_KIND)
         val req = PlugUrls.request(kind, prefs.text(Defs.PLUG_HOST), prefs.text(Defs.PLUG_ON_URL), prefs.text(Defs.PLUG_OFF_URL), true, 0) ?: return
-        onEvent?.invoke(Event("給電を ON に戻す（$reason）", null, Level.INFO))
+        onEvent?.invoke(Event(tr("給電を ON に戻す（$reason）", "Charging back ON ($reason)", "Charge rétablie ($reason)"), null, Level.INFO))
         // 送った指示として覚えておく（連携をまた ON にしたとき、次の指示を待たせないように）
         lastSentOn = true
         lastSentEl = SystemClock.elapsedRealtime()

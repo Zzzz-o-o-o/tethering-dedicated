@@ -11,6 +11,8 @@ object ExperimentStore {
     private const val MAX_HISTORY = 10
 
     data class HistoryItem(
+        /** 候補のキー（古い履歴では空） */
+        val key: String,
         val title: String,
         val labelA: String,
         val labelB: String,
@@ -32,7 +34,7 @@ object ExperimentStore {
     fun addHistory(prefs: Prefs, run: ExperimentRun, o: Outcome, endedAt: Long) {
         val arr = JSONArray()
         arr.put(
-            JSONObject()
+            JSONObject().put("key", run.candidate.key)
                 .put("title", run.candidate.title).put("labelA", run.candidate.labelA).put("labelB", run.candidate.labelB)
                 .put("endedAt", endedAt).put("decision", o.decision.name).put("unit", o.unit)
                 .put("avgA", o.avgA ?: JSONObject.NULL).put("avgB", o.avgB ?: JSONObject.NULL)
@@ -48,8 +50,11 @@ object ExperimentStore {
             runCatching {
                 val j = arr.getJSONObject(i)
                 val notes = j.optJSONArray("notes")
+                // 決まった候補の名前は、今の表示の言語で出す（自由に指定したものは保存した名前のまま）
+                val known = j.optString("key").takeIf { it.isNotEmpty() && it != Candidates.KEY_CUSTOM }?.let { Candidates.of(it) }
                 HistoryItem(
-                    j.getString("title"), j.getString("labelA"), j.getString("labelB"), j.getLong("endedAt"),
+                    j.optString("key"), known?.title ?: j.getString("title"), known?.labelA ?: j.getString("labelA"),
+                    known?.labelB ?: j.getString("labelB"), j.getLong("endedAt"),
                     Decision.valueOf(j.getString("decision")), j.optDoubleOrNull("avgA"), j.optDoubleOrNull("avgB"),
                     j.optString("unit", "mW"), j.optDoubleOrNull("saving"),
                     if (notes == null) emptyList() else (0 until notes.length()).map { notes.getString(it) },
@@ -58,7 +63,7 @@ object ExperimentStore {
         }
     }
 
-    private fun historyJson(h: HistoryItem) = JSONObject()
+    private fun historyJson(h: HistoryItem) = JSONObject().put("key", h.key)
         .put("title", h.title).put("labelA", h.labelA).put("labelB", h.labelB).put("endedAt", h.endedAt)
         .put("decision", h.decision.name).put("unit", h.unit)
         .put("avgA", h.avgA ?: JSONObject.NULL).put("avgB", h.avgB ?: JSONObject.NULL)
@@ -84,10 +89,12 @@ object ExperimentStore {
     }
 
     private fun fromJson(j: JSONObject): ExperimentRun {
-        val c = Candidate(
+        val stored = Candidate(
             j.getString("key"), j.getString("title"), j.getString("labelA"), j.getString("labelB"),
             j.getString("toB"), j.getString("toA"), j.getBoolean("auto"),
         )
+        // 決まった候補は今の表示の言語で出す（自由に指定したものは保存した文言のまま）
+        val c = stored.key.takeIf { it != Candidates.KEY_CUSTOM }?.let { Candidates.of(it) } ?: stored
         val r = ExperimentRun(c, j.getLong("phaseSec"), j.getInt("repeats"), j.getInt("minGain"), j.getLong("startedAt"))
         r.index = j.getInt("index")
         r.waitingSwitch = j.getBoolean("waiting")

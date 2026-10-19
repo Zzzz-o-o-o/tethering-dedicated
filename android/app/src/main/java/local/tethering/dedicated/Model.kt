@@ -6,13 +6,21 @@ package local.tethering.dedicated
  */
 
 /** 3値＋未実行の判定結果 */
-enum class Tri(val mark: String) {
-    OK("✓"), NG("✗"), SKIP("－"), UNKNOWN("取得不可")
+enum class Tri(private val symbol: String) {
+    OK("✓"), NG("✗"), SKIP("－"), UNKNOWN("");
+
+    val mark: String get() = if (this == UNKNOWN) Fmt.NA else symbol
 }
 
 /** 給電の種類 */
-enum class Plug(val label: String) {
-    AC("AC"), USB("USB"), WIRELESS("ワイヤレス"), NONE("バッテリー駆動"), UNKNOWN("取得不可");
+enum class Plug(private val tx: Tx) {
+    AC(Tx("AC", "AC", "Secteur")),
+    USB(Tx("USB", "USB", "USB")),
+    WIRELESS(Tx("ワイヤレス", "Wireless", "Sans fil")),
+    NONE(Tx("バッテリー駆動", "On battery", "Sur batterie")),
+    UNKNOWN(Tx("取得不可", "N/A", "Indisponible"));
+
+    val label: String get() = tx.get()
 
     val powered: Boolean? get() = when (this) {
         AC, USB, WIRELESS -> true
@@ -21,44 +29,59 @@ enum class Plug(val label: String) {
     }
 }
 
-/** チェックを実行したきっかけ */
-enum class Trigger(val label: String) {
-    SCHEDULED("定期チェック"),
-    RECHECK("再確認"),
-    EVENT("状態変化"),
-    MANUAL("手動チェック"),
-    BOOT("起動後チェック"),
+/**
+ * チェックを実行したきっかけ。[key] はログのイベント名として保存する値（言語によらず同じ。読み戻すため）
+ */
+enum class Trigger(val key: String, private val tx: Tx) {
+    SCHEDULED("定期チェック", Tx("定期チェック", "Scheduled check", "Vérification planifiée")),
+    RECHECK("再確認", Tx("再確認", "Recheck", "Revérification")),
+    EVENT("状態変化", Tx("状態変化", "State change", "Changement d'état")),
+    MANUAL("手動チェック", Tx("手動チェック", "Manual check", "Vérification manuelle")),
+    BOOT("起動後チェック", Tx("起動後チェック", "After-reboot check", "Vérification après redémarrage")),
     // イベント名「監視開始」（Ev.START）と区別する（直近の記録に二重に出ないように）
-    START("開始時チェック"),
+    START("開始時チェック", Tx("開始時チェック", "Startup check", "Vérification au démarrage"));
+
+    val label: String get() = tx.get()
 }
 
 /** 回線・インターネット・テザリングの異常（段階的な再確認の対象） */
-enum class Anomaly(val label: String, val upstream: Boolean) {
-    SIM("SIMを認識していない", true),
-    NO_SERVICE("モバイル回線が圏外・未登録", true),
-    NO_DATA("データ通信（IP）が確立していない", true),
-    DNS("DNS名前解決に失敗", true),
-    INTERNET("インターネットに到達できない", true),
-    TETHER_OFF("Wi-Fiテザリングが停止中", false),
-    TETHER_FAILED("Wi-Fiテザリングの起動に失敗", false),
+enum class Anomaly(private val tx: Tx, val upstream: Boolean) {
+    SIM(Tx("SIMを認識していない", "SIM not detected", "SIM non détectée"), true),
+    NO_SERVICE(Tx("モバイル回線が圏外・未登録", "No mobile service", "Pas de service mobile"), true),
+    NO_DATA(Tx("データ通信（IP）が確立していない", "No data connection (IP)", "Pas de connexion de données (IP)"), true),
+    DNS(Tx("DNS名前解決に失敗", "DNS lookup failed", "Échec de la résolution DNS"), true),
+    INTERNET(Tx("インターネットに到達できない", "Internet unreachable", "Internet inaccessible"), true),
+    TETHER_OFF(Tx("Wi-Fiテザリングが停止中", "Wi-Fi hotspot is off", "Le point d'accès Wi-Fi est arrêté"), false),
+    TETHER_FAILED(Tx("Wi-Fiテザリングの起動に失敗", "Wi-Fi hotspot failed to start", "Échec du démarrage du point d'accès Wi-Fi"), false);
+
+    val label: String get() = tx.get()
 }
 
 /** 端末の警告（再確認はせず、しきい値の出入りで通知・記録する） */
-enum class DeviceAlert(val label: String) {
-    TEMP_WARN("電池温度が高い"),
-    TEMP_CRIT("電池温度が非常に高い"),
-    THERMAL("端末の熱状態が高い"),
-    BATT_LOW("電池残量が少ない"),
-    RUNTIME_LOW("推定残り時間が少ない"),
-    SIGNAL_WEAK("電波の悪化"),
+enum class DeviceAlert(private val tx: Tx) {
+    TEMP_WARN(Tx("電池温度が高い", "Battery temperature high", "Température de la batterie élevée")),
+    TEMP_CRIT(Tx("電池温度が非常に高い", "Battery temperature very high", "Température de la batterie très élevée")),
+    THERMAL(Tx("端末の熱状態が高い", "Phone is overheating", "Le téléphone surchauffe")),
+    BATT_LOW(Tx("電池残量が少ない", "Battery low", "Batterie faible")),
+    RUNTIME_LOW(Tx("推定残り時間が少ない", "Little estimated time left", "Peu d'autonomie restante")),
+    SIGNAL_WEAK(Tx("電波の悪化", "Signal degraded", "Signal dégradé"));
+
+    val label: String get() = tx.get()
 }
 
 /** ローカル管理画面（仕様 F-43）の待ち受けの状態。[url] は待ち受け中だけ。[retry] はアドレスの割り当て待ち */
 data class WebStatus(val url: String?, val message: String, val retry: Boolean = false)
 
 /** 画面上の総合状態 */
-enum class Overall(val label: String) {
-    OK("正常"), WARN("注意"), ERROR("異常"), MAINT("メンテナンス中"), STOPPED("監視停止中"), UNKNOWN("確認中")
+enum class Overall(private val tx: Tx) {
+    OK(Tx("正常", "OK", "OK")),
+    WARN(Tx("注意", "Warning", "Attention")),
+    ERROR(Tx("異常", "Error", "Erreur")),
+    MAINT(Tx("メンテナンス中", "Maintenance", "Maintenance")),
+    STOPPED(Tx("監視停止中", "Stopped", "Arrêté")),
+    UNKNOWN(Tx("確認中", "Checking", "Vérification"));
+
+    val label: String get() = tx.get()
 }
 
 data class PowerInfo(
@@ -173,7 +196,7 @@ data class CheckResult(
     val probeSkipped: Boolean = false,
 )
 
-/** 画面に出す直近の記録 */
+/** 画面に出す直近の記録。[kind] はログのイベント名（保存する値。表示は Ev.display で訳す） */
 data class RecentEvent(val at: Long, val kind: String, val text: String)
 
 /** 共有中インターフェース名の分類（機種によって名前が違うため前方一致で判定） */

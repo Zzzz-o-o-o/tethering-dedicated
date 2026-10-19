@@ -9,7 +9,10 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 
-/** ログに書くイベント名 */
+/**
+ * ログに書くイベント名。保存する値なので言語によらず同じ（直近の記録・日次レポートが読み戻す）。
+ * 画面・書き出しでは [display] で今の言語にする
+ */
 object Ev {
     const val START = "監視開始"
     const val STOP = "監視停止"
@@ -50,7 +53,51 @@ object Ev {
     )
 
     /** 接続性チェックの行（日次レポートの稼働率に使う） */
-    val checkKinds: Set<String> get() = Trigger.entries.map { it.label }.toSet()
+    val checkKinds: Set<String> get() = Trigger.entries.map { it.key }.toSet()
+
+    /** テザリングの停止を通知した行の「処置」（日次レポートが異常の回数に数える。どの言語で書いた行も見分ける） */
+    val NOTIFIED = Tx("通知", "Notified", "Notifié")
+
+    private val names: Map<String, Tx> by lazy {
+        mapOf(
+            START to Tx(START, "Monitoring started", "Surveillance démarrée"),
+            STOP to Tx(STOP, "Monitoring stopped", "Surveillance arrêtée"),
+            BOOT to Tx(BOOT, "Phone started", "Démarrage du téléphone"),
+            SUSPECT to Tx(SUSPECT, "Suspected problem", "Problème suspecté"),
+            RECHECK_BAD to Tx(RECHECK_BAD, "Still failing on recheck", "Échec à la revérification"),
+            CONFIRMED to Tx(CONFIRMED, "Problem confirmed", "Problème confirmé"),
+            CONTINUING to Tx(CONTINUING, "Problem continues", "Le problème persiste"),
+            RECOVERED to Tx(RECOVERED, "Recovered", "Rétabli"),
+            BLIP to Tx(BLIP, "Brief problem (recovered by itself)", "Problème passager (rétabli seul)"),
+            TETHER to Tx(TETHER, "Hotspot state", "État du point d'accès"),
+            POWER to Tx(POWER, "Power changed", "Changement d'alimentation"),
+            PROFILE to Tx(PROFILE, "Profile changed", "Changement de profil"),
+            ALERT to Tx(ALERT, "Warning", "Avertissement"),
+            ALERT_CLEAR to Tx(ALERT_CLEAR, "Warning cleared", "Avertissement levé"),
+            MAINT_ON to Tx(MAINT_ON, "Maintenance started", "Maintenance démarrée"),
+            MAINT_OFF to Tx(MAINT_OFF, "Maintenance ended", "Maintenance terminée"),
+            SETTINGS to Tx(SETTINGS, "Settings changed", "Réglages modifiés"),
+            RESTORE to Tx(RESTORE, "Settings restored", "Réglages restaurés"),
+            BOOT_CHECK to Tx(BOOT_CHECK, "After-reboot check", "Vérification après redémarrage"),
+            EXPORT to Tx(EXPORT, "Log exported", "Journal exporté"),
+            EXP_START to Tx(EXP_START, "Comparison test started", "Test comparatif démarré"),
+            EXP_SWITCH to Tx(EXP_SWITCH, "Comparison test switch", "Bascule du test comparatif"),
+            EXP_END to Tx(EXP_END, "Comparison test ended", "Test comparatif terminé"),
+            PLACE to Tx(PLACE, "Placement", "Emplacement"),
+            TRAFFIC to Tx(TRAFFIC, "Idle traffic", "Trafic au repos"),
+            WEB to Tx(WEB, "Local web page", "Page web locale"),
+            AUTO to Tx(AUTO, "Automatic switching", "Bascule automatique"),
+            SCHEDULE to Tx(SCHEDULE, "Quiet-hours schedule", "Planification"),
+            PLUG to Tx(PLUG, "Smart plug", "Prise connectée"),
+            EXT to Tx(EXT, "External notification", "Notification externe"),
+        )
+    }
+
+    /** 保存されたイベント名を、今の言語の表示にする（知らない名前はそのまま） */
+    fun display(kind: String): String {
+        Trigger.entries.firstOrNull { it.key == kind }?.let { return it.label }
+        return names[kind]?.get() ?: kind
+    }
 }
 
 /**
@@ -59,6 +106,7 @@ object Ev {
  * SSID・接続端末の識別情報・電話番号・IP アドレスは記録しない。
  */
 object LogStore {
+    /** 保存するファイルの見出し（言語によらず同じ。列の位置と見出しの行を見分けるのに使う） */
     val HEADER = listOf(
         "日時", "イベント", "プロファイル", "電源", "電池%", "電池温度℃", "熱状態", "SoC温度℃",
         "SIM", "音声", "データ網", "データ通信", "RSRP(dBm)", "RSRQ(dB)", "SINR(dB)", "電波レベル", "バンド", "帯域(MHz)",
@@ -71,6 +119,23 @@ object LogStore {
     val IDX_ANOMALY = HEADER.indexOf("異常")
     val IDX_ACTION = HEADER.indexOf("処置")
     val IDX_RESULT = HEADER.indexOf("結果")
+
+    /** 書き出す CSV の見出し（今の言語） */
+    val exportHeader: List<String>
+        get() = listOf(
+            tr("日時", "Time", "Date et heure"), tr("イベント", "Event", "Événement"), tr("プロファイル", "Profile", "Profil"),
+            tr("電源", "Power", "Alimentation"), tr("電池%", "Battery %", "Batterie %"), tr("電池温度℃", "Battery temp ℃", "Temp. batterie ℃"),
+            tr("熱状態", "Thermal status", "État thermique"), tr("SoC温度℃", "SoC temp ℃", "Temp. SoC ℃"),
+            "SIM", tr("音声", "Voice", "Voix"), tr("データ網", "Data network", "Réseau de données"), tr("データ通信", "Data", "Données"),
+            "RSRP(dBm)", "RSRQ(dB)", "SINR(dB)", tr("電波レベル", "Signal level", "Niveau du signal"), tr("バンド", "Band", "Bande"),
+            tr("帯域(MHz)", "Bandwidth (MHz)", "Largeur de bande (MHz)"), tr("Wi-Fiテザリング", "Wi-Fi hotspot", "Point d'accès Wi-Fi"),
+            tr("共有中", "Sharing", "Partage"), tr("接続端末", "Devices", "Appareils"), tr("回線登録", "Registered", "Enregistré"),
+            "IP", "DNS", "HTTP", tr("応答(ms)", "Response (ms)", "Réponse (ms)"), tr("システム検証", "System validation", "Validation système"),
+            tr("異常", "Problem", "Problème"), tr("処置", "Action", "Action"), tr("結果", "Result", "Résultat"), tr("詳細", "Details", "Détails"),
+        )
+
+    /** 保存された 1 行を、書き出し用に今の言語にする（イベント名） */
+    fun exportRow(c: List<String>): List<String> = c.mapIndexed { i, v -> if (i == IDX_EVENT) Ev.display(v) else v }
 
     private val io = Executors.newSingleThreadExecutor()
 
@@ -130,14 +195,14 @@ object LogStore {
     private fun tri(t: Tri): String = when (t) {
         Tri.OK -> "OK"
         Tri.NG -> "NG"
-        Tri.SKIP -> "未実施"
-        Tri.UNKNOWN -> "取得不可"
+        Tri.SKIP -> tr("未実施", "Skipped", "Non effectué")
+        Tri.UNKNOWN -> Fmt.NA
     }
 
     private fun f1(v: Double) = String.format(Locale.US, "%.1f", v)
 
     /** すべてのログを 1 つの CSV に書き出す（BOM 付き UTF-8）。戻り値は行数。UI スレッド以外で呼ぶ */
-    fun export(ctx: Context, out: OutputStream): Int = io.submit<Int> { csv(ctx).export(out) }.get()
+    fun export(ctx: Context, out: OutputStream): Int = io.submit<Int> { csv(ctx).export(out, exportHeader, ::exportRow) }.get()
 
     /** ログを全部消す。UI スレッド以外で呼ぶ */
     fun clear(ctx: Context) {

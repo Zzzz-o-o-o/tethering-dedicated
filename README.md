@@ -1,449 +1,294 @@
-# テザリング専用化（Android 10 用） v0.5.1
+# Tethering Dedicated for Android 10
 
-Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
-OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
-root 化は不要です。キャリアの設定には手を加えません。OS 標準のテザリング機能も、利用者が時間帯スケジュール（F-37）を ON にしたとき以外は変えません。
+Turn a spare Android 10 phone into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
+The app keeps an eye on the hotspot, the mobile line, the internet connection, the battery and the temperature,
+alerts you when something goes wrong, keeps a log, and helps you reduce power consumption.
 
-## ファイル
+- No root required. The app does not change carrier settings.
+- It uses the phone's own hotspot as is. It never toggles airplane mode, mobile data or Data Saver, and never reboots the phone.
+- It turns the hotspot on or off only if you enable one of the optional features **Turn on the hotspot at startup** and **quiet-hours schedule**.
 
-| パス | 内容 |
+**Languages:** English, French and Japanese. The app follows the phone's language (Settings → System → Languages & input → Languages); any other language shows English. The PC script follows the PC's display language.
+
+---
+
+## Requirements
+
+| | |
 |---|---|
-| `TetheringDedicated-v0.5.1.apk` | インストール用（署名済み・約 450 KB・Android 10 以上） |
-| `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
-| `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
-| `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
+| Phone | Android 10, with a SIM/plan that allows tethering |
+| PC | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)). Needed for installation and for the optional permissions |
+| Cable | USB cable, with **USB debugging** enabled on the phone |
 
-## 導入
+## Files
 
-1. スマホで「USB デバッグ」を有効にして PC に接続します。
-2. PC で次を実行します（インストール → ADB 事前設定 → アプリ起動）。
+| File | Contents |
+|---|---|
+| `TetheringDedicated-v0.7.0.apk` | The app |
+| `tools\adb-setup.bat` | PC script: install, apply recommended phone settings, grant permissions, undo |
+| `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
+| `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
+
+---
+
+## Quick start
+
+1. **Enable USB debugging** on the phone: Settings → About phone → tap *Build number* seven times, then Settings → System → Advanced → Developer options → *USB debugging*. Connect the phone to the PC and allow the "Allow USB debugging?" prompt on the phone.
+2. **Install and set up** from the project folder on the PC:
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.5.1.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.7.0.apk -Apply
    ```
-   ADB 事前設定が不要なら `adb install -r TetheringDedicated-v0.5.1.apk` だけでも動きます。ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、時間帯スケジュールを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
-3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。
-4. Wi-Fi テザリングを ON にします（このアプリが ON にするのは、時間帯スケジュールで止めたあとの再開だけです → 「既知の制約」）。
+   This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. (To install only: `adb install -r TetheringDedicated-v0.7.0.apk`.)
+3. **Open the app** and follow the **Action needed** card at the top, if shown:
+   - **Phone** permission: used only to read the state of the mobile line. Android describes it as "make and manage phone calls", but the app never makes calls or sends SMS.
+   - **Battery optimization**: exclude the app so that checks are not delayed while the screen is off.
+4. **Turn on the Wi-Fi hotspot** in the phone's settings. To have it turned on again automatically after every reboot, see [Turn on the hotspot at startup](#turn-on-the-hotspot-at-startup).
 
-一度起動すれば、以後は端末の再起動後・アプリ更新後に自動で監視を再開します。
+From then on, monitoring restarts by itself after a reboot or an app update.
+If the phone has a PIN, pattern or password lock, monitoring starts only after you unlock the phone once after a reboot (an Android restriction). Turning the hotspot on at startup works even before you unlock.
 
-## 画面
+---
 
-- **ダッシュボード** … 総合状態（正常／注意／異常／メンテナンス中）、テザリング（状態・共有中・接続端末数・自動 OFF 設定・**時間帯スケジュール**・**管理画面のアドレス**）、モバイル回線（SIM・データ網・電波・バンド・帯域幅）、接続性（4 段階）、電源・温度（**直近の消費・推定残り時間・スマートプラグ**を含む）、運用プロファイル、直近の記録、操作
-- **設置場所アシスト** … 端末を動かしながら電波（RSRP・SINR・バンド）を 1 秒ごとに表示し、点数を音の高さでも知らせる。場所ごとの記録・比較と「ここに設置した」場所の登録
-- **通信量（時間帯別）** … モバイル回線の通信量を時間帯別に表示（接続端末なしの通信を色分け）。直近 7 日の平均・日ごとの合計、時間帯別の CSV 出力
-- **接続端末の設定ガイド** … Windows・Mac・iPhone・Android を「従量制」「省データモード」にする手順
-- **省電力の分析** … 電波の強さ・バンドごとの消費、接続 0 台の待機電力と運用方針の提案、アプリ別のモバイル通信量（テザリングと端末自身を分けて）
-- **比較テスト** … 省電力の設定を 1 つ選び、変える前（A）と後（B）の消費を比べる。結果の履歴
-- **日次レポート** … 1 日ごとの平均消費・満充電からの推定稼働時間・通信量・稼働率など。日別・区間別の CSV 出力
-- **ローカル管理画面**（接続端末のブラウザから）… 状態・電池・推定残り時間・今日の通信量・記録・設定ガイドを読み取り専用で表示
-- **設定** … チェック間隔・再確認・しきい値・通知・ログ・電波の悪化・待機中の通信・**使わない時間帯（テザリングの停止）**・管理画面・自動切り替え・**スマートプラグ**・**外部への通知**、設定のファイル保存／復元（通知先・プラグの URL は含めない）、直前の設定に戻す、初期値に戻す。「切り替えられるか確認する」「ON／OFF にしてみる」「テスト送信」で、保存前に動作を確かめられます
-- **設定ガイド** … 省電力・常時運用に関わる OS 設定の現在値と推奨値。設定画面を開くボタンと ADB コマンド（**この画面から OS の設定は変更しません**）
-- **アプリの整理** … 利用者が入れたアプリの一覧（システムアプリは出しません）
-- **診断情報** … この端末で何が取得できて何が「取得不可」かの報告（コピー・共有可。電話番号・IMEI・SSID・MAC・IP は含みません）
+## The main screen
 
-## しくみ
+| Status (chip at the top) | Meaning |
+|---|---|
+| OK | Hotspot, mobile line and internet are fine |
+| Warning | Something needs attention: a problem being rechecked, a temperature/battery alert, Data Saver on, … |
+| Error | A problem was confirmed (you were notified) |
+| Maintenance | Automatic rechecks and alerts are paused |
+| Stopped | Monitoring is off |
+| Checking | The first check after starting is still running |
 
-- **常駐**：フォアグラウンドサービス（音の鳴らない常駐通知）で、画面消灯中も監視します。状態の変化はイベント（ブロードキャスト・コールバック）で受け取り、定期チェックはアラームで低頻度に行います。常時ポーリングはしません。チェック中だけ短いウェイクロック（必ずタイムアウト付き）を使います。
-- **接続性チェック（F-12）**：①回線登録 ②IP 通信 ③DNS ④外部サイト（`generate_204`）を順に確認し、**最初につまずいた段階**を原因として表示します。あわせて OS 自身の接続検証の結果も表示します。確認は端末が実際に使っているネットワーク（テザリング中はモバイル回線）で行い、経路も記録します。通信量は 1 回あたり約 1 KB、15 分間隔なら 1 日約 100 KB です。
-- **段階的な復旧（F-13）**：異常を見つけてもすぐには通知しません。1 分 → 3 分 → 5 分後に再確認し（2 回目では OS にネットワークの再検証を依頼）、すべて異常なら**一度だけ**通知して通常の間隔に戻ります。続く場合の再通知は 6 時間ごとです。予定時刻より前に行われたチェック（手動・状態変化）は回数に数えないので、連打で誤って確定しません。機内モードの切り替えや再起動は自動では**行いません**。復旧したら知らせます。
-- **テザリング**：停止・起動失敗を見つけたら 1 分後に再確認し、続いていれば「テザリング設定を開く」ボタン付きで通知します。
-- **運用プロファイル（F-02 / F-15）**：「自動」は給電中が通常（15 分間隔）、バッテリー駆動中が省電力（60 分間隔）です。切り替えはログに残ります。メンテナンスモード（30 分〜4 時間）中は自動の再確認と通知を止め、時間が来たら自動で解除します。
-- **温度・電池（F-16）**：電池温度 45 ℃ で注意、50 ℃ で警告、熱状態「中程度」以上、電池残量 20 % 以下（バッテリー駆動中）で通知します。しきい値付近で通知が繰り返されないよう、解除側に余裕を持たせています。
-- **起動後チェック（F-14）**：端末の起動から 120 秒後に状態をまとめて確認し、テザリング OFF などがあれば通知します。
-- **ログ（F-20）**：1 日 1 ファイルで、保存は 30 日・10 MB までです。メイン画面の「ログを CSV で保存」で 1 つの CSV（BOM 付き UTF-8。Excel でそのまま開けます）に書き出せます。SSID・接続端末の識別情報・電話番号・IP アドレスは記録しません。
+Below the status, the screen shows:
 
-### 省電力のための計測（v0.2.0・仕様 11 章の第 1 段階）
+- **Tethering**: hotspot state, number of connected devices (an estimate), the hotspot's auto turn-off setting, the quiet-hours schedule, and the address of the local web page.
+- **Mobile line**: SIM, network type, signal strength and quality, band.
+- **Connectivity (step by step)**: the result of each check stage — ① registration on the network, ② IP connection, ③ DNS, ④ internet.
+- **Power and temperature**: recent power consumption and estimated time left (on battery only), battery, charger, temperatures, smart plug.
+- **Operating profile**: the check interval, and the mode — Auto (Normal while charging, Power saving on battery), Normal or Power saving.
+- **Recent events** and the **Actions** buttons for all other screens.
 
-- **消費電力の計測（F-25）**：時間を「区間」に分けて、区間ごとの消費と条件を記録します（`files/power/`）。区切るのは定期チェック・給電の有無の変化・テザリングの ON/OFF・比較テストの切り替えなど、もともと端末が起きているときだけで、**計測のために端末を起こすことはしません**。条件として、接続端末数・電波・バンド・モバイル通信量・画面点灯時間も残します。
-  - 消費は**バッテリー駆動中だけ**測ります。給電中は電池への出入りの差しか分からないためです。
-  - 方法は、充電カウンタの減り（最も正確）→ 電流の平均 → 電池残量 % の変化 の順に、使えるものを選び、どの方法で測ったかを記録します。一定の値しか返さない充電カウンタは使いません。
-- **推定残り時間（F-26）**：直近の消費ペース（新しいほど重く扱う）と残量から計算します。バッテリー駆動の計測が 10 分以上たまるまでは表示しません（推測で埋めません）。下回ったら通知するしきい値は 60 分です。
-- **比較テスト（F-27）**：試したい変更を 1 つ選ぶと、今の設定（A）→ 試す設定（B）→ A → B と、バッテリー駆動中の時間で 30 分ずつ計測します。
-  - **OS の設定は手動で切り替えます**。通知の案内に従って切り替え、「切り替えた」を押すと計測が始まります。押すまでの時間は数えません。このアプリのチェック間隔だけは自動で切り替えます。
-  - 判定は「B がどの回も A より少なく、削減が 3 % 以上」なら**効果あり**です。インターネット確認の失敗が B で増えたら**通信が悪化**、それ以外は**効果なし**として、元に戻すよう知らせます。通信量・電波・接続端末数が条件で大きく違うときは、結果に注記します。
-  - 途中でアプリが止まった場合は、次の起動時に中断として扱い、元の設定に戻すよう知らせます。
-- **日次レポート（F-28）**：記録から 1 日ごとに集計します（集計のための常駐処理はありません）。
+**Check now** runs a check immediately.
+**Start maintenance mode** pauses alerts for 30 minutes to 4 hours — useful while you update apps or change settings.
 
-### 省電力化の第 2 段階（v0.3.0・仕様 11 章）
+---
 
-- **設置場所アシスト（F-29）**：RSRP と SINR から 0〜100 の点数を出し（RSRP を 6 割・SINR を 4 割）、1 秒ごとに表示して、点数が高いほど高い音で知らせます（音は OFF にできます）。画面を開いている間だけ動き、画面は消えません。
-  - 「この場所を記録」で 20 秒間の値の**中央値**を記録し、点数の良い順に並べて「◎ おすすめ」を示します。バンドが違う記録があるときは注意を出します。
-  - 「ここに設置した」を押した場所が、運用中の判定の基準になります。**定期チェックのときだけ**判定し（判定のために端末を起こしません）、RSRP が −110 dBm を下回るか、設置時の記録より 10 dB 以上悪い状態が **2 回続いたら**「電波の悪化」を通知します。十分に戻ったら（しきい値より 5 dB、設置時の基準より 3 dB の余裕）解除します。設置場所アシストを開いている間とメンテナンス中は判定しません。
-- **待機中の通信の検知（F-33）**：電力の区間ごとに記録しているモバイル通信量と接続端末数から判定します（新しい計測やウェイクアップは増やしていません）。
-  - **接続端末なし**（テザリング OFF、またはチェック時点で接続 0 台）の通信は、この端末自身のアプリ・OS によるものです。ただし、その区間にテザリングの通信（モバイル回線以外の送受信が 1 MB 以上）があれば、数え損ねた接続端末がいたとみなします（v0.5.1）。直近 60 分のうち 20 分以上が接続端末なしで、1 MB 以上かつ 1 時間あたり 5 MB を超えたら通知します（6 時間に 1 回まで）。
-  - **使わない時間帯**（設定で「1-6」のように指定）を決めると、その時間帯が終わってから合計を確かめ、50 MB を超えていたら知らせます（夜中に通知で起こさないため）。ほとんどが接続端末なしの通信なら、この端末側の対策を案内します。
-  - 「通信量（時間帯別）」の画面で、区間の通信量を時間の重なりで按分した時間帯別のグラフを見られます。
-- **接続端末の「従量制」設定ガイド（F-34）**：接続端末の OS 更新・クラウド同期を止める手順です。アプリの画面と、ローカル管理画面の「通信を減らす設定」（`/guide`）で同じ内容を見られるので、接続端末のブラウザでそのまま読めます。
-- **画面の不意な点灯を防ぐ（F-39）・アプリのバックグラウンド制限（F-40）・位置情報と「モバイルデータを常に ON」の OFF（F-41）**：ADB 事前設定に追加しました（→「ADB 事前設定」）。設定ガイドに現在の値を表示します。
-- **ローカル管理画面（F-43）**：接続端末のブラウザで `http://（この端末のアクセスポイントのアドレス）:8080/` を開くと、状態・電池・推定残り時間・今日の通信量（時間帯別のグラフ）・今日の記録・通信を減らす設定を見られます。アドレスはダッシュボードの「管理画面」に表示されます（接続端末から見た「デフォルトゲートウェイ」と同じです）。
-  - **アクセスポイントのアドレスだけで待ち受け**、同じサブネットからの接続だけに応えます。モバイル回線側からは見えません。
-  - **読み取り専用**です（GET / HEAD だけ。設定を変える機能はありません）。ページはスクリプトを使わない HTML で、60 秒ごとに自動で更新されます。状態は `/status.json` でも取得できます。
-  - 待ち受け中のサーバーは接続を待って眠っているだけなので、見ていないときに電力は使いません。設定で OFF・ポートの変更ができます。
+## How monitoring works
 
-### 省電力化の第 3 段階（v0.4.0・仕様 11 章）
+- A silent ongoing notification keeps the app running while the screen is off. Changes (hotspot on/off, signal lost, charger plugged…) are picked up immediately from system events.
+- A full check runs every **15 minutes while charging** and every **60 minutes on battery**. On battery, if no device has been connected for 30 minutes or the battery is at 30 % or less, the interval becomes **180 minutes** ("idle"). One check uses about 1 KB of data.
+- A problem is not reported right away: it is **rechecked after 1, 3 and 5 minutes**, and you are notified once if it persists (reminders every 6 hours). You are also told when it recovers.
+- If the hotspot stops, the app rechecks after 1 minute and then notifies you, with a button to open the hotspot settings. The app does not turn the hotspot back on by itself.
+- Alerts: battery temperature **45 °C** (high) and **50 °C** (very high), the phone's thermal status, battery **20 %** or less, estimated time left **60 minutes** or less (on battery).
+- **After a reboot**, the app checks everything 2 minutes later and tells you about anything that needs attention (for example, hotspot off).
+- Power consumption is measured **only on battery** (it can't be measured while charging). The app never wakes the phone just to measure.
 
-- **プロファイル連動の自動切り替え（F-42）**：バッテリー駆動中（または残量が設定以下のとき）に**バッテリーセーバーを ON** にし、**Doze（省電力待機）を早め**（画面消灯・静止から約 10 分で深い Doze。標準は約 1 時間）、給電すると元に戻します。
-  - PC から「設定変更の権限」を付けたとき（`-AllowAutoSwitch`）だけ動き、設定の「自動切り替え」を ON にして使います（初期値は OFF）。変えるのは `global low_power` と `global device_idle_constants` の 2 つだけで、**データセーバー・機内モード・モバイルデータは変えません**。
-  - 変える前の値を保存し、給電・設定の OFF・「自動で変えた設定をすべて元に戻す」で戻します。切り替えるのは条件が変わったときだけなので、利用者が手で戻した場合は追いかけません。比較テストの間は切り替えません。
-- **監視自体の通信の最小化（F-32）**：
-  - 接続端末の通信が流れていて（前回のチェックから 256 KB 以上受信・接続 1 台以上）、OS の接続検証も OK なら、定期チェックの**到達確認（DNS・HTTP）を省きます**。異常の確認中・手動のチェックでは省きません。
-  - **バッテリー駆動中**に、接続 0 台が 30 分続いたとき、または残量が 30 % 以下のときは**待機**にして、チェック間隔を 180 分にします（状態の変化はこれまでどおりすぐ確認します）。直近の区間に通信が多ければ待機にしません。給電中は電力に余裕があるので、記録の精度を優先して通常の間隔のままです。
-- **接続 0 台の待機電力と運用方針（F-36）**：記録から、接続 0 台（テザリング ON）・テザリング OFF・接続ありの時間と消費を集計し、「待機のための消費」（接続 0 台とテザリング OFF の差 × 1 日あたりの接続 0 台の時間）を出します。電池の 10 % 以上を待機に使っていて、接続 0 台が長く続く（中央値 2 時間以上）なら「使わないときは止める運用も検討」、そうでなければ「常時待機で問題なし」と提案します。テザリング OFF の消費は、比較テスト「使わないときにテザリングを止める」で測れます（このテストの間はテザリングの停止を異常としません）。
-- **電波と消費の関係（F-30）**：バッテリー駆動中の記録を、RSRP の区分（−90 dBm 以上／〜−100／〜−110／−110 未満）とバンドごとに集計し、平均消費と通信量を並べます。記録が十分なら「RSRP が 10 dB 下がると約 X mA 増える」という目安も出します。
-- **回線方式の見直し（F-31）**：設定ガイドに、優先ネットワークの種類（5G を含むか）と、データ専用 SIM での VoLTE の OFF の手順を追加しました。VoLTE の状態は Android 10 では SIM ごとの設定のため読めず、案内だけです。
-- **端末自身のバックグラウンド通信の順位（F-35）**：「使用状況へのアクセス」を許可すると（`-Apply` で許可します）、OS の通信量の記録から、**テザリング（接続端末）とこの端末自身の通信を分け**、アプリ別のモバイル通信量（前面・裏）と、前面に出た回数・常駐サービスを始めた回数を並べます。裏での通信が多いユーザーアプリは「制限の候補」（`-RestrictApps`）、システムアプリは「手動で対策」（Play ストアの自動更新・バックグラウンドデータ）として示します。
+All thresholds and intervals can be changed in **Settings**.
 
-### 省電力化の第 4 段階（v0.5.0・仕様 11 章）
+---
 
-- **時間帯スケジュール（F-37）**：設定の「使わない時間帯」（例: `1-6`、`1:30-6:00`）に入ったら、**接続端末が 0 台の状態が 10 分続くのを待って**テザリングを止め、時間帯の終わりに再開します（設定の「使わない時間帯はテザリングを止める」。初期値は OFF）。
-  - Android 10 にはテザリングを切り替える公開 API がないため、OS のシステム API（`ConnectivityManager.startTethering` / `stopTethering`）を呼びます。OS 側の権限チェックは、テザリングにキャリアの確認（プロビジョニング）が要らない端末なら、**「システム設定の変更」（WRITE_SETTINGS）の許可**で通ります。許可は設定画面のボタン（OS の「特別なアプリアクセス」）か、PC から `-AllowTetherControl` で付けます。設定の「切り替えられるか確認する」で、テザリングを止めずに使えるかを確かめられます。
-  - 止めるのは 1 つの時間帯につき 1 回だけで、**このアプリが止めたときだけ再開**します（手動で OFF にしていた・再起動で止まっていた場合は再開しません）。時間帯の途中で利用者が手で ON にしたら、その時間帯はもう止めません。接続端末がいる・台数が分からないとき、テザリングを ON にした直後や接続端末が一時的に離れただけのとき（0 台が 10 分続いていない）は止めません。メンテナンス中と比較テスト中は新たに止めません（再開はします）。
-  - 時間帯の境目にはアラームを合わせるので、待機（チェック間隔 180 分）中でも時刻どおりに動きます。止めている間はテザリングの停止を異常としません。
-  - 再開に失敗したら 1 分 → 5 分 → 15 分後にやり直し、それでもだめならあきらめて、テザリング停止の異常として通知します（無限にはやり直しません）。スケジュールを OFF にしたとき・監視を止めたときは、止めていたテザリングをすぐ再開します。
-  - 止めた・再開した・止められなかった（理由つき）はログと直近の記録に残ります。止められなかったときの通知は夜中に鳴らないよう音なしです。
-- **2.4／5GHz とハードウェアアクセラレーション（F-38）**：
-  - アクセスポイントの帯域は**アプリからは読めない**ため（Android 10 では特別な権限が必要）、比較テストの候補を「5GHz にする（今は 2.4GHz）」「2.4GHz にする（今は 5GHz）」に分けました。今の帯域は `adb-setup` で表示します。
-  - テザリングのハードウェアアクセラレーション（オフロード）は、設定（`global tether_offload_disabled`）を設定ガイドと診断情報に表示し、比較テストの候補にも加えました。端末が対応しているか（オフロードの HAL があるか）はアプリから読めないので `adb-setup` で表示し、対応している端末だけ `-EnableOffload` で有効に戻せます。
-- **外部への通知（F-44）**：復旧（**回線・テザリングが止まっていた時間**）、再起動（起動後チェックの結果）、温度・電池・電波の警告、テザリングの停止、スケジュール・スマートプラグの失敗を、**ntfy・Discord・Slack** へ送ります（設定の「外部への通知」。初期値は OFF）。
-  - 送り先は URL で決まります：Discord・Slack の Webhook、それ以外は ntfy（`https://ntfy.sh/トピック名` や自分のサーバー。題名は RFC 2047 で日本語のまま送ります）。URL に `ユーザー:パスワード@`（ntfy のアクセストークンは `:tk_…@`）を含めると Basic 認証にします。
-  - 回線が止まっている間は送れないので、**送れなかった通知は待ち行列に残し**（最大 20 件・24 時間）、回線が戻ったら古い順に送ります。送りすぎを防ぐため 1 時間に 20 件までです。送り先に断られた（HTTP 4xx）ものは捨てて、ログに残します。
-  - 送るのは状態だけです（IP アドレス・SSID・接続端末の情報・電話番号は送りません）。通知先の URL は、設定のファイル保存・診断情報・ログに含めません。設定の「テスト送信」で確かめられます。
-- **スマートプラグ連携（F-45）**：電池残量が**下限〜上限（初期値 40〜80 %）**に収まるようプラグを ON／OFF し、**電池温度が 40 ℃ 以上なら給電を止めます**（3 ℃ 下がるまで再開しない。50 ℃ 以上は必ず止める。ただし残量が「電池残量の警告」20 % 以下なら、50 ℃ 未満のあいだは 25 % まで給電する）。充電上限のない端末の代わりです（設定の「スマートプラグ」。初期値は OFF）。
-  - 対応：**Shelly**（第 1 世代・第 2 世代以降）と **Tasmota** はアドレスを入れるだけ、そのほか（Home Assistant の Webhook など）は ON／OFF の URL を指定します（`POST ` を前に付けると POST）。
-  - 判断は電池の放送（残量・温度が変わるたびに届く）とチェックのときに行い、**判断のために端末を起こしません**。指示のあと、端末から見た給電の有無が目標と合っているかを確かめ、合わなければ 2 分ごとに 3 回まで送り直し、それでもだめなら通知します（その後は 30 分ごと）。
-  - Shelly では、OFF にするとき**自動で ON に戻すタイマー（初期値 240 分）**を付け、動いている間は延長し続けます。アプリや端末が止まっても、プラグが ON に戻って電池切れになりません。
-  - プラグをこの端末のテザリングにつなぐ場合は、プラグの IP アドレスを接続端末の数から自動で除きます（台数で動く待機・スケジュールが止まらないように）。テザリングを止めている間はプラグに届かないので、その間の送信失敗は数えません。
-  - 連携を OFF にしたとき・監視を止めたときは、このアプリが給電を止めていたら ON に戻します。
+## Screens and features
 
-## 初期値（仕様「9. 実装前に決めること」への回答）
+| Screen | What it does |
+|---|---|
+| **Placement assistant** | Shows the signal every second (with a tone that rises as the signal improves) while you move the phone. **Record this spot**, compare spots, and mark where you put the phone with **Placed here**. You are notified later if the signal there gets worse |
+| **Traffic by hour** | Mobile data per hour, with traffic that happened while no device was connected (the phone's own background traffic) shown separately. CSV export |
+| **Client device guide** | How to set Windows, macOS, iPhone and Android to "metered" / Low Data Mode, so they don't download updates over your hotspot |
+| **Power analysis** | Consumption by signal strength and band, standby power with no devices connected (with a suggestion), and mobile data per app, separating hotspot traffic from the phone's own (needs *Usage access*, which `-Apply` grants) |
+| **Comparison test** | Measures the effect of one change (for example, turning off Bluetooth or switching the hotspot band): before (A) and after (B), alternately, on battery. Tells you whether to keep the change |
+| **Daily report** | Average consumption, estimated runtime from a full charge, data used, uptime and alerts per day. CSV export |
+| **Setup guide** | Current value and recommended value of each phone setting that matters, with buttons to open the right settings screen. It never changes settings itself |
+| **App list** (from the Setup guide) | Apps you installed, to review and uninstall unused ones |
+| **Diagnostics** | What this phone can and cannot report. Copy or share it when asking for help. Contains no phone number, IMEI, SSID or MAC address, and nothing about connected devices |
+| **Save log as CSV** | Saves the log as a CSV file (opens in Excel) |
+| **Settings** | All settings, file backup/restore, **Undo last change**, **Reset to defaults** |
 
-どれも「設定」画面で変更できます。
+### Local web page (read-only)
 
-| 項目 | 初期値 | 考え方 |
+From a device connected to the hotspot, open `http://<address>:8080/` in a browser. The address is shown on the main screen under **Local web page**; it is the same as the connected device's default gateway, and it may change each time the hotspot is turned on.
+The page shows status, battery, time left, today's traffic, today's log and the client device guide, in the phone's language. It cannot change anything. It is reachable only from the hotspot side, uses plain HTTP without a password, and can be turned off in Settings.
+`/status.json` gives the same status for scripts; use its `overallKey` field (`OK`, `WARN`, `ERROR`, `MAINT`, `STOPPED`, `UNKNOWN`), which doesn't depend on the language.
+
+---
+
+## Optional features (off by default)
+
+### Turn on the hotspot at startup
+
+Android always starts with the hotspot off after a reboot. With this option, the app turns the Wi-Fi hotspot on right after the phone starts — even before a PIN, pattern or password lock is unlocked (Android 10 "Direct Boot").
+
+Settings → **Tethering**:
+
+1. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`.
+2. Tap **Check that switching works** to check that your phone accepts it (the hotspot is not turned off).
+3. Turn on **Turn on the Wi-Fi hotspot at startup** and tap **Save**.
+
+What it does:
+
+- At startup, it asks Android to turn the hotspot on. If the hotspot doesn't come on, it tries again after 30 seconds, then 1, 2 and 5 minutes (5 attempts in about 10 minutes).
+- If the hotspot is already on, it does nothing. Once the hotspot has come on, the app doesn't turn it on again until the next startup: if you turn it off by hand, it stays off.
+- It works even while monitoring is stopped. Monitoring itself (checks, notifications, log) still starts only after you unlock the phone.
+- After you unlock, the result is shown in the log (**Phone started**) and in the after-reboot check notification. Settings shows the result of the last startup.
+- During the quiet hours, too, the hotspot is turned on at startup (the schedule can't run before you unlock). If the schedule had turned it off before the restart, it stays on until the next quiet period.
+- It doesn't work on lines where the carrier must approve each hotspot use (Android refuses the request). The check button in step 2 tells you.
+
+On the tested phone (UMIDIGI A9 Pro with a PIN lock), the hotspot came on about 20 seconds after power-on, before unlocking, and connected devices rejoined it.
+
+### Quiet-hours schedule — turn the hotspot off when you don't use it
+
+Settings → **Quiet hours (traffic alerts, hotspot off)**:
+
+1. Enter the hours you don't use the hotspot in **Quiet hours**, for example `1-6`, `23-5` or `1:30-6:00` (24-hour clock; the end time is not included).
+2. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`.
+3. Tap **Check that switching works** to check that your phone accepts it (the hotspot is not turned off).
+4. Turn on **Turn off the hotspot during quiet hours** and tap **Save**.
+
+What it does:
+
+- Inside the quiet hours, the hotspot is turned off **only after no device has been connected for 10 minutes**, and only once per quiet period. It is turned back on at the end of the quiet hours.
+- It turns the hotspot back on only if the app turned it off. If you turn the hotspot on by hand during the quiet hours, it stays on.
+- Turning the schedule off, or stopping monitoring, turns the hotspot back on immediately.
+- If turning it back on fails, the app retries after 1, 5 and 15 minutes, then notifies you that the hotspot is off.
+- It doesn't work on lines where the carrier must approve each hotspot use (Android refuses the request). The check button in step 3 tells you.
+
+### Battery Saver and earlier Doze on battery
+
+Settings → **Auto switching (on battery)**. On battery, the app can turn on **Battery Saver** (**Turn on Battery Saver automatically on battery**, optionally only below a battery level) and make the phone enter deep sleep sooner (**Enter Doze (deep sleep) sooner on battery**). Everything is put back when you plug in the charger.
+
+- Needs a one-time permission from the PC: `tools\adb-setup.bat -Apply -AllowAutoSwitch`.
+- **Restore everything changed automatically** restores the original values and turns the feature off.
+- Battery Saver may slow the phone slightly. You can measure the effect with a comparison test.
+
+### Notifications to your phone or PC (ntfy, Discord, Slack)
+
+Settings → **External notifications**. Turn on **Send notifications externally (ntfy, Discord, Slack)** and enter the **Destination URL**:
+
+| Service | URL |
+|---|---|
+| ntfy | `https://ntfy.sh/your-topic-name` (or your own server). With an access token: `https://:tk_xxxx@ntfy.example.com/topic` |
+| Discord | the channel's webhook URL (`https://discord.com/api/webhooks/…`) |
+| Slack | the incoming webhook URL (`https://hooks.slack.com/services/…`) |
+
+- Sent: recoveries **with how long the line or hotspot was down**, reboots, temperature/battery/signal alerts, hotspot stopped, and failures of the schedule or the smart plug. You can choose recoveries and alerts separately. Messages are in the phone's language.
+- Not sent: IP addresses, SSID, information about connected devices, phone number.
+- Notifications that can't be sent while the line is down are kept (up to 20, for 24 hours) and sent after it recovers.
+- Use **Send test** to try the URL before saving. With ntfy's public server anyone who knows the topic name can read it — choose a long, hard-to-guess name.
+- The URL is not included in settings backup files or in Diagnostics.
+
+### Smart plug — keep the battery between 40 % and 80 %
+
+Phones without a charge limit wear out their battery when they are charged to 100 % all the time. With a smart plug on the charger, the app switches charging on and off:
+
+- Charging starts at **40 %** and stops at **80 %** (adjustable).
+- Charging also stops when the battery reaches **40 °C**, and resumes after it cools by 3 °C. At **50 °C** charging always stops. If the battery is very low (20 % or less), it charges up to 25 % even when warm, so that the hotspot doesn't die.
+- After each command, the app checks that the phone really started or stopped charging. If not, it retries up to three times and then notifies you.
+
+Settings → **Smart plug (charging control)**:
+
+1. Choose the **Plug type**: **Shelly** Gen 2 or later (Plus, Pro, Gen3), **Shelly** Gen 1 (Plug S…), **Tasmota**, or **Custom URL** (for other plugs or Home Assistant webhooks).
+2. Enter the **Plug address** (for example `192.168.43.50`), or for Custom URL the ON and OFF URLs (put `POST ` in front to send a POST request).
+3. Try it with **Try ON** / **Try OFF**, then turn on **Control charging with a smart plug** and **Save**.
+
+Notes:
+
+- **Shelly**: when switching off, the app also sets the plug's own timer to switch back on after 240 minutes (adjustable) and keeps extending it while the app runs. If the phone or the app stops, the plug turns charging back on by itself. Turn off Shelly's login (Gen 2 login is not supported); for Gen 1 you can write `user:password@address`.
+- If the plug is connected to this phone's own hotspot, it is not counted as a connected device. While the schedule has the hotspot off, the plug can't be reached and keeps its last state.
+- Plugs that can be controlled only through a cloud service (such as TP-Link Tapo or SwitchBot) are not supported directly; use a Home Assistant webhook with Custom URL.
+- Turning the feature off, or stopping monitoring, switches charging back on.
+
+---
+
+## The PC script (`tools\adb-setup.bat`)
+
+Run it from the project folder with the phone connected by USB.
+
+| Command | What it does |
+|---|---|
+| `tools\adb-setup.bat` | Shows the current values. Changes nothing |
+| `… -Apply` | Saves the current values to `tools\backup\`, then applies the recommended settings and grants the app's basic permissions |
+| `… -Restore` | Puts back everything saved by `-Apply` |
+| `… -Install <apk>` | Installs or updates the app (with `-Apply`, grants permissions first and then starts the app) |
+| `… -Apply -RestrictApps` | Also restricts background activity of your other installed apps. Exclude apps with `-KeepApps com.example.app,…` |
+| `… -Apply -AllowAutoSwitch` | Also allows the Battery Saver / Doze switching |
+| `… -Apply -AllowTetherControl` | Also allows turning the hotspot on at startup and the quiet-hours schedule ("Modify system settings") |
+| `… -Apply -EnableOffload` | Also re-enables tethering hardware acceleration, only if the phone supports it |
+| `… -Apply -IncludeOta` | Also turns off automatic system updates (update by hand regularly) |
+| `… -Apply -KeepLocation` | Leaves Location as it is |
+| `… -Apply -ScreenOffSec 30` | Sets the screen timeout (by default it is not changed on phones with a screen lock) |
+| `-Serial <id>` / `-Adb <path>` | Choose the phone when several are connected / the path to adb.exe |
+| `-Lang en` / `-Lang fr` / `-Lang ja` | Message language (by default, the PC's display language) |
+
+`-Apply` changes only settings that save power and keep the hotspot running: hotspot auto turn-off, Wi-Fi/Bluetooth background scanning, "stay awake while charging", screen timeout (30 s, only on phones without a screen lock), screen wake-ups (ambient display, lift/tap to wake), Location, "mobile data always active", and the app's own permissions (battery optimization exemption, Phone, usage access). It never touches carrier tethering settings, airplane mode, Data Saver or system apps.
+The script also shows the hotspot band (2.4/5 GHz) and whether the phone supports tethering hardware acceleration — the app itself cannot read these.
+
+---
+
+## Recommended phone setup
+
+The **Setup guide** shows the current value of each item and opens the right settings screen.
+
+| Setting | Recommended | Why |
 |---|---|---|
-| 接続性チェックの頻度 | 給電中 15 分／バッテリー駆動中 60 分 | 消費電力・通信量を抑えつつ、異常は状態変化のイベントで即座に拾う |
-| タイムアウト | 各段階 10 秒 | 弱電界での一時的な遅延を異常としない |
-| 異常時の再確認 | 1 → 3 → 5 分（約 9 分で確定） | 数分の瞬断では通知しない |
-| 温度の警告 | 電池 45 ℃（注意）／50 ℃（警告）、熱状態「中程度」 | リチウムイオン電池の充電温度の上限の目安 |
-| 電池残量 | 20 %（バッテリー駆動中のみ） | 給電中は通知しない |
-| 自動復旧として許可する操作 | 再確認・状態の再取得・ネットワーク再検証の依頼・通知 | 通信を止める操作はしない（仕様 7 章） |
-| ログ | 30 日・10 MB | 1 日あたり約 40 KB の見込み（電力の記録も同じ上限） |
-| 比較テストの時間と回数（11.5） | 1 条件 30 分 × 2 回（A→B→A→B） | 1 回だけだと時間帯や電池の温度の違いを拾いやすいため、2 回入れ替える |
-| 効果ありとする最小の削減率（11.5） | 3 % | 計測のばらつきより大きい差だけを採用する |
-| 残り時間の通知（11.5） | 60 分 | 給電の準備に必要な時間の目安 |
-| 電池容量（11.5） | 充電カウンタから自動で推定（手動入力も可） | 推定できない機種でも、仕様上の容量を入れれば残量 % から計算できる |
-| 電波の悪化（F-29） | RSRP −110 dBm 未満、または設置時より 10 dB 以上悪い状態が 2 回続いたとき | LTE で −110 dBm 未満は弱い電波の目安。1 回だけの揺れでは通知しない |
-| 接続端末なしの通信（F-33） | 1 時間あたり 5 MB を超えたら（6 時間に 1 回まで） | チェック自体の通信は 1 回約 1 KB。数 MB/時は自動更新・同期などの目安 |
-| 使わない時間帯（F-33） | 未設定（設定すると合計 50 MB で通知） | 使い方は人によって違うため、利用者が決める |
-| ローカル管理画面（F-43） | ON・ポート 8080 | 読み取り専用でアクセスポイント側だけ。1024 未満のポートは通常のアプリでは使えない |
-| 自動切り替え（F-42） | OFF（使うときは残量 100 %＝バッテリー駆動中は常に、Doze を早めるのは別に ON） | OS の設定を変えるので、利用者が選んだときだけ |
-| 到達確認の省略（F-32） | ON（256 KB 以上受信・接続 1 台以上・OS の接続検証 OK のとき） | 通信が流れていればインターネットに届いているのは明らか |
-| 待機（F-32） | バッテリー駆動中、接続 0 台が 30 分または残量 30 % 以下で、チェック間隔 180 分 | 使っていない間の起床を減らす。給電中は使わない |
-| 運用方針の提案（F-36） | 待機に電池の 10 % 以上／日、接続 0 台の中央値 2 時間以上で「止める運用も検討」 | 止めると再開に端末での操作が要るので、効果が大きいときだけ勧める |
-| 制限の候補（F-35） | 裏での通信が 1 MB 以上のアプリ（直近 24 時間または 7 日） | チェック自体の通信（1 日約 100 KB）より十分大きいもの |
-| 時間帯スケジュール（F-37） | OFF（使うときは「使わない時間帯」を設定し、接続 0 台が 10 分続いたときだけ止める） | テザリングを止める操作なので、利用者が選んだときだけ。接続中の端末を切らない |
-| 再開のやり直し（F-37） | 1 → 5 → 15 分後（3 回で打ち切り、異常として通知） | 失敗し続けても無限にやり直さない（仕様 7 章） |
-| 外部への通知（F-44） | OFF（使うときは復旧・警告の両方を送る） | 外部のサービスに送るので、利用者が送り先を決めたときだけ |
-| スマートプラグ（F-45） | OFF（使うときは 40〜80 %・40 ℃ で停止・Shelly は 240 分で自動 ON） | 満充電と高温を避けつつ、アプリが止まっても電池切れにしない |
-| ADB 事前設定 | 下記の項目（OTA の停止・ほかのアプリの制限は任意） | 通信を止めるおそれのない省電力・常時運用向けの設定だけ |
-| 更新の抑制 | OS の自動更新は任意（`-IncludeOta`）、Play は手動設定 | 月 1 回など、メンテナンスモードで手動更新する運用を推奨 |
+| Hotspot auto turn-off | Off | Otherwise the hotspot turns itself off when nobody is connected |
+| Data Saver | Off | Android blocks the hotspot while Data Saver is on |
+| Battery optimization (this app) | Excluded | Checks are not delayed while the screen is off |
+| Screen timeout | Short (30 s) once set up | The screen is the biggest power draw. With a PIN lock, keep it longer while you are still setting up |
+| Screen lock | None, if the phone is in a safe place | With a lock, monitoring starts only after you unlock it following a reboot (turning the hotspot on at startup works before unlocking) |
+| Ambient display, lift/tap to wake | Off | Avoids the screen turning on by itself |
+| Location, Bluetooth, NFC | Off | Not used by the app |
+| Account auto-sync, Play Store auto-update | Off / Wi-Fi only | Reduces the phone's own data use |
+| Connected devices | Set to "metered" | Stops their OS updates and cloud sync over the hotspot (see the **Client device guide**) |
 
-## ADB 事前設定（tools/adb-setup.ps1）
+On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Saver on, the screen off and the phone in deep sleep. If your phone's Battery Saver turns on Data Saver, the hotspot stops — the app warns you when Data Saver is on.
 
-| 実行 | 内容 |
+---
+
+## Privacy
+
+- The log stays on the phone (30 days, 10 MB). It contains no SSID, no information that identifies connected devices (only how many), no phone number and no IP address.
+- The app's own network use: one small reachability request per check (`connectivitycheck.gstatic.com/generate_204`, about 1 KB). Optionally, notifications to the service you chose and commands to your smart plug.
+- Settings backup files don't include the notification URL or the smart plug address/URLs.
+- The local web page has no password; anyone connected to your hotspot can view it. Turn it off in Settings if you don't need it.
+
+---
+
+## Limitations
+
+- Made for **Android 10**.
+- Without the optional **Turn on the hotspot at startup**, the hotspot stays off after a reboot until you turn it on; the after-reboot check reminds you.
+- Power consumption and time left are available **only on battery**.
+- The number of connected devices is an estimate and may stay for a few minutes after a device disconnects.
+- The hotspot band (2.4/5 GHz) can't be read by the app. Tethering hardware acceleration has an effect only on phones that support it.
+- Turning the hotspot on at startup and the quiet-hours schedule use a system function that some carriers or manufacturers block. Use the check button to find out.
+- Notifications to ntfy/Discord/Slack can't be sent while the mobile line is down; they are sent after it recovers.
+- If you change the phone's language, texts already written (log entries, notifications already shown) stay in the language they were written in; screens, event names and CSV headers switch to the new language.
+
+---
+
+## Troubleshooting
+
+| Problem | What to do |
 |---|---|
-| `adb-setup.bat` | 現在の値を表示するだけ（変更しない） |
-| `adb-setup.bat -Apply` | 変更前の値を `tools/backup/` に保存してから推奨値を適用（2 回目以降も最初の値を保持） |
-| `adb-setup.bat -Restore` | 保存した値に戻す |
-| `adb-setup.bat -Install <apk>` | インストール（`-Apply` と併用すると、権限を付けてから起動） |
-| `adb-setup.bat -Apply -RestrictApps` | 上に加えて、このアプリ以外のユーザーアプリをバックグラウンド制限（F-40）。`-KeepApps パッケージ名,…` で除外 |
-| `adb-setup.bat -Apply -AllowAutoSwitch` | 上に加えて、このアプリに「設定変更の権限」（WRITE_SECURE_SETTINGS）を付ける（F-42 の自動切り替え用） |
-| `adb-setup.bat -Apply -AllowTetherControl` | 上に加えて、このアプリに「システム設定の変更」（WRITE_SETTINGS）を許可する（F-37 の時間帯スケジュール用。端末の設定画面からも許可できます） |
-| `adb-setup.bat -Apply -EnableOffload` | 上に加えて、テザリングのハードウェアアクセラレーションを有効に戻す（`tether_offload_disabled=0`。オフロードの HAL がある端末だけ） |
+| Monitoring doesn't start after a reboot | Unlock the phone once. If it still doesn't start, open the app |
+| The hotspot is off after a reboot | Turn on **Turn on the Wi-Fi hotspot at startup** in Settings → Tethering. If it is on, check that "Modify system settings" is allowed and read the last result below it |
+| **Action needed** is shown | Follow the message and its button |
+| "Data used with no devices connected" | The phone's own apps or system are using data (app updates, sync). See **Power analysis** for data per app |
+| The schedule didn't turn the hotspot off | Check that "Modify system settings" is allowed and the check button succeeds. It waits until no device has been connected for 10 minutes |
+| "Can't start/stop charging with the smart plug" | Check the plug's power and Wi-Fi, its address, and the charging cable |
+| The test notification fails | Check the URL. "HTTP 4xx" usually means a wrong URL or token |
+| Something else | Open **Diagnostics**, then copy or share it |
 
-`-Apply` で変更する項目は次のとおりです。
+---
 
-- 常時運用：アクセスポイントの自動 OFF（`soft_ap_timeout_enabled=0`）、充電中は画面をスリープしない（`0`）、画面消灯までの時間（30 秒）、このアプリを電池の最適化から除外、「電話」の権限
-- 無線：Wi-Fi／Bluetooth の常時スキャン（`0`）、**位置情報**（`secure location_mode=0`。`-KeepLocation` で変えない）、**モバイルデータを常に ON**（`global mobile_data_always_on=0`。Wi-Fi に接続しているあいだモバイル回線を待機させる機能。テザリング中は Wi-Fi に接続しないので影響しません）
-- **画面の不意な点灯（F-39）**：通知で点灯（`secure doze_enabled`）・常に表示（`doze_always_on`）・持ち上げて／タップ／ダブルタップで通知を確認（`doze_pulse_on_pick_up`／`doze_tap_gesture`／`doze_pulse_on_double_tap`）・持ち上げて点灯（`wake_gesture_enabled`）・ダブルタップで点灯（`double_tap_to_wake`）をすべて `0`。未設定（機種の既定）の項目も `0` にし、`-Restore` で未設定に戻します。メーカー独自のジェスチャーは設定アプリから手動で OFF にしてください
-- 任意：`-IncludeOta` でシステムの自動更新を止める（`ota_disable_automatic_update=1`）
-- このアプリの権限：電池の最適化からの除外、「電話」の権限、**使用状況へのアクセス**（F-35。アプリ別の通信量を読むだけ）。`-AllowAutoSwitch` のときだけ**設定変更の権限**（F-42）、`-AllowTetherControl` のときだけ**システム設定の変更**（F-37）も付けます。`-Restore` では、付ける前の状態に戻します（アプリが「Doze を早める」設定を戻さないまま削除された場合の後始末もします）
-- 表示だけ（第 4 段階）：テザリングのハードウェアアクセラレーションの設定とオフロードの HAL の有無（VINTF マニフェストの宣言）、アクセスポイントの帯域（`dumpsys wifi` の `apBand`。アクセスポイントが ON のときだけ読めます）
+## Update and uninstall
 
-**ほかのアプリの制限（F-40、`-RestrictApps` のときだけ）**：このアプリ以外のユーザーアプリ（システムアプリは対象外）を、「バックグラウンドでの動作を制限」（`cmd appops set <pkg> RUN_ANY_IN_BACKGROUND ignore`）と、使用頻度「低い」（`am set-standby-bucket <pkg> rare`）にします。アプリを開けば普通に使えます。変更前の状態は保存し、`-Restore` で戻します。裏で動いてほしいアプリ（VPN・遠隔操作など）は `-KeepApps` で除外してください。確認だけの実行でも、ユーザーアプリの一覧と現在の状態を表示します。
+- **Update:** `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z.apk` (or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
+- **Uninstall:**
+  1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup.
+  2. `adb uninstall local.tethering.dedicated`
+  3. `tools\adb-setup.bat -Restore` to put back the phone settings changed by `-Apply`.
 
-- **画面ロック（PIN など）がある端末では、画面消灯までの時間は変更しません**（消灯のたびにロックがかかって操作しづらいため）。変えたい場合は `-ScreenOffSec 30` のように指定します。
-- 扱わないもの：キャリアのテザリング可否の判定や制限に関わる設定、システムアプリの無効化、機内モードや再起動の自動化、データセーバー（ON のあいだテザリングが使えない）。
+---
 
-## 機能一覧との対応
-
-| ID | 機能 | 状態 |
-|---|---|---|
-| F-01 | 運用ダッシュボード | ✅ 取得できない値は「取得不可」と表示 |
-| F-02 | 運用プロファイル | ✅ 自動／通常／省電力、メンテナンス、復旧 |
-| F-03 | 画面・表示の省電力化 | 案内＋ADB 事前設定 |
-| F-04 | バッテリーセーバー | 状態表示＋案内 |
-| F-05 | 不要アプリの整理 | 一覧＋アプリ情報への案内（ユーザーアプリのみ） |
-| F-06 | 同期・バックグラウンド通信の抑制 | 状態表示＋案内 |
-| F-07 | 通知の抑制 | 案内（このアプリは常駐／警告／お知らせのチャンネルを分離） |
-| F-08 | 通話・SMS 機能の縮小 | 案内のみ（緊急通報への影響を避けるため止めない） |
-| F-09 | 更新管理 | 4 種類を分けて案内、OTA は ADB で任意、本アプリの更新後は自動で再開 |
-| F-10 | Wi-Fi テザリング監視 | ✅ 状態・共有中・接続端末数（推定）・自動 OFF 設定 |
-| F-11 | モバイル回線監視 | ✅ SIM・登録・データ網・RSRP/RSRQ/SINR・バンド・帯域幅 |
-| F-12 | 接続性チェック | ✅ 4 段階＋OS の接続検証 |
-| F-13 | 段階的な自動復旧 | ✅ 手順 1〜4（手順 5「検証済み操作の自動実行」は次版候補） |
-| F-14 | 起動後の状態確認 | ✅ |
-| F-15 | 給電・バッテリー別プロファイル | ✅ |
-| F-16 | 温度・バッテリー警告 | ✅ |
-| F-17 | 充電上限・バイパス充電の確認 | 案内（標準 API がないため非対応として扱う。スマートプラグがあれば F-45 で代わりにできる） |
-| F-18 | 無線機能の管理 | 状態表示＋案内 |
-| F-19 | 低頻度スケジューラー | ✅ |
-| F-20 | ログ・CSV 出力 | ✅ |
-| F-21 | 設定のバックアップ・復元 | ✅ 範囲外の値は採用せず、変更点を確認してから反映 |
-| F-22 | メンテナンスモード | ✅ |
-| F-23 | 安全な初期値・ロールバック | ✅ アプリ:「直前の設定に戻す」「初期値に戻す」／ADB:`-Restore` |
-| F-24 | 管理・デバッグ保護 | ✅ 確認画面・変更の記録・診断情報 |
-| F-25 | 消費電力の計測 | ✅ v0.2.0（充電カウンタ → 電流 → 残量の順。バッテリー駆動中だけ） |
-| F-26 | 残りテザリング時間の推定 | ✅ v0.2.0（計測が足りない間は表示しない） |
-| F-27 | 省電力設定の比較テスト | ✅ v0.2.0（OS の設定は手動で切り替え。本アプリのチェック間隔は自動） |
-| F-28 | 日次レポート | ✅ v0.2.0（日別・区間別の CSV 出力） |
-| F-29 | 設置場所アシスト | ✅ v0.3.0（点数・音・場所の記録と比較・運用中の悪化の通知） |
-| F-33 | 待機中の通信の検知 | ✅ v0.3.0（接続端末なし・使わない時間帯。アプリ別の内訳は第 3 段階の F-35） |
-| F-34 | 接続端末の「従量制」設定ガイド | ✅ v0.3.0（アプリと管理画面の両方） |
-| F-39 | 画面の不意な点灯を防ぐ | ✅ v0.3.0（ADB 事前設定＋設定ガイド。機種独自のジェスチャーは手動） |
-| F-40 | アプリのバックグラウンド制限 | ✅ v0.3.0（ADB 事前設定 `-RestrictApps`。元に戻せる） |
-| F-41 | 位置情報と「モバイルデータを常に ON」の OFF | ✅ v0.3.0（ADB 事前設定＋設定ガイド） |
-| F-43 | ローカル管理画面 | ✅ v0.3.0（アクセスポイント側だけ・読み取り専用） |
-| F-42 | プロファイル連動の自動切り替え | ✅ v0.4.0（バッテリーセーバー・Doze。ADB で権限を付けたときだけ。元に戻せる） |
-| F-32 | 監視自体の通信の最小化 | ✅ v0.4.0（通信が流れていれば到達確認を省く・バッテリー駆動中の待機） |
-| F-36 | 接続 0 台の待機電力と運用方針 | ✅ v0.4.0（省電力の分析。比較テストに待機電力の測定を追加） |
-| F-30 | 電波と消費の関係の表示 | ✅ v0.4.0（省電力の分析） |
-| F-31 | 回線方式の見直しの案内 | ✅ v0.4.0（設定ガイド。VoLTE の状態は読めないため案内のみ） |
-| F-35 | 端末自身のバックグラウンド通信の順位 | ✅ v0.4.0（使用状況へのアクセスが必要。テザリングと端末自身を分けて表示） |
-| F-37 | 時間帯スケジュール | ✅ v0.5.0（接続 0 台が 10 分続いたときだけ止め、止めたときだけ再開。「システム設定の変更」の許可が必要） |
-| F-38 | 2.4／5GHz とハードウェアアクセラレーション | ✅ v0.5.0（比較テストの候補・設定ガイド・ADB で帯域と HAL の有無を表示。帯域はアプリから読めない） |
-| F-44 | 外部への通知 | ✅ v0.5.0（ntfy・Discord・Slack。止まっていた時間は復旧後に送る。送れないものは待ち行列） |
-| F-45 | スマートプラグ連携 | ✅ v0.5.0（Shelly・Tasmota・URL 指定。給電の有無で結果を確かめる。Shelly は自動 ON のタイマー付き） |
-
-## 実機での確認結果（UMIDIGI A9 Pro・Android 10・SoftBank、2026-10-16）
-
-| 項目 | 結果 |
-|---|---|
-| Wi-Fi テザリングの状態 | ✓ ON・`ap0`・テザリングモード（OS のスティッキーブロードキャストから取得） |
-| 接続端末数 | ✓ `ip neigh` で取得（`/proc/net/arp` はこの機種では読めない） |
-| アクセスポイントの自動 OFF 設定 | ✓ OFF |
-| 電波・品質 | ✓ RSRP −101 dBm／RSRQ −12 dB／SINR 21.5 dB／レベル 3 |
-| バンド・帯域幅 | ✓ B41（2.5 GHz 帯）・EARFCN 40340・20 MHz |
-| 接続性チェック | ✓ 4 段階すべて OK（HTTP 204・83 ms） |
-| 電池・温度・電圧・電流 | ✓（電流は符号と単位が機種によって違うため参考値） |
-| 熱状態 | ✓ |
-| SoC 温度 | ✗ 取得不可（そのまま「取得不可」と表示） |
-| アプリ更新後の自動再開 | ✓ |
-| 充電カウンタ（v0.2.0） | ✓ 読める（81 % で 3,135,510 µAh。容量に直すと約 3,870 mAh）。バッテリー駆動で実際に減ることを確かめてから計測に使います |
-| v0.2.0 の画面 | ✓ 電源カード（給電中は「給電中は計測しません」）・比較テスト・日次レポート。日別 CSV の保存（BOM 付き・16 列）も確認し、確認用のファイルは削除済み |
-| 計測のためのウェイクアップ | ✓ 待機中のアラームは定期チェックの 1 件だけ（`dumpsys alarm`）。v0.1.0 から増えていません |
-| バッテリー駆動中の計測 | ✓ 2026-10-17 に給電が約 2 時間 36 分切れた間を計測（接続 0 台・RSRP −100〜−110 dBm で平均 142 mA）。同じ間の電池の減り（100 → 91 %、約 350 mAh）から計算した約 134 mA とほぼ一致 |
-| 残り時間・比較テスト | 実機では未確認（エミュレーターで確認しました。下記） |
-
-Android 10 エミュレーターでは、次も確認しました：初回の権限の説明、回線を切ったときの「疑い → 1 分後 → 1 分後 → 通知 → 復旧通知」、テザリング停止の通知、設定のファイル保存と復元、CSV の書き出し、再起動後の起動後チェック、給電の有無によるプロファイルの切り替え。
-
-v0.2.0 では、エミュレーターでさらに次を確認しました（電池の状態は `dumpsys battery` で模擬、比較テストは 1 条件 5 分に短縮）。
-
-- 消費の表示（電流の平均から 4500 mW（900 mA））、残量 20 % での推定残り時間「残り約 53 分」と、「推定残り時間が少ない」「電池残量が少ない（20%）」の通知
-- 比較テスト「このアプリのチェック間隔」：A → B を時間どおりに切り替え、結果「効果なし」でチェック間隔が自動で元に戻ること、結果の履歴
-- 比較テスト「Bluetooth を OFF」：切り替えの案内通知（「切り替えた」「中止」ボタン付き）、「切り替えた」を押すまで計測しないこと。B の計測中にアプリを強制停止すると、次の起動時に「比較テストを中断しました」「Bluetooth を ON に戻してください」と通知し、履歴に中断として残ること
-- 日次レポートの表示
-- 見つけて直した不具合：① エミュレーターの充電カウンタは常に同じ値（10000）を返し、それを残量として誤って使っていた → 実際に妥当な量だけ減ったと確かめるまで使わないように修正 ② バッテリー駆動中（チェック間隔 60 分）は区間が閉じるまで残り時間が出なかった → 計測中の区間も含めるように修正
-
-### v0.3.0（第 2 段階）の確認（2026-10-17）
-
-実機（同じ UMIDIGI A9 Pro）：
-
-| 項目 | 結果 |
-|---|---|
-| 更新後の自動再開 | ✓ `adb install -r` で更新後、監視と管理画面が自動で再開（権限・電池の最適化の除外もそのまま） |
-| ローカル管理画面（F-43） | ✓ アクセスポイント（`ap0`・192.168.43.167）の 8080 番だけで待ち受け、`127.0.0.1` とモバイル回線側のアドレスへの接続は拒否。`/`・`/log`・`/traffic`・`/guide`・`/status.json` は 200、存在しないパスは 404、POST は 405。ページにスクリプトなし。ダッシュボードにアドレスを表示 |
-| 待機中の通信（F-33） | ✓ 実データで、**深夜 1〜3 時に接続端末なしで約 42 MB**（ほかの時間帯は 1 時間あたり約 0.3 MB）を表示。同じ時間（2:01）に「Android System WebView」が Play ストアの自動更新で更新されていた |
-| ウェイクアップ | ✓ 待機中のアラームは定期チェックの 1 件だけ、ウェイクロックの保持なし（管理画面のスレッドは接続待ちで眠っているだけ） |
-| ADB 事前設定の確認表示 | ✓ 確認だけの実行で、第 2 段階の項目（点灯ジェスチャー 2 つとモバイルデータ常時 ON が要変更、位置情報はすでに OFF）とユーザーアプリの一覧を表示。**この端末には第 2 段階の ADB 事前設定は適用していません** |
-| 設置場所アシスト（F-29） | 実機では未確認（開くと音が鳴るため）。電波の値の読み取りはダッシュボードで実機確認済み |
-
-Android 10 エミュレーター（Android CLI で起動）：
-
-- 設置場所アシスト：電波の値から点数を表示（RSRP −100 dBm・SINR 3 dB → 41 点「普通」）、20 秒の記録（中央値）、2 か所の比較と「◎ おすすめ」、「ここに設置した」の登録。電波を弱くする（−110 dBm）と 2 回目のチェックで「電波の悪化（RSRP −110 dBm・設置時 −100 dBm）」を通知し（「設置場所アシストを開く」ボタン付き、ダッシュボードにも表示）、電波を戻すと解除
-- 待機中の通信：テザリング OFF の状態で端末内の通信を流し（ローカルの ping、外部へは出さない）、「使わない時間帯（0:00〜1:00）に約 4.1 MB」を時間帯の終了後に、「接続端末がないのに通信しています（6.7 MB・1 時間あたり約 19 MB）」を 20 分の記録がたまった時点で通知。時間帯別のグラフと日ごとの合計
-- ADB 事前設定：確認 → `-Apply -RestrictApps`（コードなしのダミーアプリで確認）→ `-Restore` で、位置情報が OFF → ON に戻ること、未設定だった項目が未設定に戻ること、アプリの制限が解除されることを確認
-- 設定ガイド・診断情報・設定画面・接続端末の設定ガイドの表示
-
-見つけて直したもの：使わない時間帯の通信がほとんど端末自身のものだったときに接続端末向けの助言を出していた → 内訳で出し分け。実機の画面幅でボタンの文字が折り返す → 短く。
-
-単体テストは 76 件です（第 2 段階の判定・HTTP の処理・ページ生成など 21 件を追加）。
-
-### v0.4.0（第 3 段階）の確認（2026-10-17）
-
-実機（同じ UMIDIGI A9 Pro。`-Apply -AllowAutoSwitch` で権限を付けたあと）：
-
-| 項目 | 結果 |
-|---|---|
-| 更新・権限 | ✓ `adb install -r` で更新後、監視・管理画面が自動で再開。更新しても「使用状況へのアクセス」と「設定変更の権限」は残る |
-| アプリ別の通信量（F-35） | ✓ 直近 24 時間で、テザリング 0.0 MB／この端末自身 198 MB。Chrome 104.9 MB（前面 13 回）、Google Play 開発者サービス 26.7 MB、Google 3.1 MB、Files by Google 1.7 MB、YouTube 1.6 MB … を順に表示し、システムアプリには「手動で対策」を表示 |
-| 電波と消費・待機電力（F-30・F-36） | ✓ 実データで表示（上のバッテリー駆動の 2 時間 41 分ぶん：−100〜−110 dBm で 142 mA。記録 14 時間 42 分はすべて接続 0 台）。テザリング OFF の消費が未計測なので、比較テスト「使わないときにテザリングを止める」を案内 |
-| 回線方式（F-31） | ✓ 優先ネットワークの種類「4G/3G/2G（自動）」（`preferred_network_mode1=20`）を読み、5G を使わないので変更不要と表示。VoLTE は案内のみ |
-| 自動切り替え（F-42） | 権限は付与済み。**機能自体は設定で OFF のまま**（この端末はふだん給電中で、バッテリー駆動中だけ動く機能のため。使うときは設定の「自動切り替え」を ON） |
-
-Android 10 エミュレーター：
-
-- 自動切り替え：設定を ON にして給電を外すと、`low_power=1`（バッテリーセーバー ON）と Doze の定数（`inactive_to` 5 分など。OS にも反映）を書き込み、給電に戻すと元の値（`low_power=0`・未設定）に戻ることを確認。OS がアプリからの ON を「手動で ON」とみなして立てる `low_power_sticky` も元に戻すよう修正。「自動で変えた設定をすべて元に戻す」で、元の値に戻り自動切り替えが OFF になることも確認
-- 待機：バッテリー駆動・残量 25 % で「待機（低残量）：チェック間隔 180分」に切り替わり、次のチェックが約 3 時間後になることを確認
-- アプリ別の通信量：テザリングと端末自身を分けて、UID ごとの通信量を表示
-- 設定ガイドの第 3 段階の項目（自動切り替え・使用状況へのアクセス・回線方式・VoLTE）と、比較テストの新しい候補の表示
-- ADB 事前設定：`-Apply -AllowAutoSwitch` で「使用状況へのアクセス」と「設定変更の権限」が付くこと
-
-見つけて直したもの：常駐サービスを持つシステムアプリ（Google Play 開発者サービスなど）の通信は OS の記録で「前面」に数えられ、「手動で対策」の印が付かなかった → システムアプリは合計量で判定。`low_power_sticky` の戻し漏れ。実機の画面幅での折り返し。
-
-単体テストは 85 件です（第 3 段階の判定・集計 9 件を追加）。
-
-### v0.5.0（第 4 段階）の確認（2026-10-17）
-
-Android 10 エミュレーター（時刻は GMT）。外部への通知とスマートプラグは、PC で動かした疑似サーバー（ntfy 風の受け口と、Shelly 第 2 世代風のプラグ。プラグは指示を受けるとエミュレーターの給電を `dumpsys battery set ac` で切り替える）で確かめました：
-
-- **テザリングの切り替え（F-37 の土台）**：「システム設定の変更」を許可すると、`ConnectivityManager.startTethering` / `stopTethering` で Wi-Fi テザリングを開始・停止できました（Android 10 の非公開 API の制限にかからない）。許可がないと OS に断られ、「「システム設定の変更」が許可されていません」と表示します。止めずに確かめる `isTetheringSupported` も使えました
-- **時間帯スケジュール（F-37）**：
-  - 6:19〜6:22 にすると、6:19:02 に「テザリングを止めた（6:22 に再開）」、6:22:02 に再開を依頼して「テザリングが ON に戻った（止めていた時間 約3分）」。止めている間は異常として扱わず、ローカル管理画面も自動で止まって再開
-  - 時間帯の途中で手で ON にすると、記録を消してその時間帯はもう止めない。止めている間にスケジュールを OFF にすると、すぐ再開
-  - 再開の時刻に許可を外しておくと、1 分 → 5 分 → 15 分後にやり直し（「再開に失敗 …（3/3）」）、そのあと「やり直しをやめた」として、テザリング停止の異常（1 分後に確定）として通知。通知の文面は「時間帯スケジュールで再開できませんでした（「システム設定の変更」が許可されていません）。テザリングを手動で ON にしてください。」。許可を戻して手で ON にすると、復旧の通知
-- **外部への通知（F-44）**：電池温度・電池残量の警告、テザリング停止の確定、テザリングの再開（「停止していた時間: 約2分（06:54〜06:56）」）が、ntfy の形式（題名は RFC 2047 で日本語のまま、警告は優先度 4、復旧は 3）で届くことを確認
-  - モバイルデータを OFF にした間の警告は送れず（「送れませんでした（接続できない）。回線が戻ったら送り直します（1件）」）、ON に戻すと、その警告（発生時刻のまま）→「回線が復旧しました … 止まっていた時間: 約2分（07:20〜07:22）」の順に届いた
-  - 送り先が HTTP 400 を返すと、その通知は捨てて「送信先に断られました（HTTP 400・ntfy）。通知先の URL を確認してください」と記録
-- **スマートプラグ（F-45）**：残量 81 % で OFF（Shelly の自動 ON のタイマー付き）、OFF のあいだタイマーを延長、40 % で ON、41 ℃ で OFF、38 ℃ では OFF のまま（3 ℃ 下がるまで）、36 ℃ で冷えたあとは範囲の制御に戻る、45 ℃ でも残量 20 % なら給電、50 ℃ で必ず OFF。指示のあとエミュレーターの給電が実際に切り替わり、ダッシュボード・ログに理由つきで残ることを確認
-  - 給電を止めている状態で連携を OFF にすると「給電を ON に戻す（設定で OFF）」
-  - プラグが応答しても給電が変わらない（疑似プラグを故障させた）ときは、2 分おきに 3 回送ったあと「スマートプラグで給電を止められません」と通知し（総合状態は「注意」）、外部へも送信。給電が目標どおりになったら「給電の状態が目標に戻りました」で解除
-- **リリース版（R8 で最適化した APK）**：`adb-setup -Install … -Apply -AllowTetherControl -EnableOffload` で導入（「システム設定の変更」が「許可 OK」、オフロードの HAL がないので設定は変えずに警告、帯域「2.4GHz」を表示）。設定画面の「切り替えられるか確認する」で「このアプリからテザリングを切り替えられます」、「テスト送信」で「ntfy（10.0.2.2）: OK（HTTP 200）」。画面から時間帯（10:10-10:13）を設定すると 10:10 に止まり（ダッシュボード「停止中（10:13 に再開）」・総合状態は「正常」）、そこで「監視を停止」するとすぐ再開。診断情報に第 4 段階の行が出て、通知先の URL は「（設定あり・非表示）」。`-Restore` で「システム設定の変更」が元（default）に戻り、スケジュールが ON のままなら「要確認」に「許可されていないため、テザリングを止められません」と出ることを確認
-
-見つけて直したもの：スマートプラグに一度指示を送ったあと 2 分以内に目標が変わると（OFF のあとすぐ下限に達したなど）、送り直しの待ち時間に引っかかって新しい指示を送っていなかった → 目標が変わったらすぐ送るように修正（連携を OFF にしたときの ON も同じ扱いに）。時間帯の中でテザリングを ON にした直後（接続端末がまだつながる前）に止めてしまうことがありうる → 接続 0 台が 10 分続いてから止めるように変更。プラグ・外部への通知の「直近の結果」が画面に反映されないことがあった → 結果が出たら更新。ADB 事前設定でオフロードの HAL の有無を `lshal` で調べると、機種（エミュレーター）によって数分かかった → VINTF マニフェストを読むように変更（実機で 0.2 秒）。
-
-実機（同じ UMIDIGI A9 Pro）：
-
-| 項目 | 結果 |
-|---|---|
-| 更新 | ✓ `adb install -r` で v0.5.0 に更新後、監視・管理画面が自動で再開。「使用状況へのアクセス」「設定変更の権限」「電話」はそのまま。新しい機能（時間帯スケジュール・外部への通知・スマートプラグ）はどれも初期値の OFF なので、動作は変わっていません |
-| テザリングの切り替え（F-37） | ✓ `-Apply -AllowTetherControl` で「システム設定の変更」を許可すると、設定の「切り替えられるか確認する」で「このアプリからテザリングを切り替えられます」（この回線・端末にはテザリングの利用確認のアプリがない：`provisioningApp: []`） |
-| 時間帯スケジュール（F-37） | ✓ 「使わない時間帯」を 19:35〜19:38 にすると（日本語入力の全角「１９：３５−１９：３８」でも保存できた）、19:35:02 に「テザリングを止めた（19:38 に再開）」（ダッシュボード「停止中（19:38 に再開）」・総合状態は「正常」・停止の通知なし）、19:38:02 に「テザリングが ON に戻った（止めていた時間 約3分）」。再開後のアクセスポイントのアドレスは 192.168.43.29 に変わり、ローカル管理画面も自動で再開。試験のあと、時間帯は空欄・スケジュールは OFF に戻しました |
-| 帯域・オフロード（F-38） | `adb-setup`（確認だけ）で、アクセスポイントの帯域「5GHz」、ハードウェアアクセラレーション「無効（`tether_offload_disabled=1`）」・オフロードの HAL「なし」を表示（4 秒）。この端末（MT6771）はオフロードに対応していないので、設定を変えても効果はありません |
-| 画面 | ✓ ダッシュボードに「時間帯スケジュール: 使わない」「スマートプラグ: 使わない」、診断情報に第 4 段階の行 |
-
-単体テストは 108 件です（第 4 段階の判定・URL の組み立て・通知の形式・待ち行列など 23 件を追加）。
-
-### v0.5.1：テザリングを妨げないかの確認（バッテリーセーバー ON・画面 OFF、2026-10-17）
-
-**このアプリがテザリングに作用するところ**（コードを確認）：テザリングを止める・始めるのは時間帯スケジュール（ON のときだけ）と、その再開（スケジュールの OFF・監視の停止）だけです。OS の設定を書き換えるのは自動切り替え（F-42。ON で権限があるときだけ。`low_power`・`low_power_sticky`・`device_idle_constants`）だけです。通信にかかわる操作は、回線の異常が続いたときのネットワークの再検証の依頼（接続は切らない）だけです。Wi-Fi・機内モード・モバイルデータ・データセーバーは変えません。
-
-**この端末のバッテリーセーバー**（`dumpsys power`）：データセーバーを ON にしない設定（`datasaver_disabled=true`）なので、バッテリーセーバーでテザリングが使えなくなることはありません。ON にすると、画面を消してすぐ深い Doze に入ります（`quick_doze_enabled=true`）。電池残量 15 % で OS が自動で ON にします。このアプリは電池の最適化の対象外（Doze・バッテリーセーバーの制限を受けない）です。
-
-**実機での試験**（利用者が USB を抜き、クイック設定でバッテリーセーバーを ON にし、画面を消して 35 分置いた。PC をテザリングにつなぎ、約 78 秒ごとに 10 MB をダウンロード）：
-
-| 項目 | 結果 |
-|---|---|
-| 状態 | 21:56:32 バッテリー駆動 → 21:56:49 バッテリーセーバー ON → 21:59:29 画面 OFF → **22:00:30〜22:36:09 深い Doze**（約 36 分）→ 22:36:09 給電 |
-| テザリング | ✓ 深い Doze の間、ダウンロード 28 回すべて成功（4.2〜8.7 Mbps）。OS のテザリングの記録でも、この間に停止・再起動はなし。アクセスポイントからの送信 447 MB |
-| 21:59:15 の 1 秒の停止 | 画面が点いていて、OS の設定画面が Wi-Fi の設定を読んでいた直後に、OS へテザリングの停止が依頼された（このアプリの記録に停止の操作はなく、スケジュールも OFF）。PC は 21:59:20 につなぎ直した。このアプリは「停止中（確認中）」→ 1 秒後に「再開」と記録し、通知は出していない（1 分続いたら通知する決まりのため） |
-| アプリ | ✓ 監視は続き、給電に戻った直後のチェックで「接続 1 台」「到達確認は省略（通信が流れているため）」 |
-| 電池 | 82 % → 78 %（約 40 分。PC の速度測定の通信を含む） |
-
-**見つけて直したもの（v0.5.1）**：USB を抜いた時点で接続 0 台が 30 分以上続いていたため待機（チェック間隔 180 分）に入り、そのあと PC がつながったことに気づかないまま、その 37 分の区間を「接続端末なし」として記録していた。そのため、給電に戻したとき「待機中の通信：接続端末なしで 444.1 MB」と**誤って通知**し、接続 0 台の待機電力の集計（F-36）にもこの区間が入っていた。テザリングの通信（全体からモバイル回線の分を引いた送受信。この端末ではアクセスポイントの送受信と一致することを `/proc/net/dev` で確認）を区間ごとに数え、1 MB 以上あれば接続ありとみなすように修正。さらに、0 台と数えているのに 2 MB 以上流れたら、電池の放送のついでにチェックして数え直す（30 分に 1 回まで）。診断情報に「テザリングの通信（いまの区間）」を追加し、実機で値が読めることを確認。単体テストは 111 件。なお、修正前に記録された今回の 37 分の区間は「接続 0 台」のまま残っています。
-
-## 受け入れテスト（仕様 8 章）
-
-- [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
-- [x] 接続性チェックが通信を過度に発生させない — 1 回約 1 KB、15／60 分間隔
-- [x] インターネット断とモバイル回線断を区別できる範囲で判定する — 4 段階判定（エミュレーターで「モバイルデータ OFF」を正しく判定）
-- [x] 給電開始・停止に応じてプロファイルが切り替わる — エミュレーターで次回チェックが 15 分 ⇄ 60 分に切り替わることを確認
-- [x] 温度・バッテリー情報の取得不可時に、誤った値を表示しない — 実機の SoC 温度、エミュレーターのテザリング状態で「取得不可」表示を確認
-- [x] 再起動後に状態確認が行われる — エミュレーターで起動 120 秒後の通知を確認
-- [x] 自動復旧が無限ループしない — 再確認は回数に上限があり、確定後は通常間隔（単体テストと実動作で確認）
-- [x] ログを CSV として出力できる — BOM・列数・イベント順を確認
-- [x] 設定のバックアップ・復元ができる — 範囲外の値と不明な項目を除外して反映することを確認
-- [x] アプリが停止しても、OS 標準のテザリング機能を不必要に変更しない — テザリングを変えるのは時間帯スケジュールを ON にしたときだけ。スケジュールの OFF・監視の停止では、止めていたテザリングを再開する（エミュレーターで確認）
-- [x] 各設定変更について、元に戻す方法を確認できる — アプリ内の「直前の設定に戻す」、ADB の `-Restore`
-
-### 第 1 段階（仕様 11.6）
-
-- [x] バッテリー駆動中の平均消費（mW）と、その計測方法（充電カウンタ・電流・電池残量）が記録される — エミュレーターと単体テストで確認（区間ごとの記録に方法の列あり）。実機でも、給電が切れた約 2.6 時間で 142 mA を記録し、電池の減りから計算した値（約 134 mA）とほぼ一致
-- [x] 計測のための追加のウェイクアップが発生しない — 区間は既存のチェック・状態変化で区切り、電流は電池のブロードキャストのついでに読む。実機の待機中アラームは定期チェックの 1 件だけ（比較テスト中だけは、条件の切り替え時刻に合わせてチェックを前倒しします）
-- [x] 計測データが足りない間は、残り時間を推測で表示しない — バッテリー駆動の計測が 10 分たまるまで「－」（単体テスト・エミュレーター・実機の給電中で確認）
-- [x] 比較テストは給電中には測定せず、効果がない変更や通信が悪化した変更は元に戻る — 給電中の区間は数えない（単体テスト）。「効果なし」でチェック間隔が自動で戻ること、手動の変更は戻すよう通知することをエミュレーターで確認
-- [x] 比較テストの途中でアプリが止まっても、次の起動時に元の設定へ戻る — エミュレーターで強制停止して確認（チェック間隔は自動で戻り、OS の設定は戻すよう通知）
-- [x] 日次レポートを表示し、CSV として出力できる — 実機で表示と日別 CSV の保存を確認
-
-### 第 2 段階（v0.3.0。仕様に受け入れテストの定めがないため、この README で決めた確認項目）
-
-- [x] 電波の悪化は定期チェックのときだけ判定し、1 回の揺れでは通知しない（2 回続いたら通知、十分に戻ったら解除）— 単体テスト・エミュレーター
-- [x] 設置場所を記録・比較でき、「ここに設置した」場所を基準に判定する — エミュレーター
-- [x] 接続端末なしの通信と、使わない時間帯の通信を、追加のウェイクアップなしで見つけて知らせる（使わない時間帯は終わってから）— 単体テスト・エミュレーター・実機の記録
-- [x] 接続端末の「従量制」設定の手順を、接続端末のブラウザからも読める — 実機の管理画面 `/guide`
-- [x] ADB 事前設定（F-39 / F-40 / F-41）は変更前の値を保存し、`-Restore` で元に戻せる — エミュレーター
-- [x] 管理画面はアクセスポイント側だけで待ち受け、読み取り専用で、状態を変える要求を受け付けない — 実機（他のアドレスは接続拒否、POST は 405）
-
-### 第 3 段階（v0.4.0。この README で決めた確認項目）
-
-- [x] 自動切り替えは権限を付けたときだけ動き、バッテリーセーバーと Doze 以外の OS 設定を変えない。給電・「すべて元に戻す」で元の値に戻る — エミュレーター・単体テスト
-- [x] 監視の通信を減らす：到達確認の省略は異常の確認中・手動では行わず、待機はバッテリー駆動中だけ — 単体テスト・エミュレーター（省略は接続端末のいる環境が必要なため単体テストのみ）
-- [x] 接続 0 台の待機電力を集計し、データが足りないときは何が足りないかを示す — 単体テスト・実機
-- [x] 電波と消費の関係を、計測が十分なときだけ示す（推測しない） — 単体テスト・実機
-- [x] アプリ別の通信量で、テザリングと端末自身を分けて示す（読むだけ） — エミュレーター・実機
-- [x] 回線方式を読み、5G を使っているときだけ見直しを勧める — 単体テスト・実機
-
-### 第 4 段階（v0.5.0。この README で決めた確認項目）
-
-- [x] テザリングを止めるのは、スケジュールを ON にした・使わない時間帯の中・接続 0 台が 10 分続いたときだけで、1 つの時間帯に 1 回だけ。利用者が手で ON にしたら追いかけない — 単体テスト・エミュレーター・実機（3 分間の停止）
-- [x] このアプリが止めたテザリングだけを、時間帯の終わり・スケジュールの OFF・監視の停止で再開する。再開の失敗は回数に上限があり、あきらめたら異常として通知する（無限にやり直さない） — 単体テスト・エミュレーター・実機（時間帯の終わりの再開）
-- [x] 外部への通知は送り先を決めたときだけ送り、IP アドレス・SSID・接続端末の情報を含めない。送れないときは待ち行列に残し、上限を超えて送らない。URL は設定のファイル保存・診断情報に出さない — 単体テスト・エミュレーター
-- [x] スマートプラグは、残量の範囲・高温・低残量の優先順位どおりに切り替え、給電の変化で結果を確かめる。連携の OFF・監視の停止で、止めていた給電を戻す — 単体テスト・エミュレーター
-- [x] アクセスポイントの帯域とハードウェアアクセラレーションは、読めるものは読み、読めないものは推測で表示しない — 設定ガイド・診断情報・ADB 事前設定の表示
-- [x] バッテリーセーバー ON・画面 OFF（深い Doze）でもテザリングが止まらず、このアプリがテザリングを妨げない — 実機（35 分。接続した PC の速度測定 28 回がすべて成功）
-
-## 既知の制約
-
-- **テザリングを切り替えるのは、時間帯スケジュール（F-37）を ON にしたときだけ**です。「システム設定の変更」の許可が必要で、キャリアのプロビジョニング（テザリングの利用確認）がある回線・端末では OS に断られて使えません。Android 10 の非公開のシステム API を使うため、メーカーの改変によっては動かないことがあります（設定の「切り替えられるか確認する」で確かめられます。UMIDIGI A9 Pro では動作を確認済み）。**再起動後に自動で ON にする機能はありません**（再起動後は手動で ON にし、起動後チェックで通知します。スケジュールで止めている間の再起動なら、時間帯の終わりに再開します）。
-- 時間帯スケジュールで止めている間は、接続端末からは何も使えません（ローカル管理画面も見られません）。止めるのは接続 0 台が 10 分続いたときだけですが、接続端末数は近隣テーブルからの推定です。
-- **画面ロック（PIN など）がある場合**、再起動のあとロックを解除するまで監視と起動後チェックが始まりません。
-- 接続端末数は ARP／近隣テーブルからの推定です（切断直後もしばらく数に残ります）。
-- データセーバーが ON のあいだ、テザリングは使えません（OS の仕様）。
-- 外部への通知（F-44）は、回線が止まっている間は送れません（止まっていた時間は復旧してから送ります）。ntfy の公開サーバーでは、トピック名を知っている人は誰でも購読できるので、推測されない長い名前にしてください。
-- スマートプラグ（F-45）は、プラグのローカル API に HTTP で指示します（Shelly 第 2 世代の認証（ダイジェスト認証）には対応していないので、Shelly の認証は OFF にしてください）。クラウド経由でしか操作できないプラグ（TP-Link Tapo、SwitchBot など）は、Home Assistant などの Webhook を「URL を指定」で使ってください。プラグをこの端末のテザリングにつなぐと、テザリングを止めている間は操作できません。
-- アクセスポイントの帯域（2.4／5GHz）はアプリから読めません。ハードウェアアクセラレーションは、オフロードの HAL がない端末（この端末も）では設定を変えても効果がありません。
-- 端末が Wi-Fi に接続中は、その経路で接続性を確認します（テザリング中はモバイル回線）。
-- **消費電力はバッテリー駆動中にしか測れません**。給電したまま運用する場合、平均消費・残り時間・比較テストは使えません（比較テストは給電を外すまで止まります）。
-- アプリが止まる（更新・強制停止など）と、計測中の区間（最大でチェック間隔 1 回分）は記録されません。
-- 比較テストで OS の設定を切り替えるのは手動です。結果は接続端末の使い方や電波の変化にも左右されるため、条件が大きく違ったときは結果に注記します。
-- 電流の値は機種によって符号・単位・更新の頻度が違うため、充電カウンタが使えるときはそちらを優先します。
-- **ローカル管理画面は http（暗号化なし）・認証なし**です。読み取り専用で、テザリングのアクセスポイント側だけで待ち受けますが、テザリングにつながった端末からは誰でも見られます（テザリングのパスワードを知っている人＝信頼できる人の前提）。不要なら設定で OFF にしてください。
-- Android 10 は、テザリングを開始するたびにアクセスポイントのアドレスが変わることがあります（この端末では 192.168.43.167 でした）。管理画面のアドレスはダッシュボードで確認してください。
-- 待機中の通信の判定は、チェック時点の接続端末数で「接続端末なし」を決めるので目安です。時間帯別の通信量も、区間（最大でチェック間隔 1 回分）の通信量を時間で按分した目安です。
-- モバイル回線の通信量は OS の通信量の統計（TrafficStats）から読みます。テザリングのハードウェアオフロードが有効な機種では、接続端末の通信が少なく数えられることがあります（この端末はオフロード無効で、問題ありません）。
-- アプリのバックグラウンド制限（`-RestrictApps`）をすると、制限したアプリは開いていないあいだ通知や同期が遅れます。アプリを開くと使用頻度は一時的に上がります（Android の仕様）。
-- **自動切り替え（F-42）は「設定変更の権限」を付けた場合だけ**動きます。バッテリーセーバーは端末の性能も抑えるため、テザリングの速度が少し落ちることがあります（効果と影響は比較テストで確かめられます）。深い Doze は端末が静止しているときだけ入ります。給電中は何もしません。
-- アプリを削除する前に、設定の「自動で変えた設定をすべて元に戻す」を押してください（押さずに削除した場合も、`-Restore` で Doze の設定は元に戻ります。バッテリーセーバーは給電すると OS が自動で切ります）。
-- 待機（F-32）中はチェックの間隔が長くなります。Android 10 は接続端末がつながったことをアプリに知らせないので、接続端末の数はチェックのときにしか数えません。v0.5.1 からは、0 台と数えているのにテザリングの通信（モバイル回線以外の送受信）が 2 MB 以上流れたら、電池の放送のついでにチェックして数え直します（30 分に 1 回まで。端末を余計に起こしません）。待機はバッテリー駆動中だけです。
-- 到達確認の省略（F-32）は、接続端末がチェック時点で 1 台以上いて、前回のチェックから 256 KB 以上受信していたときだけです（接続端末がいない検証環境では動作を確認できていません。判定は単体テストで確認）。
-- アプリ別の通信量（F-35）は OS の記録（2 時間単位でまとめられる）から読むので、短い時間の内訳は目安です。「使用状況へのアクセス」がないと使えません。
-- 回線方式（F-31）は案内だけです。VoLTE の状態は Android 10 では読めません。
-
-## 更新・アンインストール・ビルド
-
-- **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
-  - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
-- **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。単体テストは `gradlew testDebugUnitTest`。
-  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。
-
-## この端末で行った ADB 事前設定（2026-10-16）
-
-- 変更したもの：電池の最適化からの除外、「電話」の権限、画面消灯までの時間（30 分 → 30 秒）。
-- 画面消灯 30 秒は、PIN ロックがすぐかかって操作しづらいため、**元の 30 分に戻しました**。この経験から、スクリプトは画面ロックのある端末では画面消灯の時間を変えないように修正しています。
-- その他の項目（自動 OFF・常時スキャン・充電中スリープ）は、元から推奨値でした。
-- 2026-10-17（第 2 段階）：`-Apply -RestrictApps -KeepApps com.google.android.verifier` を適用しました。変わったのは「持ち上げて画面を点灯」「ダブルタップで画面を点灯」（1 → 0）、「モバイルデータを常に ON」（1 → 0）、通知・持ち上げ・タップでの点灯（未設定 → 0）と、Android System Key Verifier・Android System SafetyCore のバックグラウンド制限（使用頻度 rare）です。位置情報は元から OFF でした。Android Developer Verifier（アプリのインストール時の確認）は、省電力の効果がほぼなく確認処理に影響しうるため除外しています。適用後もモバイル回線・テザリング・接続検証は正常でした。
-- 2026-10-17（第 3 段階）：`-Apply -AllowAutoSwitch` で、このアプリに「使用状況へのアクセス」と「設定変更の権限」を付けました（OS の設定値は変わっていません。自動切り替えの機能はアプリの設定で OFF のままです）。
-- 2026-10-17（第 4 段階）：v0.5.0 に更新し、`-Apply -AllowTetherControl` で、このアプリに「システム設定の変更」を許可しました（OS の設定値は変わっていません）。時間帯スケジュールで 3 分間テザリングを止めて再開する試験をしたあと、アプリの「使わない時間帯」は空欄、「使わない時間帯はテザリングを止める」は OFF に戻しています（許可は残しています。使うときは設定で時間帯を入れて ON にするだけです）。外部への通知・スマートプラグは OFF のままです。
-- 2026-10-17（v0.5.1）：バッテリーセーバー ON・画面 OFF の試験（利用者が USB を抜いてクイック設定で ON）のあと、バッテリーセーバーが次のバッテリー駆動で自動で ON にならないよう、OS が立てた `low_power_sticky` を元（未設定）に戻しました（OS が `0` として書き直しています）。v0.5.1 に更新しました。
-- 変更前の値は `tools/backup/adb-setup-backup-<シリアル番号>.json` に保存しています（`-Restore` で戻せます）。
+For build instructions, design notes and test records, see `developer-memo.md` (Japanese).

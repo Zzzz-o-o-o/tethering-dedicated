@@ -17,18 +17,30 @@ object TetherControl {
     /** ConnectivityManager.TETHERING_WIFI（非公開の定数） */
     private const val TETHERING_WIFI = 0
 
-    enum class Reason(val label: String) {
-        NO_PERMISSION("「システム設定の変更」が許可されていません"),
-        BLOCKED("OS の制限で、アプリからは呼べません"),
-        NOT_SUPPORTED("この端末・回線では、アプリからテザリングを切り替えられません"),
-        REFUSED("OS がテザリングの開始を断りました"),
-        ERROR("切り替えに失敗しました"),
+    enum class Reason(private val tx: Tx) {
+        NO_PERMISSION(
+            Tx(
+                "「システム設定の変更」が許可されていません", "\"Modify system settings\" is not allowed",
+                "« Modifier les paramètres système » n'est pas autorisé",
+            ),
+        ),
+        BLOCKED(Tx("OS の制限で、アプリからは呼べません", "Blocked by the system for apps", "Bloqué par le système pour les applications")),
+        NOT_SUPPORTED(
+            Tx(
+                "この端末・回線では、アプリからテザリングを切り替えられません", "This phone or line doesn't let apps switch the hotspot",
+                "Ce téléphone ou cette ligne ne permet pas aux applications de commander le point d'accès",
+            ),
+        ),
+        REFUSED(Tx("OS がテザリングの開始を断りました", "The system refused to start the hotspot", "Le système a refusé de démarrer le point d'accès")),
+        ERROR(Tx("切り替えに失敗しました", "Switching failed", "La bascule a échoué"));
+
+        val label: String get() = tx.get()
     }
 
     /** 失敗の理由。成功なら null */
     data class Result(val reason: Reason?, val detail: String = "") {
         val ok: Boolean get() = reason == null
-        val text: String get() = reason?.let { r -> r.label + if (detail.isNotEmpty()) "（$detail）" else "" } ?: "OK"
+        val text: String get() = reason?.let { r -> r.label + if (detail.isNotEmpty()) Fmt.paren(detail) else "" } ?: "OK"
     }
 
     private val OK = Result(null)
@@ -38,7 +50,7 @@ object TetherControl {
     /** 切り替えられるかを、テザリングを止めずに確かめる（OS の isTetheringSupported は権限も確認する） */
     fun probe(ctx: Context): Result {
         if (!permitted(ctx)) return Result(Reason.NO_PERMISSION)
-        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return Result(Reason.ERROR, "ConnectivityManager なし")
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return Result(Reason.ERROR, "no ConnectivityManager")
         return try {
             val supported = ConnectivityManager::class.java.getMethod("isTetheringSupported").invoke(cm) as Boolean
             if (supported) OK else Result(Reason.NOT_SUPPORTED)
@@ -49,7 +61,7 @@ object TetherControl {
 
     fun stop(ctx: Context): Result {
         if (!permitted(ctx)) return Result(Reason.NO_PERMISSION)
-        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return Result(Reason.ERROR, "ConnectivityManager なし")
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return Result(Reason.ERROR, "no ConnectivityManager")
         return try {
             ConnectivityManager::class.java.getMethod("stopTethering", Int::class.javaPrimitiveType).invoke(cm, TETHERING_WIFI)
             OK
@@ -64,7 +76,7 @@ object TetherControl {
      */
     fun start(ctx: Context, done: (Result) -> Unit) {
         if (!permitted(ctx)) return done(Result(Reason.NO_PERMISSION))
-        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return done(Result(Reason.ERROR, "ConnectivityManager なし"))
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return done(Result(Reason.ERROR, "no ConnectivityManager"))
         val main = Handler(Looper.getMainLooper())
         try {
             val cb = TetherStartCallback { started -> done(if (started) OK else Result(Reason.REFUSED)) }

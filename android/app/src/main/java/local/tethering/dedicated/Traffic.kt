@@ -13,7 +13,7 @@ data class QuietHours(val startHour: Int, val endHour: Int, val startMinute: Int
     private val startOfDay: Int get() = startHour * 60 + startMinute
     private val endOfDay: Int get() = endHour * 60 + endMinute
 
-    val label: String get() = "$startHour:${pad(startMinute)}〜$endHour:${pad(endMinute)}"
+    val label: String get() = "$startHour:${pad(startMinute)}" + tr("〜", "–", "–") + endLabel
 
     /** 終わりの時刻（例: 6:00） */
     val endLabel: String get() = "$endHour:${pad(endMinute)}"
@@ -258,8 +258,12 @@ object TrafficMath {
         return Day(day, hours)
     }
 
-    /** 時間帯別の CSV の見出しと行 */
-    val CSV_HEADER = listOf("日付", "時", "モバイル通信KB", "うち接続端末なしKB")
+    /** 時間帯別の CSV の見出し（書き出すときだけ作るので、表示の言語で作る）と行 */
+    val CSV_HEADER: List<String>
+        get() = listOf(
+            tr("日付", "Date", "Date"), tr("時", "Hour", "Heure"), tr("モバイル通信KB", "Mobile data KB", "Données mobiles Ko"),
+            tr("うち接続端末なしKB", "Of which no devices KB", "Dont sans appareil Ko"),
+        )
 
     fun csvRows(d: Day): List<List<String>> = d.hours.map { h ->
         listOf(

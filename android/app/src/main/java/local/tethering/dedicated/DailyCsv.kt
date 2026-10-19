@@ -64,18 +64,21 @@ class DailyCsv(private val dir: File, private val prefix: String, val header: Li
     fun rowsOfDay(yyyyMMdd: String): List<List<String>> =
         File(dir, "$prefix$yyyyMMdd.csv").takeIf { it.exists() }?.let { rowsOf(it) }.orEmpty()
 
-    /** すべての行を 1 つの CSV に書き出す（Excel で文字化けしないよう BOM 付き UTF-8）。戻り値は行数 */
-    fun export(out: OutputStream): Int {
+    /**
+     * すべての行を 1 つの CSV に書き出す（Excel で文字化けしないよう BOM 付き UTF-8）。戻り値は行数。
+     * 保存するファイルの見出しと値は言語によらず同じなので、書き出すときに [exportHeader] と [transform] で今の言語にする
+     */
+    fun export(out: OutputStream, exportHeader: List<String> = header, transform: ((List<String>) -> List<String>)? = null): Int {
         var rows = 0
         out.bufferedWriter(Charsets.UTF_8).use { w ->
             w.write("\uFEFF")
-            w.write(Csv.line(header))
+            w.write(Csv.line(exportHeader))
             w.write("\n")
             for (file in files()) {
                 file.bufferedReader(Charsets.UTF_8).useLines { lines ->
                     lines.forEach { s ->
                         if (s.isBlank() || isHeader(s)) return@forEach
-                        w.write(s)
+                        w.write(if (transform == null) s else Csv.line(transform(Csv.parseLine(s))))
                         w.write("\n")
                         rows++
                     }

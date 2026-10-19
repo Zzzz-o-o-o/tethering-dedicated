@@ -42,26 +42,30 @@ object Bands {
 
     /** 国内での呼び方（例: B3 は「1.7GHz帯」） */
     private val japanNames = mapOf(
-        1 to "2.1GHz帯",
-        3 to "1.7GHz帯",
-        8 to "900MHz帯",
-        11 to "1.5GHz帯",
-        18 to "800MHz帯",
-        19 to "800MHz帯",
-        21 to "1.5GHz帯",
-        26 to "800MHz帯",
-        28 to "700MHz帯",
-        41 to "2.5GHz帯",
-        42 to "3.5GHz帯",
+        1 to "2.1GHz",
+        3 to "1.7GHz",
+        8 to "900MHz",
+        11 to "1.5GHz",
+        18 to "800MHz",
+        19 to "800MHz",
+        21 to "1.5GHz",
+        26 to "800MHz",
+        28 to "700MHz",
+        41 to "2.5GHz",
+        42 to "3.5GHz",
     )
 
     data class LteBand(val band: Int, val dlMhz: Double) {
         val label: String
             get() {
                 val name = japanNames[band] ?: String.format(Locale.US, "%.0fMHz", dlMhz)
-                return "B$band（$name）"
+                val spaced = name.replace("GHz", " GHz").replace("MHz", " MHz")
+                return tr("B$band（${name}帯）", "B$band ($spaced)", "B$band (${spaced.replace('.', ',')})")
             }
     }
+
+    /** 保存された表示名（言語によって形が違う）から、バンドの番号だけを取り出す（例: B41） */
+    fun key(label: String?): String? = label?.let { Regex("""^B\d+""").find(it)?.value }
 
     fun lteBand(earfcn: Int): LteBand? {
         val r = lte.firstOrNull { earfcn in it.nOffs..it.last } ?: return null

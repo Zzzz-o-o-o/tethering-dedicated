@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lang_code">fr</string>
+    <string name="app_name">Tethering Dedicated</string>
+    <string name="title_settings">Paramètres</string>
+    <string name="title_guide">Guide de configuration</string>
+    <string name="title_apps">Liste des applications</string>
+    <string name="title_diagnostics">Diagnostic</string>
+    <string name="title_experiment">Test comparatif</string>
+    <string name="title_report">Rapport quotidien</string>
+    <string name="title_placement">Assistant d\'emplacement</string>
+    <string name="title_traffic">Trafic par heure</string>
+    <string name="title_client_guide">Guide des appareils connectés</string>
+    <string name="title_analysis">Analyse de la consommation</string>
+    <string name="channel_monitor">Surveillance</string>
+    <string name="channel_monitor_desc">Notification permanente du service de surveillance (sans son ni vibration)</string>
+    <string name="channel_alert">Erreurs et alertes</string>
+    <string name="channel_alert_desc">Erreurs de la ligne mobile, d\'Internet et du point d\'accès ; alertes de température et de batterie</string>
+    <string name="channel_info">Informations</string>
+    <string name="channel_info_desc">Avis de rétablissement et résultats de la vérification après redémarrage</string>
+</resources>

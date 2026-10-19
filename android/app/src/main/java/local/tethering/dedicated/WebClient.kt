@@ -55,9 +55,9 @@ object WebClient {
         val permanent: Boolean get() = code != null && code in 400..499 && code != 408 && code != 429
 
         val text: String get() = when {
-            ok -> "OK（HTTP $code）"
+            ok -> "OK" + Fmt.paren("HTTP $code")
             code != null -> "HTTP $code"
-            else -> error ?: "失敗"
+            else -> error ?: tr("失敗", "Failed", "Échec")
         }
     }
 
@@ -93,11 +93,11 @@ object WebClient {
     }
 
     fun reason(e: Throwable): String = when (e) {
-        is SocketTimeoutException -> "タイムアウト"
-        is UnknownHostException -> "名前解決できない"
-        is ConnectException -> "接続できない"
-        is SSLException -> "TLS エラー"
-        is IOException -> "通信エラー（${e.javaClass.simpleName}）"
+        is SocketTimeoutException -> tr("タイムアウト", "Timed out", "Délai dépassé")
+        is UnknownHostException -> tr("名前解決できない", "Host not found", "Hôte introuvable")
+        is ConnectException -> tr("接続できない", "Can't connect", "Connexion impossible")
+        is SSLException -> tr("TLS エラー", "TLS error", "Erreur TLS")
+        is IOException -> tr("通信エラー", "Network error", "Erreur réseau") + Fmt.paren(e.javaClass.simpleName)
         else -> e.javaClass.simpleName
     }
 }

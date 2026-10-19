@@ -38,7 +38,10 @@ class LocalServer(private val ctx: Context, private val render: (String) -> Http
     fun update(enabled: Boolean, apIface: String?, port: Int, onStatus: (WebStatus) -> Unit) {
         runCatching {
             control.execute {
-                val st = runCatching { apply(enabled, apIface, port) }.getOrElse { WebStatus(null, "開始できません（${it.javaClass.simpleName}）") }
+                val st = runCatching { apply(enabled, apIface, port) }.getOrElse { e ->
+                    val x = e.javaClass.simpleName
+                    WebStatus(null, tr("開始できません（$x）", "Can't start ($x)", "Démarrage impossible ($x)"))
+                }
                 onStatus(st)
             }
         }
@@ -55,18 +58,20 @@ class LocalServer(private val ctx: Context, private val render: (String) -> Http
     private fun apply(enabled: Boolean, apIface: String?, port: Int): WebStatus {
         if (!enabled) {
             closeServer()
-            return WebStatus(null, "OFF（設定）")
+            return WebStatus(null, tr("OFF（設定）", "Off (Settings)", "Désactivée (paramètres)"))
         }
         if (apIface == null) {
             closeServer()
-            return WebStatus(null, "テザリング ON のときに待ち受けます")
+            return WebStatus(null, tr("テザリング ON のときに待ち受けます", "Listens while the hotspot is on", "En écoute quand le point d'accès est activé"))
         }
         val (addr, prefix) = ipv4(apIface) ?: run {
             closeServer()
-            return WebStatus(null, "アクセスポイントのアドレスを待っています", retry = true)
+            return WebStatus(
+                null, tr("アクセスポイントのアドレスを待っています", "Waiting for the hotspot address", "En attente de l'adresse du point d'accès"), retry = true,
+            )
         }
         val want = Binding(apIface, addr, prefix, port)
-        if (want == bound && server?.isClosed == false) return WebStatus(want.url, "待ち受け中")
+        if (want == bound && server?.isClosed == false) return WebStatus(want.url, listening())
         closeServer()
         val ss = ServerSocket()
         try {
@@ -74,7 +79,9 @@ class LocalServer(private val ctx: Context, private val render: (String) -> Http
             ss.bind(InetSocketAddress(addr, port), 8)
         } catch (e: IOException) {
             runCatching { ss.close() }
-            return WebStatus(null, "開始できません（ポート $port が使用中など）")
+            return WebStatus(
+                null, tr("開始できません（ポート $port が使用中など）", "Can't start (port $port may be in use)", "Démarrage impossible (port $port peut-être occupé)"),
+            )
         }
         server = ss
         bound = want
@@ -82,8 +89,10 @@ class LocalServer(private val ctx: Context, private val render: (String) -> Http
             isDaemon = true
             start()
         }
-        return WebStatus(want.url, "待ち受け中")
+        return WebStatus(want.url, listening())
     }
+
+    private fun listening() = tr("待ち受け中", "Listening", "En écoute")
 
     private fun closeServer() {
         runCatching { server?.close() }
@@ -127,8 +136,10 @@ class LocalServer(private val ctx: Context, private val render: (String) -> Http
                 val req = Http.parseRequestLine(head?.lineSequence()?.firstOrNull())
                 val resp = when {
                     req == null -> Http.text(400, "Bad Request")
-                    req.method != "GET" && req.method != "HEAD" -> Http.text(405, "読み取り専用です（GET だけ受け付けます）")
-                    else -> runCatching { render(req.path) }.getOrElse { Http.text(500, "内部エラー") }
+                    req.method != "GET" && req.method != "HEAD" -> Http.text(
+                        405, tr("読み取り専用です（GET だけ受け付けます）", "Read-only (only GET is accepted)", "Lecture seule (seul GET est accepté)"),
+                    )
+                    else -> runCatching { render(req.path) }.getOrElse { Http.text(500, tr("内部エラー", "Internal error", "Erreur interne")) }
                 }
                 val out = BufferedOutputStream(sock.getOutputStream())
                 out.write(Http.headerBytes(resp))

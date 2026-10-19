@@ -65,18 +65,23 @@ class AutoSwitch(private val ctx: Context, private val prefs: Prefs) {
         val cur = applied
         val want = AutoPolicy.want(config(), p, cur)
         val out = ArrayList<String>()
-        if (want.saver != cur.saver && setSaver(want.saver)) out.add(if (want.saver) "バッテリーセーバーを ON" else "バッテリーセーバーを元に戻した")
-        if (want.doze != cur.doze && setDoze(want.doze)) out.add(if (want.doze) "Doze（省電力待機）を早めた" else "Doze の設定を元に戻した")
+        if (want.saver != cur.saver && setSaver(want.saver)) out.add(if (want.saver) saverOn() else saverRestored())
+        if (want.doze != cur.doze && setDoze(want.doze)) out.add(if (want.doze) dozeEarly() else dozeRestored())
         return out
     }
 
     /** 自動で変えたものをすべて元に戻す（設定の「自動切り替え」も OFF にするのは呼び出し側） */
     fun restoreAll(): List<String> {
         val out = ArrayList<String>()
-        if (prefs.autoSaverApplied && setSaver(false)) out.add("バッテリーセーバーを元に戻した")
-        if (prefs.autoDozeApplied && setDoze(false)) out.add("Doze の設定を元に戻した")
+        if (prefs.autoSaverApplied && setSaver(false)) out.add(saverRestored())
+        if (prefs.autoDozeApplied && setDoze(false)) out.add(dozeRestored())
         return out
     }
+
+    private fun saverOn() = tr("バッテリーセーバーを ON", "Battery Saver on", "Économiseur de batterie activé")
+    private fun saverRestored() = tr("バッテリーセーバーを元に戻した", "Battery Saver restored", "Économiseur de batterie rétabli")
+    private fun dozeEarly() = tr("Doze（省電力待機）を早めた", "Doze (deep sleep) made earlier", "Doze (veille profonde) avancé")
+    private fun dozeRestored() = tr("Doze の設定を元に戻した", "Doze settings restored", "Réglages Doze rétablis")
 
     private fun setSaver(on: Boolean): Boolean {
         if (!permitted(ctx)) return false
@@ -134,9 +139,11 @@ object ProbeSkip {
  * 接続 0 台・低残量のときの待機（仕様 F-32）。チェック間隔を長くし、状態の変化（イベント）で確認する運用にする。
  */
 object IdleMode {
-    enum class Reason(val label: String) {
-        NO_CLIENTS("接続 0 台"),
-        LOW_BATTERY("低残量"),
+    enum class Reason(private val tx: Tx) {
+        NO_CLIENTS(Tx("接続 0 台", "no devices", "aucun appareil")),
+        LOW_BATTERY(Tx("低残量", "low battery", "batterie faible"));
+
+        val label: String get() = tx.get()
     }
 
     /** 接続 0 台がこれだけ続いたら待機にする */

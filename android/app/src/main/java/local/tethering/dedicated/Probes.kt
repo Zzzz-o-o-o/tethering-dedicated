@@ -22,19 +22,15 @@ import android.telephony.ServiceState
 import android.telephony.TelephonyManager
 import java.io.File
 import java.io.FileFilter
-import java.io.IOException
 import java.io.InterruptedIOException
-import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
-import java.net.UnknownHostException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import javax.net.ssl.SSLException
 
 /** 電源・温度（仕様 F-01 / F-04 / F-15 / F-16） */
 object PowerProbe {
@@ -111,30 +107,46 @@ object TetherProbe {
 
     /** [exclude] は接続端末として数えない IP アドレス（このテザリングにつないだスマートプラグなど。仕様 F-45） */
     fun read(ctx: Context, countClients: Boolean, ap: Intent? = null, tether: Intent? = null, exclude: Set<String> = emptySet()): TetherInfo {
-        val apIntent = ap ?: sticky(ctx, ACTION_AP)
-        val apState = apIntent?.getIntExtra(EXTRA_AP_STATE, -1)?.takeIf { it >= 0 }
+        val apLookup = ap?.let { Result.success(it) } ?: sticky(ctx, ACTION_AP)
+        val apIntent = apLookup.getOrNull()
+        val apState = apStateOf(apLookup)
         val apIface = apIntent?.getStringExtra(EXTRA_AP_IFACE)?.takeIf { it.isNotEmpty() }
         val apMode = apIntent?.getIntExtra(EXTRA_AP_MODE, -1)?.takeIf { it >= 0 }
-        val active = (tether ?: sticky(ctx, ACTION_TETHER))?.getStringArrayListExtra(EXTRA_ACTIVE)?.toList()
+        val tetherLookup = tether?.let { Result.success(it) } ?: sticky(ctx, ACTION_TETHER)
+        // 放送が一度もない＝起動してから共有を始めていない
+        val active = tetherLookup.getOrNull()?.getStringArrayListExtra(EXTRA_ACTIVE)?.toList() ?: if (tetherLookup.isSuccess) emptyList() else null
         val autoOff = Os.global(ctx, KEY_SOFT_AP_TIMEOUT)?.toIntOrNull()?.let { it != 0 }
         val wifiIface = apIface ?: active?.firstOrNull { Ifaces.isWifi(it) }
         val running = apState == TetherInfo.AP_ENABLED || active?.any { Ifaces.isWifi(it) } == true
         val (clients, method) = when {
-            !countClients -> null to "数えない設定"
-            !running -> null to "テザリングOFF"
+            !countClients -> null to tr("数えない設定", "Counting is off", "Comptage désactivé")
+            !running -> null to tr("テザリングOFF", "Hotspot off", "Point d'accès désactivé")
             else -> Clients.count(wifiIface, exclude)
         }
         return TetherInfo(apState, apIface, apMode, active, clients, method, autoOff)
     }
 
-    private fun sticky(ctx: Context, action: String): Intent? =
-        runCatching { ctx.registerReceiver(null, IntentFilter(action)) }.getOrNull()
+    /** アクセスポイントの状態（TetherInfo.AP_*）だけを読む。読めなければ null（ロック解除前でも使える） */
+    fun apState(ctx: Context): Int? = apStateOf(sticky(ctx, ACTION_AP))
+
+    /**
+     * OS は状態が変わるたびに放送し、最新のものを残す。放送が一度もない（null）なら、端末の起動から状態が変わっていない。
+     * アクセスポイントは OFF で始まるので OFF とみなす（再起動の直後に「取得不可」にしないため）。読み取りに失敗したら null
+     */
+    private fun apStateOf(r: Result<Intent?>): Int? = when {
+        r.isFailure -> null
+        else -> r.getOrNull()?.getIntExtra(EXTRA_AP_STATE, -1)?.takeIf { it >= 0 } ?: TetherInfo.AP_DISABLED.takeIf { r.getOrNull() == null }
+    }
+
+    /** 最新の放送（成功して null なら、端末の起動から一度も送られていない） */
+    private fun sticky(ctx: Context, action: String): Result<Intent?> =
+        runCatching { ctx.registerReceiver(null, IntentFilter(action)) }
 }
 
 /** 接続端末数の推定。台数だけを数え、MAC アドレス・IP アドレスは保存しない */
 object Clients {
     fun count(iface: String?, exclude: Set<String> = emptySet()): Pair<Int?, String> {
-        val note = if (exclude.isEmpty()) "" else "・プラグを除く"
+        val note = if (exclude.isEmpty()) "" else tr("・プラグを除く", ", plug excluded", ", prise exclue")
         try {
             return Parsers.countArp(File("/proc/net/arp").readLines(), iface, exclude) to "ARP$note"
         } catch (_: Exception) {
@@ -144,13 +156,13 @@ object Clients {
             val p = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
             if (!p.waitFor(3, TimeUnit.SECONDS)) {
                 p.destroy()
-                return null to "取得不可（応答なし）"
+                return null to Fmt.NA + Fmt.paren(tr("応答なし", "no response", "pas de réponse"))
             }
             val out = p.inputStream.bufferedReader().use { it.readText() }
             if (p.exitValue() == 0) return Parsers.countNeigh(out, iface, exclude) to "ip neigh$note"
         } catch (_: Exception) {
         }
-        return null to "取得不可（OSの制限）"
+        return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
     }
 }
 
@@ -206,7 +218,7 @@ object LineProbe {
         when {
             // NSA の 5G は LTE が制御を担うので LTE の値を表示する
             lte != null -> {
-                type = if (nr != null) "LTE＋5G" else "LTE"
+                type = if (nr != null) tr("LTE＋5G", "LTE+5G", "LTE+5G") else "LTE"
                 rsrp = Parsers.inRange(lte.rsrp, -140..-43)
                 rsrq = Parsers.inRange(lte.rsrq, -34..3)
                 sinr = Parsers.lteSinrDb(lte.rssnr, Build.VERSION.SDK_INT)
@@ -295,12 +307,23 @@ object ConnectivityProbe {
         return cell.takeIf { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_FOREGROUND) == true }
     }
 
+    /** 確認に使った経路（言語によらない値。表示は [routeLabel]） */
+    const val ROUTE_CELLULAR = "cellular"
+
     private fun routeOf(caps: NetworkCapabilities): String = when {
-        caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
-        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "モバイル回線"
-        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "有線"
-        else -> "その他"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ROUTE_CELLULAR
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+        else -> "other"
+    }
+
+    fun routeLabel(route: String): String = when (route) {
+        "vpn" -> "VPN"
+        ROUTE_CELLULAR -> tr("モバイル回線", "Mobile line", "Ligne mobile")
+        "wifi" -> "Wi-Fi"
+        "ethernet" -> tr("有線", "Ethernet", "Ethernet")
+        else -> tr("その他", "Other", "Autre")
     }
 
     /**
@@ -342,7 +365,12 @@ object ConnectivityProbe {
         if (skipReach && ip == Tri.OK && validated == Tri.OK && Diagnosis.failure(line?.simReady, registered, ip, Tri.SKIP, Tri.SKIP) == null) {
             return CheckResult(
                 now, trigger, registered, ip, Tri.SKIP, Tri.SKIP, validated, null, null, viaCellular, route, null,
-                "インターネットに正常に到達できます（接続端末の通信が流れているため、到達確認は省略）", "", probeSkipped = true,
+                tr(
+                    "インターネットに正常に到達できます（接続端末の通信が流れているため、到達確認は省略）",
+                    "The internet is reachable (reachability check skipped because devices are using data)",
+                    "Internet est accessible (test d'accès ignoré car des appareils utilisent des données)",
+                ),
+                "", probeSkipped = true,
             )
         }
 
@@ -383,7 +411,7 @@ object ConnectivityProbe {
                 drain(conn, code)
                 httpMs = SystemClock.elapsedRealtime() - t0
                 http = if (code == prefs.int(Defs.EXPECT_CODE)) Tri.OK else Tri.NG
-                if (http == Tri.NG) details.add("HTTP: 応答コード $code")
+                if (http == Tri.NG) details.add("HTTP: " + tr("応答コード $code", "status $code", "code $code"))
             } catch (e: Exception) {
                 http = Tri.NG
                 httpReason = reason(e)
@@ -395,7 +423,10 @@ object ConnectivityProbe {
 
         val failure = Diagnosis.failure(line?.simReady, registered, ip, dns, http)
         var diagnosis = Diagnosis.text(failure, line, if (http == Tri.NG) code else null, httpReason)
-        if (failure == null && route != null && route != "モバイル回線") diagnosis += "（経路: $route）"
+        if (failure == null && route != null && route != ROUTE_CELLULAR) {
+            val r = routeLabel(route)
+            diagnosis += Fmt.paren(tr("経路: $r", "route: $r", "route : $r"))
+        }
         return CheckResult(now, trigger, registered, ip, dns, http, validated, code, httpMs, viaCellular, route, failure, diagnosis, details.joinToString(" / "))
     }
 
@@ -418,13 +449,9 @@ object ConnectivityProbe {
     private fun reason(e: Throwable): String {
         val c = if (e is ExecutionException) e.cause ?: e else e
         return when (c) {
-            is TimeoutException, is SocketTimeoutException -> "タイムアウト"
-            is UnknownHostException -> "名前解決できない"
-            is ConnectException -> "接続できない"
-            is SSLException -> "TLSエラー"
-            is InterruptedIOException -> "中断"
-            is IOException -> "通信エラー（${c.javaClass.simpleName}）"
-            else -> c.javaClass.simpleName
+            is TimeoutException -> tr("タイムアウト", "Timed out", "Délai dépassé")
+            is InterruptedIOException -> if (c is SocketTimeoutException) WebClient.reason(c) else tr("中断", "Interrupted", "Interrompu")
+            else -> WebClient.reason(c)
         }
     }
 }

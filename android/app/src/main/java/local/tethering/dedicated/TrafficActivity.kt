@@ -16,7 +16,6 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.Toast
 import java.io.OutputStream
-import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 
@@ -40,21 +39,35 @@ class TrafficActivity : Activity() {
         actionBar?.setDisplayHomeAsUpEnabled(true)
         val page = Ui.page(this)
         Ui.card(page).also { c ->
-            Ui.text(c, "モバイル回線の通信量を時間帯別に集計します。使っていないはずの時間に流れている通信を見つけるためのものです。", 13.5f)
+            Ui.text(
+                c,
+                tr(
+                    "モバイル回線の通信量を時間帯別に集計します。使っていないはずの時間に流れている通信を見つけるためのものです。",
+                    "Mobile data use by hour, to find traffic at times when nothing should be using the hotspot.",
+                    "Consommation de données mobiles par heure, pour repérer le trafic aux heures où rien ne devrait utiliser le point d'accès.",
+                ),
+                13.5f,
+            )
             Ui.small(
                 c,
-                "橙色は「接続端末なし」（テザリング OFF、またはチェック時点で接続 0 台）の通信で、この端末自身のアプリ・OS によるものです。" +
-                    "通信量はチェックなどで区切った区間ごとの値を時間で按分した目安です。",
+                tr(
+                    "橙色は「接続端末なし」（テザリング OFF、またはチェック時点で接続 0 台）の通信で、この端末自身のアプリ・OS によるものです。" +
+                        "通信量はチェックなどで区切った区間ごとの値を時間で按分した目安です。",
+                    "Orange is traffic with “no devices” (hotspot off, or no devices at check time), which comes from this phone's own apps and system. " +
+                        "Amounts are estimates: each segment between checks is spread over its hours.",
+                    "L'orange correspond au trafic « sans appareil » (point d'accès arrêté, ou aucun appareil lors de la vérification), qui provient des applications et du système de ce téléphone. " +
+                        "Les quantités sont des estimations : chaque segment entre deux vérifications est réparti sur ses heures.",
+                ),
             )
             Ui.buttonRow(
                 c,
-                "接続端末の設定" to { startActivity(Intent(this, ClientGuideActivity::class.java)) },
-                "時間帯別 CSV 保存" to { saveCsv() },
+                tr("接続端末の設定", "Client device guide", "Guide des appareils") to { startActivity(Intent(this, ClientGuideActivity::class.java)) },
+                tr("時間帯別 CSV 保存", "Save hourly CSV", "CSV par heure") to { saveCsv() },
             )
         }
         box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         page.addView(box)
-        Ui.small(box, "集計しています…")
+        Ui.small(box, tr("集計しています…", "Calculating…", "Calcul en cours…"))
         bg.execute {
             val result = runCatching { load() }.getOrElse { emptyList() }
             main.post {
@@ -85,49 +98,92 @@ class TrafficActivity : Activity() {
         return names.take(DAYS).map { TrafficMath.day(rows, it, tz) }
     }
 
-    private fun mb(kb: Double) = String.format(Locale.US, "%.1f MB", kb / 1024)
+    private fun mb(kb: Double) = Fmt.mb(kb / 1024)
 
-    private fun label(day: String) = "${day.substring(4, 6).trimStart('0')}/${day.substring(6, 8).trimStart('0')}"
+    /** 日付の短い表示（日本語・英語は 月/日、フランス語は 日/月） */
+    private fun label(day: String): String {
+        val m = day.substring(4, 6).trimStart('0')
+        val d = day.substring(6, 8).trimStart('0')
+        return tr("$m/$d", "$m/$d", "$d/$m")
+    }
 
     private fun render() {
         box.removeAllViews()
         if (days.isEmpty() || days.all { it.kb <= 0 }) {
-            Ui.card(box).also { Ui.small(it, "まだ記録がありません（チェックの区切りごとに記録します）。") }
+            Ui.card(box).also {
+                Ui.small(
+                    it,
+                    tr(
+                        "まだ記録がありません（チェックの区切りごとに記録します）。", "No records yet (recorded at each check).",
+                        "Aucun enregistrement pour l'instant (enregistré à chaque vérification).",
+                    ),
+                )
+            }
             return
         }
         val quiet = QuietHours.parse(Prefs(this).text(Defs.QUIET_HOURS))
         val today = days.first()
         Ui.card(box).also { c ->
-            Ui.heading(c, "${label(today.day)} の時間帯別")
-            Ui.text(c, "合計 ${mb(today.kb)}（うち接続端末なし ${mb(today.idleKb)}）", 14f)
+            val d = label(today.day)
+            Ui.heading(c, tr("$d の時間帯別", "$d by hour", "$d par heure"))
+            val total = mb(today.kb)
+            val idle = mb(today.idleKb)
+            Ui.text(c, tr("合計 $total（うち接続端末なし $idle）", "Total $total ($idle with no devices)", "Total $total (dont $idle sans appareil)"), 14f)
             chart(c, today.hours.map { it.kb - it.idleKb to it.idleKb })
-            Ui.small(c, "いちばん多い時間帯: ${mb(today.hours.maxOf { it.kb })}／時")
+            val peak = mb(today.hours.maxOf { it.kb })
+            Ui.small(c, tr("いちばん多い時間帯: $peak／時", "Busiest hour: $peak/h", "Heure la plus chargée : $peak/h"))
         }
         if (days.size > 1) {
             Ui.card(box).also { c ->
-                Ui.heading(c, "時間帯ごとの平均（直近 ${days.size} 日）")
+                val n = days.size
+                Ui.heading(c, tr("時間帯ごとの平均（直近 $n 日）", "Average by hour (last $n days)", "Moyenne par heure ($n derniers jours)"))
                 val avg = (0 until 24).map { h -> days.sumOf { it.hours[h].kb - it.hours[h].idleKb } / days.size to days.sumOf { it.hours[h].idleKb } / days.size }
                 chart(c, avg)
-                Ui.small(c, "毎日決まった時間に多い通信は、接続端末やアプリの自動更新・バックアップの可能性があります。")
+                Ui.small(
+                    c,
+                    tr(
+                        "毎日決まった時間に多い通信は、接続端末やアプリの自動更新・バックアップの可能性があります。",
+                        "Traffic that peaks at the same time every day may be automatic updates or backups on connected devices or apps.",
+                        "Un trafic élevé chaque jour à la même heure peut venir de mises à jour ou de sauvegardes automatiques des appareils connectés ou des applications.",
+                    ),
+                )
             }
         }
         Ui.card(box).also { c ->
-            Ui.heading(c, "日ごとの合計")
+            Ui.heading(c, tr("日ごとの合計", "Totals by day", "Totaux par jour"))
             for (d in days) {
-                val parts = mutableListOf("合計 ${mb(d.kb)}", "接続端末なし ${mb(d.idleKb)}")
+                val parts = mutableListOf(
+                    mb(d.kb).let { tr("合計 $it", "Total $it", "Total $it") },
+                    mb(d.idleKb).let { tr("接続端末なし $it", "No devices $it", "Sans appareil $it") },
+                )
                 if (quiet != null) parts.add("${quiet.label} ${mb(d.kbIn(quiet))}")
                 Ui.kv(c, label(d.day)).text = parts.joinToString("\n")
             }
-            if (quiet == null) Ui.small(c, "設定で「使わない時間帯」を決めると、その時間帯の通信も集計し、多いときに知らせます。")
+            if (quiet == null) {
+                Ui.small(
+                    c,
+                    tr(
+                        "設定で「使わない時間帯」を決めると、その時間帯の通信も集計し、多いときに知らせます。",
+                        "Set “Quiet hours” in Settings to also total the traffic during those hours and be notified when it's high.",
+                        "Définissez « Heures d'inactivité » dans les paramètres pour totaliser aussi le trafic de ces heures et être alerté s'il est élevé.",
+                    ),
+                )
+            }
         }
         Ui.card(box).also { c ->
-            Ui.heading(c, "減らすには")
+            Ui.heading(c, tr("減らすには", "How to reduce it", "Comment le réduire"))
             Ui.small(
                 c,
-                "・接続端末なしの通信が多い → この端末のアプリ（設定ガイドの「アプリのバックグラウンド制限」「自動同期」「Play ストアの自動更新」）\n" +
-                    "・使わない時間帯に多い → 接続端末の OS 更新・クラウド同期（上の「接続端末の設定」）",
+                tr(
+                    "・接続端末なしの通信が多い → この端末のアプリ（設定ガイドの「アプリのバックグラウンド制限」「自動同期」「Play ストアの自動更新」）\n" +
+                        "・使わない時間帯に多い → 接続端末の OS 更新・クラウド同期（上の「接続端末の設定」）",
+                    "• Lots of traffic with no devices → this phone's apps (“App background restrictions”, “Auto-sync” and “Play Store auto-update” in the Setup guide)\n" +
+                        "• Lots of traffic during quiet hours → system updates and cloud sync on connected devices (“Client device guide” above)",
+                    "• Beaucoup de trafic sans appareil → les applications de ce téléphone (« Restrictions d'arrière-plan des applications », « Synchronisation automatique » et « Mises à jour automatiques du Play Store » dans le guide de configuration)\n" +
+                        "• Beaucoup de trafic pendant les heures d'inactivité → mises à jour et synchronisation cloud des appareils connectés (« Guide des appareils » ci-dessus)",
+                ),
             )
-            Ui.button(c, "設定ガイドを開く") { startActivity(Intent(this, GuideActivity::class.java)) }
+            Ui.button(c, tr("設定ガイドを開く", "Open Setup guide", "Ouvrir le guide de configuration")) { startActivity(Intent(this, GuideActivity::class.java)) }
         }
     }
 
@@ -144,7 +200,7 @@ class TrafficActivity : Activity() {
         try {
             startActivityForResult(i, REQ_CSV)
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, "保存先を選ぶ画面を開けませんでした", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Ui.noPicker(), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -156,7 +212,7 @@ class TrafficActivity : Activity() {
         val snapshot = days
         bg.execute {
             val n = runCatching { contentResolver.openOutputStream(uri)?.use { writeCsv(it, snapshot) } ?: -1 }.getOrDefault(-1)
-            main.post { Toast.makeText(this, if (n >= 0) "${n}行を書き出しました" else "書き出しに失敗しました", Toast.LENGTH_SHORT).show() }
+            main.post { Toast.makeText(this, if (n >= 0) Ui.exported(n) else Ui.exportFailed(), Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -214,7 +270,7 @@ class BarChartView(ctx: Context) : View(ctx) {
             val hOther = (v.first / max * chartH).toFloat()
             if (hIdle > 0) canvas.drawRect(x, chartH - hIdle, x + bw, chartH, pIdle)
             if (hOther > 0) canvas.drawRect(x, chartH - hIdle - hOther, x + bw, chartH - hIdle, pOther)
-            if (i % 6 == 0) canvas.drawText("${i}時", x, height - sp(2f), pText)
+            if (i % 6 == 0) canvas.drawText(tr("${i}時", "$i:00", "${i} h"), x, height - sp(2f), pText)
         }
         canvas.drawLine(0f, chartH, width.toFloat(), chartH, pAxis)
     }

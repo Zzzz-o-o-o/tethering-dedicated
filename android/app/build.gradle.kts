@@ -20,8 +20,8 @@ android {
         // Android 11 以降で厳しくなった制限（設定値の読み取り・パッケージ一覧など）の影響を受けないようにする
         minSdk = 29
         targetSdk = 29
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 8
+        versionName = "0.7.0"
     }
 
     signingConfigs {
@@ -56,7 +56,8 @@ android {
     lint {
         // ADB 導入専用（Play 配布しない）ため、Play のポリシー由来の指摘は対象外にする:
         // targetSdk 29 は意図的（上記）、電池の最適化からの除外依頼は監視アプリとして必要
-        disable += listOf("ExpiredTargetSdkVersion", "OldTargetApi", "BatteryLife")
+        // 画面の文言は文字列リソースではなく I18n.kt の tr()（日本語・英語・フランス語）で切り替えるので、SetTextI18n も対象外
+        disable += listOf("ExpiredTargetSdkVersion", "OldTargetApi", "BatteryLife", "SetTextI18n")
     }
 
     testOptions {

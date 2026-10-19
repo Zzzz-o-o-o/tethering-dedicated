@@ -22,6 +22,8 @@ object Ui {
 
     /** スクロールする縦並びのページを作り、Activity に設定する */
     fun page(a: Activity): LinearLayout {
+        // 端末の言語が変わると画面は作り直されるので、ここで表示の言語を合わせる
+        I18n.sync(a.resources)
         val scroll = ScrollView(a)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
@@ -176,6 +178,18 @@ object Ui {
     fun spacer(parent: LinearLayout, heightDp: Int) {
         parent.addView(View(parent.context), LinearLayout.LayoutParams(1, dp(parent.context, heightDp)))
     }
+
+    // ---- 画面で共通の言い回し ----
+
+    fun cancel() = tr("キャンセル", "Cancel", "Annuler")
+
+    fun close() = tr("閉じる", "Close", "Fermer")
+
+    fun noPicker() = tr("保存先を選ぶ画面を開けませんでした", "Couldn't open the file picker", "Impossible d'ouvrir le sélecteur de fichiers")
+
+    fun exported(rows: Int) = tr("${rows}行を書き出しました", "Exported $rows rows", "$rows lignes exportées")
+
+    fun exportFailed() = tr("書き出しに失敗しました", "Export failed", "Échec de l'export")
 
     fun statusColor(o: Overall): Int = when (o) {
         Overall.OK -> R.color.status_ok

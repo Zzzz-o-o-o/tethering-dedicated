@@ -23,8 +23,9 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!Prefs(context).monitoring) return
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, "android.intent.action.QUICKBOOT_POWERON" ->
-                MonitorService.send(context, MonitorService.ACTION_BOOT)
+            // BOOT_COMPLETED は OS だけが送れるので、起動からの時間によらず本物の起動として扱う（画面ロックの解除が遅れると遅く届く）
+            Intent.ACTION_BOOT_COMPLETED -> MonitorService.send(context, MonitorService.ACTION_BOOT, trustedBoot = true)
+            "android.intent.action.QUICKBOOT_POWERON" -> MonitorService.send(context, MonitorService.ACTION_BOOT)
             Intent.ACTION_MY_PACKAGE_REPLACED ->
                 MonitorService.send(context, MonitorService.ACTION_START)
         }

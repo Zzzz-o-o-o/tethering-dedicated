@@ -37,7 +37,7 @@ object PowerStore {
     fun days(ctx: Context): List<String> =
         io.submit<List<String>> { csv(ctx).files().map { it.name.removePrefix("power-").removeSuffix(".csv") }.reversed() }.get()
 
-    fun export(ctx: Context, out: OutputStream): Int = io.submit<Int> { csv(ctx).export(out) }.get()
+    fun export(ctx: Context, out: OutputStream): Int = io.submit<Int> { csv(ctx).export(out, PowerRow.exportHeader, PowerRow::exportRow) }.get()
 
     fun clear(ctx: Context) {
         io.submit { csv(ctx).clear() }.get()

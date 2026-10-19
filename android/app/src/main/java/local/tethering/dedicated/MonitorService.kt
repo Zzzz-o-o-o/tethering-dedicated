@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -22,6 +23,7 @@ import android.telephony.TelephonyManager
  * 状態変化はイベント（ブロードキャスト・コールバック）で受け取り、定期チェックはアラームで低頻度に行う。
  * OS 標準のテザリング機能は読むだけ。例外は利用者が時間帯スケジュール（仕様 F-37）を ON にしたときで、
  * そのときだけテザリングを止め、決めた時刻に再開する（監視を止めるときは、止めていたテザリングを再開する）。
+ * 起動時のテザリング ON（v0.7.0）は、ロック解除前にも動くよう、このサービスとは別の受信先（BootTether）で行う。
  */
 class MonitorService : Service() {
     companion object {
@@ -37,13 +39,16 @@ class MonitorService : Service() {
         const val ACTION_EXP_ABORT = "local.tethering.dedicated.EXP_ABORT"
         const val ACTION_AUTO_RESTORE = "local.tethering.dedicated.AUTO_RESTORE"
         const val EXTRA_UNTIL = "until"
+        const val EXTRA_TRUSTED_BOOT = "trusted_boot"
         const val EXTRA_CANDIDATE = "candidate"
         const val EXTRA_LABEL_A = "label_a"
         const val EXTRA_LABEL_B = "label_b"
 
-        fun send(ctx: Context, action: String, until: Long? = null) {
+        /** [trustedBoot] は OS だけが送れる起動の通知（BOOT_COMPLETED）で起こされたとき */
+        fun send(ctx: Context, action: String, until: Long? = null, trustedBoot: Boolean = false) {
             val i = Intent(ctx, MonitorService::class.java).setAction(action)
             if (until != null) i.putExtra(EXTRA_UNTIL, until)
+            if (trustedBoot) i.putExtra(EXTRA_TRUSTED_BOOT, true)
             ctx.startForegroundService(i)
         }
 
@@ -103,7 +108,7 @@ class MonitorService : Service() {
         }
         Notifier.update(this, StateStore.state)
         when (intent?.action) {
-            ACTION_BOOT -> m.ensureStarted(boot = true)
+            ACTION_BOOT -> m.ensureStarted(boot = true, trustedBoot = intent.getBooleanExtra(EXTRA_TRUSTED_BOOT, false))
             ACTION_ALARM -> {
                 m.ensureStarted(boot = false, initialCheck = false)
                 m.onAlarm()
@@ -149,6 +154,12 @@ class MonitorService : Service() {
         monitor?.close()
         monitor = null
         super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 端末の言語が変わったら、状態の表示と常駐通知を新しい言語で作り直す
+        monitor?.onLanguageChanged()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

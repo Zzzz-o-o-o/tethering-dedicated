@@ -20,7 +20,6 @@ import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
 import java.io.File
-import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
@@ -51,45 +50,94 @@ class SettingsActivity : Activity() {
         prefs = Prefs(this)
         val page = Ui.page(this)
 
-        section(page, "チェックの間隔", listOf(Defs.INTERVAL_NORMAL, Defs.INTERVAL_SAVER, Defs.TIMEOUT), texts = listOf(Defs.RECHECK))
-        section(page, "インターネット到達確認", listOf(Defs.EXPECT_CODE), bools = listOf(Defs.HTTP), texts = listOf(Defs.URL), boolsFirst = true)
-        section(page, "テザリング", emptyList(), bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS))
-        section(page, "温度・電池の警告", listOf(Defs.TEMP_WARN, Defs.TEMP_CRIT, Defs.THERMAL_WARN, Defs.BATT_LOW))
-        section(page, "通知", emptyList(), bools = listOf(Defs.NOTIFY_ALERT, Defs.NOTIFY_RECOVERY, Defs.NOTIFY_BOOT)).also { c ->
-            Ui.button(c, "通知の詳細（音・重要度）をOSの設定で変える") { SystemScreens.appNotifications(this) }
+        section(
+            page, tr("チェックの間隔", "Check interval", "Intervalle de vérification"),
+            listOf(Defs.INTERVAL_NORMAL, Defs.INTERVAL_SAVER, Defs.TIMEOUT), texts = listOf(Defs.RECHECK),
+        )
+        section(
+            page, tr("インターネット到達確認", "Internet reachability check", "Test d'accès à Internet"),
+            listOf(Defs.EXPECT_CODE), bools = listOf(Defs.HTTP), texts = listOf(Defs.URL), boolsFirst = true,
+        )
+        section(page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(), bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.TETHER_ON_BOOT)).also { c ->
+            Ui.spacer(c, 4)
+            bootStatus = Ui.small(c, "")
+            tetherControlButtons(c)
         }
-        section(page, "起動後チェック", listOf(Defs.BOOT_DELAY))
-        section(page, "消費電力の計測", listOf(Defs.BATT_CAPACITY, Defs.RUNTIME_ALERT))
-        section(page, "比較テスト", listOf(Defs.EXP_PHASE, Defs.EXP_REPEATS, Defs.EXP_MIN_GAIN))
-        section(page, "電波の悪化（設置場所）", listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true)
-        section(page, "待機中の通信", listOf(Defs.IDLE_TRAFFIC_MB))
+        section(
+            page, tr("温度・電池の警告", "Temperature and battery alerts", "Alertes de température et de batterie"),
+            listOf(Defs.TEMP_WARN, Defs.TEMP_CRIT, Defs.THERMAL_WARN, Defs.BATT_LOW),
+        )
+        section(
+            page, tr("通知", "Notifications", "Notifications"), emptyList(), bools = listOf(Defs.NOTIFY_ALERT, Defs.NOTIFY_RECOVERY, Defs.NOTIFY_BOOT),
+        ).also { c ->
+            Ui.button(
+                c,
+                tr(
+                    "通知の詳細（音・重要度）をOSの設定で変える", "Change notification details (sound, importance) in system settings",
+                    "Modifier les détails des notifications (son, importance) dans les paramètres du système",
+                ),
+            ) { SystemScreens.appNotifications(this) }
+        }
+        section(page, tr("起動後チェック", "After-reboot check", "Vérification après redémarrage"), listOf(Defs.BOOT_DELAY))
+        section(page, tr("消費電力の計測", "Power measurement", "Mesure de la consommation"), listOf(Defs.BATT_CAPACITY, Defs.RUNTIME_ALERT))
+        section(page, tr("比較テスト", "Comparison test", "Test comparatif"), listOf(Defs.EXP_PHASE, Defs.EXP_REPEATS, Defs.EXP_MIN_GAIN))
+        section(
+            page, tr("電波の悪化（設置場所）", "Signal degradation (placement)", "Dégradation du signal (emplacement)"),
+            listOf(Defs.SIGNAL_WEAK_RSRP, Defs.SIGNAL_DROP_DB), bools = listOf(Defs.SIGNAL_ALERT), boolsFirst = true,
+        )
+        section(page, tr("待機中の通信", "Idle traffic", "Trafic au repos"), listOf(Defs.IDLE_TRAFFIC_MB))
         scheduleSection(page)
-        section(page, "ローカル管理画面", listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
-        section(page, "自動切り替え（バッテリー駆動中）", listOf(Defs.AUTO_SAVER_PCT), bools = listOf(Defs.AUTO_SAVER, Defs.AUTO_DOZE), boolsFirst = true).also { c ->
+        section(page, tr("ローカル管理画面", "Local web page", "Page web locale"), listOf(Defs.WEB_PORT), bools = listOf(Defs.WEB), boolsFirst = true)
+        section(
+            page, tr("自動切り替え（バッテリー駆動中）", "Auto switching (on battery)", "Bascule automatique (sur batterie)"),
+            listOf(Defs.AUTO_SAVER_PCT), bools = listOf(Defs.AUTO_SAVER, Defs.AUTO_DOZE), boolsFirst = true,
+        ).also { c ->
             autoStatus = Ui.small(c, "")
-            Ui.button(c, "自動で変えた設定をすべて元に戻す") { confirmAutoRestore() }
+            Ui.button(c, restoreAllLabel()) { confirmAutoRestore() }
         }
-        section(page, "監視の通信を減らす", listOf(Defs.IDLE_INTERVAL, Defs.IDLE_BATT), bools = listOf(Defs.SKIP_PROBE), boolsFirst = true)
+        section(
+            page, tr("監視の通信を減らす", "Reduce monitoring traffic", "Réduire le trafic de surveillance"),
+            listOf(Defs.IDLE_INTERVAL, Defs.IDLE_BATT), bools = listOf(Defs.SKIP_PROBE), boolsFirst = true,
+        )
         plugSection(page)
         extSection(page)
-        section(page, "ログ（操作ログと電力の記録）", listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
+        section(page, tr("ログ（操作ログと電力の記録）", "Logs (event log and power records)", "Journaux (événements et consommation)"), listOf(Defs.LOG_DAYS, Defs.LOG_MB)).also { c ->
             logSize = Ui.small(c, "")
-            Ui.button(c, "ログを消去") { confirmClearLogs() }
+            Ui.button(c, tr("ログを消去", "Clear logs", "Effacer les journaux")) { confirmClearLogs() }
         }
 
-        Ui.button(page, "保存") { save() }
+        Ui.button(page, tr("保存", "Save", "Enregistrer")) { save() }
         Ui.spacer(page, 10)
 
         Ui.card(page).also { c ->
-            Ui.heading(c, "バックアップと復元")
-            Ui.small(c, "設定（運用モードを含む）を JSON ファイルに書き出し、別の端末や再インストール後に読み込めます。ログや監視の状態は含みません。")
-            Ui.button(c, "設定をファイルに保存") { saveToFile() }
-            Ui.button(c, "ファイルから復元") { openFile() }
-            undoButton = Ui.button(c, "直前の設定に戻す") { undo() }
-            Ui.button(c, "初期値に戻す") { confirmReset() }
+            Ui.heading(c, tr("バックアップと復元", "Backup and restore", "Sauvegarde et restauration"))
+            Ui.small(
+                c,
+                tr(
+                    "設定（運用モードを含む）を JSON ファイルに書き出し、別の端末や再インストール後に読み込めます。ログや監視の状態は含みません。",
+                    "Writes the settings (including the operating mode) to a JSON file that you can load on another phone or after reinstalling. Logs and monitoring state are not included.",
+                    "Écrit les paramètres (mode de fonctionnement compris) dans un fichier JSON que vous pouvez charger sur un autre téléphone ou après réinstallation. Les journaux et l'état de la surveillance ne sont pas inclus.",
+                ),
+            )
+            Ui.button(c, tr("設定をファイルに保存", "Save settings to a file", "Enregistrer les paramètres dans un fichier")) { saveToFile() }
+            Ui.button(c, restoreFileLabel()) { openFile() }
+            undoButton = Ui.button(c, undoLabel()) { undo() }
+            Ui.button(c, resetLabel()) { confirmReset() }
         }
         refreshFooter()
     }
+
+    private fun restoreAllLabel() = tr("自動で変えた設定をすべて元に戻す", "Restore everything changed automatically", "Rétablir tout ce qui a été modifié automatiquement")
+
+    private fun restoreFileLabel() = tr("ファイルから復元", "Restore from a file", "Restaurer depuis un fichier")
+
+    private fun undoLabel() = tr("直前の設定に戻す", "Undo last change", "Annuler la dernière modification")
+
+    private fun resetLabel() = tr("初期値に戻す", "Reset to defaults", "Rétablir les valeurs par défaut")
+
+    private fun sending() = tr("送っています…", "Sending…", "Envoi…")
+
+    private fun result(ok: Boolean) = if (ok) tr("成功", "Succeeded", "Réussi") else tr("失敗", "Failed", "Échec")
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {
@@ -128,7 +176,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun addInt(c: LinearLayout, d: IntDef) {
-        Ui.text(c, "${d.label}（${d.min}〜${d.max}${d.unit}）", 14f)
+        // 英語・フランス語は項目名にかっこ書きが多いので、範囲は「·」で区切る
+        Ui.text(c, d.label + tr("（${d.range}）", " · ${d.range}", " · ${d.range}"), 14f)
         if (d.help.isNotEmpty()) Ui.small(c, d.help)
         intFields[d] = Ui.numberField(c, prefs.int(d), signed = d.min < 0)
     }
@@ -141,6 +190,7 @@ class SettingsActivity : Activity() {
 
     // ---- 第 4 段階 ----
 
+    private lateinit var bootStatus: TextView
     private lateinit var schedStatus: TextView
     private lateinit var plugStatus: TextView
     private lateinit var extStatus: TextView
@@ -150,17 +200,56 @@ class SettingsActivity : Activity() {
     /** 使わない時間帯（仕様 F-33 の通信の通知と、F-37 の時間帯スケジュールで共通） */
     private fun scheduleSection(page: LinearLayout) {
         val c = Ui.card(page)
-        Ui.heading(c, "使わない時間帯（通信の通知・テザリングの停止）")
+        Ui.heading(
+            c,
+            tr(
+                "使わない時間帯（通信の通知・テザリングの停止）", "Quiet hours (traffic alerts, hotspot off)",
+                "Heures d'inactivité (alertes de trafic, arrêt du point d'accès)",
+            ),
+        )
         addText(c, Defs.QUIET_HOURS)
         addInt(c, Defs.QUIET_TRAFFIC_MB)
         addBool(c, Defs.TETHER_SCHEDULE)
+        Ui.spacer(c, 4)
         schedStatus = Ui.small(c, "")
-        Ui.button(c, "「システム設定の変更」を許可する（OS の画面）") { SystemScreens.writeSettings(this) }
-        Ui.button(c, "切り替えられるか確認する（テザリングは止めません）") {
+        tetherControlButtons(c)
+    }
+
+    /** 「システム設定の変更」の許可と、切り替えられるかの確認（起動時の ON と時間帯スケジュールで共通） */
+    private fun tetherControlButtons(c: LinearLayout) {
+        Ui.button(
+            c,
+            tr(
+                "「システム設定の変更」を許可する（OS の画面）", "Allow “Modify system settings” (system screen)",
+                "Autoriser « Modifier les paramètres système » (écran du système)",
+            ),
+        ) { SystemScreens.writeSettings(this) }
+        Ui.button(
+            c,
+            tr(
+                "切り替えられるか確認する（テザリングは止めません）", "Check that switching works (the hotspot isn't turned off)",
+                "Vérifier que la bascule fonctionne (le point d'accès n'est pas arrêté)",
+            ),
+        ) {
             val r = TetherControl.probe(this)
             AlertDialog.Builder(this)
-                .setTitle(if (r.ok) "このアプリからテザリングを切り替えられます" else "切り替えられません")
-                .setMessage(if (r.ok) "時間帯スケジュールを使えます。" else r.text)
+                .setTitle(
+                    if (r.ok) {
+                        tr("このアプリからテザリングを切り替えられます", "This app can switch the hotspot", "Cette application peut commander le point d'accès")
+                    } else {
+                        tr("切り替えられません", "Switching isn't possible", "Bascule impossible")
+                    },
+                )
+                .setMessage(
+                    if (r.ok) {
+                        tr(
+                            "起動時の ON と時間帯スケジュールを使えます。", "You can use turning it on at startup and the quiet-hours schedule.",
+                            "Vous pouvez utiliser l'activation au démarrage et la planification.",
+                        )
+                    } else {
+                        r.text
+                    },
+                )
                 .setPositiveButton("OK", null)
                 .show()
         }
@@ -169,7 +258,7 @@ class SettingsActivity : Activity() {
     /** スマートプラグ（仕様 F-45） */
     private fun plugSection(page: LinearLayout) {
         val c = Ui.card(page)
-        Ui.heading(c, "スマートプラグ（給電の切り替え）")
+        Ui.heading(c, tr("スマートプラグ（給電の切り替え）", "Smart plug (charging control)", "Prise connectée (pilotage de la charge)"))
         addBool(c, Defs.PLUG)
         Ui.text(c, Defs.PLUG_KIND.label, 14f)
         plugKind = RadioGroup(this)
@@ -186,8 +275,19 @@ class SettingsActivity : Activity() {
         addText(c, Defs.PLUG_OFF_URL)
         listOf(Defs.PLUG_LOW, Defs.PLUG_HIGH, Defs.PLUG_HOT, Defs.PLUG_FLIPBACK).forEach { addInt(c, it) }
         plugStatus = Ui.small(c, "")
-        Ui.buttonRow(c, "ON にしてみる" to { plugTest(true) }, "OFF にしてみる" to { plugTest(false) })
-        Ui.small(c, "入力中の内容で 1 回だけ送ります（保存はしません）。連携が ON のときは、数分で目標の状態に戻します。")
+        Ui.buttonRow(
+            c,
+            tr("ON にしてみる", "Try ON", "Essayer ON") to { plugTest(true) },
+            tr("OFF にしてみる", "Try OFF", "Essayer OFF") to { plugTest(false) },
+        )
+        Ui.small(
+            c,
+            tr(
+                "入力中の内容で 1 回だけ送ります（保存はしません）。連携が ON のときは、数分で目標の状態に戻します。",
+                "Sends once with what you've entered (not saved). If the feature is on, the plug is set back to its target state within minutes.",
+                "Envoie une fois avec ce que vous avez saisi (sans enregistrer). Si la fonction est activée, la prise revient à l'état visé en quelques minutes.",
+            ),
+        )
     }
 
     private fun selectedPlugKind(): String = plugKindIds[plugKind.checkedRadioButtonId] ?: prefs.text(Defs.PLUG_KIND)
@@ -197,16 +297,27 @@ class SettingsActivity : Activity() {
     private fun plugTest(on: Boolean) {
         val req = PlugUrls.request(selectedPlugKind(), field(Defs.PLUG_HOST), field(Defs.PLUG_ON_URL), field(Defs.PLUG_OFF_URL), on, 0)
         if (req == null) {
-            toast("プラグのアドレス（または URL）を入れてください")
+            toast(tr("プラグのアドレス（または URL）を入れてください", "Enter the plug's address (or URLs)", "Saisissez l'adresse de la prise (ou les URL)"))
             return
         }
-        toast("送っています…")
+        toast(sending())
         bg.execute {
             val r = WebClient.send(req.method, req.target, emptyList(), null, null, 10_000)
             main.post {
+                val onOff = if (on) "ON" else "OFF"
+                val res = result(r.ok)
                 AlertDialog.Builder(this)
-                    .setTitle("スマートプラグを ${if (on) "ON" else "OFF"}：${if (r.ok) "成功" else "失敗"}")
-                    .setMessage("${req.method} ${req.target.host}: ${r.text}" + if (r.ok) "\n給電の変化は、ダッシュボードの「給電」で確かめてください。" else "")
+                    .setTitle(tr("スマートプラグを $onOff：$res", "Smart plug $onOff: $res", "Prise connectée $onOff : $res"))
+                    .setMessage(
+                        "${req.method} ${req.target.host}: ${r.text}" + if (r.ok) {
+                            "\n" + tr(
+                                "給電の変化は、ダッシュボードの「給電」で確かめてください。", "Check the change on the main screen under “Charger”.",
+                                "Vérifiez le changement sur l'écran principal, à la ligne « Alimentation ».",
+                            )
+                        } else {
+                            ""
+                        },
+                    )
                     .setPositiveButton("OK", null)
                     .show()
             }
@@ -216,26 +327,27 @@ class SettingsActivity : Activity() {
     /** 外部への通知（仕様 F-44） */
     private fun extSection(page: LinearLayout) {
         val c = Ui.card(page)
-        Ui.heading(c, "外部への通知")
+        Ui.heading(c, extTitle())
         addBool(c, Defs.EXT_NOTIFY)
         addText(c, Defs.EXT_URL)
         addBool(c, Defs.EXT_RECOVERY)
         addBool(c, Defs.EXT_ALERT)
         extStatus = Ui.small(c, "")
-        Ui.button(c, "テスト送信（入力中の URL に 1 件送る）") {
+        Ui.button(c, tr("テスト送信（入力中の URL に 1 件送る）", "Send test (one message to the URL entered)", "Envoyer un test (un message à l'URL saisie)")) {
             val url = field(Defs.EXT_URL)
             val dest = ExtNotify.parse(url)
             if (dest == null) {
-                toast(ExtNotify.check(url) ?: "通知先の URL を入れてください")
+                toast(ExtNotify.check(url) ?: enterUrl())
                 return@button
             }
-            toast("送っています…")
+            toast(sending())
             bg.execute {
                 val r = ExtNotify.sendTest(dest, Build.MODEL ?: "Android", System.currentTimeMillis())
                 main.post {
+                    val res = result(r.ok)
                     AlertDialog.Builder(this)
-                        .setTitle("テスト送信：${if (r.ok) "成功" else "失敗"}")
-                        .setMessage("${dest.label}: ${r.text}")
+                        .setTitle(tr("テスト送信：$res", "Test: $res", "Test : $res"))
+                        .setMessage(SettingsCodec.issue(dest.label, r.text))
                         .setPositiveButton("OK", null)
                         .show()
                 }
@@ -243,20 +355,44 @@ class SettingsActivity : Activity() {
         }
     }
 
+    private fun extTitle() = tr("外部への通知", "External notifications", "Notifications externes")
+
+    private fun enterUrl() = tr("通知先の URL を入れてください", "Enter the destination URL", "Saisissez l'URL de destination")
+
     private fun refreshPhase4() {
         if (!::schedStatus.isInitialized) return
         val s = StateStore.state
         val permitted = TetherControl.permitted(this)
-        schedStatus.text = "「システム設定の変更」: ${if (permitted) "許可済み" else "未許可（時間帯スケジュールには許可が必要）"}" +
-            (s.sched?.stoppedUntil?.let { "\nいま止めています（$it に再開）" } ?: "") +
+        val permName = tr("「システム設定の変更」", "“Modify system settings”", "« Modifier les paramètres système »")
+        val allowed = tr("許可済み", "allowed", "autorisé")
+        val bootPerm = if (permitted) {
+            allowed
+        } else {
+            tr("未許可（起動時の ON には許可が必要）", "not allowed (required to turn it on at startup)", "non autorisé (nécessaire pour l'activation au démarrage)")
+        }
+        bootStatus.text = SettingsCodec.issue(permName, bootPerm) +
+            (BootTether.lastResult(this)?.let { "\n" + tr("前回の起動時: $it", "Last startup: $it", "Dernier démarrage : $it") } ?: "")
+        val perm = if (permitted) {
+            allowed
+        } else {
+            tr("未許可（時間帯スケジュールには許可が必要）", "not allowed (required for the quiet-hours schedule)", "non autorisé (nécessaire pour la planification)")
+        }
+        schedStatus.text = SettingsCodec.issue(permName, perm) +
+            (s.sched?.stoppedUntil?.let { "\n" + tr("いま止めています（$it に再開）", "Off now (back on at $it)", "Arrêté actuellement (réactivation à $it)") } ?: "") +
             (s.sched?.note?.let { "\n$it" } ?: "")
         plugStatus.text = s.plug?.let { p ->
-            "目標: ${p.want?.let { if (it) "ON" else "OFF" } ?: "未定（範囲の中）"}${p.why?.let { "（$it）" } ?: ""}・範囲 ${p.range}" +
-                (p.lastResult?.let { "\n直近: $it" } ?: "") + if (p.stuck) "\n⚠ 給電の状態が目標と合いません" else ""
-        } ?: "連携: OFF"
+            val target = p.want?.let { if (it) "ON" else "OFF" } ?: tr("未定（範囲の中）", "none (within range)", "aucune (dans la plage)")
+            val why = p.why?.let { Fmt.paren(it) } ?: ""
+            tr("目標: $target$why・範囲 ${p.range}", "Target: $target$why · range ${p.range}", "Cible : $target$why · plage ${p.range}") +
+                (p.lastResult?.let { "\n" + tr("直近: $it", "Last: $it", "Dernier : $it") } ?: "") +
+                if (p.stuck) "\n⚠ " + tr("給電の状態が目標と合いません", "Charging doesn't match the target", "La charge ne correspond pas à la cible") else ""
+        } ?: tr("連携: OFF", "Feature: OFF", "Fonction : désactivée")
         extStatus.text = s.ext?.let { e ->
-            "送り先: ${e.dest ?: "URL が正しくありません"}" + (if (e.pending > 0) "・未送信 ${e.pending}件" else "") + (e.lastResult?.let { "\n直近: $it" } ?: "")
-        } ?: "外部への通知: OFF"
+            val dest = e.dest ?: tr("URL が正しくありません", "invalid URL", "URL non valide")
+            tr("送り先: $dest", "Destination: $dest", "Destination : $dest") +
+                (if (e.pending > 0) e.pending.let { tr("・未送信 ${it}件", " · $it unsent", " · $it non envoyé(s)") } else "") +
+                (e.lastResult?.let { "\n" + tr("直近: $it", "Last: $it", "Dernier : $it") } ?: "")
+        } ?: tr("外部への通知: OFF", "External notifications: OFF", "Notifications externes : désactivées")
     }
 
     private fun addBool(c: LinearLayout, d: BoolDef) {
@@ -271,16 +407,37 @@ class SettingsActivity : Activity() {
 
     private fun refreshAuto() {
         val permitted = AutoSwitch.permitted(this)
-        val applied = listOfNotNull("バッテリーセーバー".takeIf { prefs.autoSaverApplied }, "Doze".takeIf { prefs.autoDozeApplied })
-        autoStatus.text = (if (permitted) "設定変更の権限: 付与済み" else "設定変更の権限: なし（PC から tools\\adb-setup.bat -Apply -AllowAutoSwitch で付与すると動きます）") +
-            "\nいま自動で変えているもの: " + applied.ifEmpty { listOf("なし") }.joinToString("・")
+        val applied = listOfNotNull(
+            tr("バッテリーセーバー", "Battery Saver", "Économiseur de batterie").takeIf { prefs.autoSaverApplied },
+            "Doze".takeIf { prefs.autoDozeApplied },
+        )
+        autoStatus.text = (
+            if (permitted) {
+                tr("設定変更の権限: 付与済み", "Settings permission: granted", "Autorisation de modifier les paramètres : accordée")
+            } else {
+                tr(
+                    "設定変更の権限: なし（PC から tools\\adb-setup.bat -Apply -AllowAutoSwitch で付与すると動きます）",
+                    "Settings permission: none (grant it from a PC with tools\\adb-setup.bat -Apply -AllowAutoSwitch)",
+                    "Autorisation de modifier les paramètres : non (accordez-la depuis un PC avec tools\\adb-setup.bat -Apply -AllowAutoSwitch)",
+                )
+            }
+            ) + "\n" + SettingsCodec.issue(
+            tr("いま自動で変えているもの", "Changed automatically now", "Modifié automatiquement maintenant"),
+            Fmt.join(applied.ifEmpty { listOf(tr("なし", "none", "rien")) }),
+        )
     }
 
     private fun confirmAutoRestore() {
         AlertDialog.Builder(this)
-            .setTitle("自動で変えた設定をすべて元に戻しますか？")
-            .setMessage("バッテリーセーバーと Doze の設定を、自動で変える前の値に戻し、自動切り替えを OFF にします。")
-            .setPositiveButton("元に戻す") { _, _ ->
+            .setTitle(tr("自動で変えた設定をすべて元に戻しますか？", "Restore everything changed automatically?", "Rétablir tout ce qui a été modifié automatiquement ?"))
+            .setMessage(
+                tr(
+                    "バッテリーセーバーと Doze の設定を、自動で変える前の値に戻し、自動切り替えを OFF にします。",
+                    "Battery Saver and Doze settings go back to their values from before the automatic change, and auto switching is turned off.",
+                    "Les réglages de l'économiseur de batterie et de Doze reprennent leurs valeurs d'avant la modification automatique, et la bascule automatique est désactivée.",
+                ),
+            )
+            .setPositiveButton(tr("元に戻す", "Restore", "Rétablir")) { _, _ ->
                 if (prefs.monitoring) {
                     MonitorService.send(this, MonitorService.ACTION_AUTO_RESTORE)
                 } else {
@@ -290,10 +447,10 @@ class SettingsActivity : Activity() {
                 }
                 boolFields[Defs.AUTO_SAVER]?.isChecked = false
                 boolFields[Defs.AUTO_DOZE]?.isChecked = false
-                toast("元に戻しました")
+                toast(tr("元に戻しました", "Restored", "Rétabli"))
                 main.postDelayed({ refreshAuto() }, 500L)
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(Ui.cancel(), null)
             .show()
     }
 
@@ -306,7 +463,8 @@ class SettingsActivity : Activity() {
             val bytes = LogStore.totalBytes(this) + PowerStore.totalBytes(this)
             val hasBefore = File(filesDir, BEFORE_FILE).exists()
             main.post {
-                logSize.text = "現在のログ: " + String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+                val size = Fmt.dec(bytes / 1024.0) + tr(" KB", " KB", " Ko")
+                logSize.text = tr("現在のログ: $size", "Current logs: $size", "Journaux actuels : $size")
                 undoButton.isEnabled = hasBefore
             }
         }
@@ -319,15 +477,19 @@ class SettingsActivity : Activity() {
         val errors = ArrayList<String>()
         for ((d, e) in intFields) {
             val n = e.text.toString().trim().toIntOrNull()
-            if (n == null || n !in d.min..d.max) errors.add("${d.label}: ${d.min}〜${d.max}${d.unit} で入力してください")
-            else values[d.key] = n
+            if (n == null || n !in d.min..d.max) {
+                val r = d.range
+                errors.add(SettingsCodec.issue(d.label, tr("$r で入力してください", "enter $r", "saisissez $r")))
+            } else {
+                values[d.key] = n
+            }
         }
         for ((d, s) in boolFields) values[d.key] = s.isChecked
         for ((d, e) in textFields) {
             // 全角の数字・記号でも受け付ける（例: １－６）
             val v = Fmt.halfWidth(e.text.toString()).trim()
             val reason = d.check(v)
-            if (reason != null) errors.add("${d.label}: $reason") else values[d.key] = v
+            if (reason != null) errors.add(SettingsCodec.issue(d.label, reason)) else values[d.key] = v
         }
         values[Defs.PLUG_KIND.key] = selectedPlugKind()
         // 連携を ON にするなら、送り先がないと動かない
@@ -338,10 +500,21 @@ class SettingsActivity : Activity() {
             } else {
                 (values[Defs.PLUG_HOST.key] as? String).orEmpty().isNotEmpty()
             }
-            if (!ok) errors.add("スマートプラグ: ${if (kind == PlugUrls.CUSTOM) "ON と OFF の URL" else "プラグのアドレス"}を入れてください")
+            if (!ok) {
+                errors.add(
+                    SettingsCodec.issue(
+                        tr("スマートプラグ", "Smart plug", "Prise connectée"),
+                        if (kind == PlugUrls.CUSTOM) {
+                            tr("ON と OFF の URL を入れてください", "enter the ON and OFF URLs", "saisissez les URL ON et OFF")
+                        } else {
+                            tr("プラグのアドレスを入れてください", "enter the plug's address", "saisissez l'adresse de la prise")
+                        },
+                    ),
+                )
+            }
         }
         if (values[Defs.EXT_NOTIFY.key] == true && (values[Defs.EXT_URL.key] as? String).orEmpty().isEmpty()) {
-            errors.add("外部への通知: 通知先の URL を入れてください")
+            errors.add(SettingsCodec.issue(extTitle(), tr("通知先の URL を入れてください", "enter the destination URL", "saisissez l'URL de destination")))
         }
         return values to errors
     }
@@ -349,23 +522,28 @@ class SettingsActivity : Activity() {
     private fun save() {
         val (values, errors) = collect()
         if (errors.isNotEmpty()) {
-            AlertDialog.Builder(this).setTitle("入力を確認してください").setMessage(errors.joinToString("\n")).setPositiveButton("OK", null).show()
+            AlertDialog.Builder(this)
+                .setTitle(tr("入力を確認してください", "Please check your input", "Vérifiez votre saisie"))
+                .setMessage(errors.joinToString("\n"))
+                .setPositiveButton("OK", null)
+                .show()
             return
         }
         val changes = SettingsCodec.describeChanges(prefs.values(), values)
         if (changes.isEmpty()) {
-            toast("変更はありません")
+            toast(tr("変更はありません", "No changes", "Aucune modification"))
             return
         }
         applyValues(values, Ev.SETTINGS, changes)
-        toast("保存しました")
+        toast(tr("保存しました", "Saved", "Enregistré"))
     }
 
     /** 変更前の設定を残してから反映する（巻き戻し用） */
     private fun applyValues(values: Map<String, Any>, event: String, changes: List<String>) {
         writeBefore()
         prefs.apply(values)
-        LogStore.write(this, event, StateStore.state, result = "${changes.size}件", detail = changes.joinToString(" / "))
+        val n = changes.size
+        LogStore.write(this, event, StateStore.state, result = tr("${n}件", "$n change(s)", "$n modification(s)"), detail = changes.joinToString(" / "))
         notifyService()
         refreshFooter()
     }
@@ -401,7 +579,7 @@ class SettingsActivity : Activity() {
         try {
             startActivityForResult(i, req)
         } catch (_: ActivityNotFoundException) {
-            toast("ファイルを選ぶ画面を開けませんでした")
+            toast(tr("ファイルを選ぶ画面を開けませんでした", "Couldn't open the file picker", "Impossible d'ouvrir le sélecteur de fichiers"))
         }
     }
 
@@ -415,13 +593,18 @@ class SettingsActivity : Activity() {
                 val ok = runCatching {
                     contentResolver.openOutputStream(uri)?.use { it.write(prefs.toJson().toString(2).toByteArray(Charsets.UTF_8)) } != null
                 }.getOrDefault(false)
-                main.post { toast(if (ok) "設定を保存しました" else "保存に失敗しました") }
+                main.post {
+                    toast(if (ok) tr("設定を保存しました", "Settings saved", "Paramètres enregistrés") else tr("保存に失敗しました", "Couldn't save", "Échec de l'enregistrement"))
+                }
             }
             REQ_OPEN -> bg.execute {
                 val parsed = runCatching { parseBackup(readText(uri)) }
                 main.post {
-                    parsed.onSuccess { confirmRestore(it, "ファイルから復元") }
-                        .onFailure { toast("読み込めませんでした：${it.message ?: it.javaClass.simpleName}") }
+                    parsed.onSuccess { confirmRestore(it, restoreFileLabel()) }
+                        .onFailure { e ->
+                            val m = e.message ?: e.javaClass.simpleName
+                            toast(tr("読み込めませんでした：$m", "Couldn't load: $m", "Chargement impossible : $m"))
+                        }
                 }
             }
         }
@@ -430,9 +613,9 @@ class SettingsActivity : Activity() {
     private fun readText(uri: Uri): String {
         val bytes = contentResolver.openInputStream(uri)?.use { input ->
             val buf = input.readBytes()
-            require(buf.size <= MAX_BACKUP_BYTES) { "ファイルが大きすぎます" }
+            require(buf.size <= MAX_BACKUP_BYTES) { tr("ファイルが大きすぎます", "The file is too large", "Le fichier est trop volumineux") }
             buf
-        } ?: throw IllegalStateException("ファイルを開けません")
+        } ?: throw IllegalStateException(tr("ファイルを開けません", "Can't open the file", "Impossible d'ouvrir le fichier"))
         return String(bytes, Charsets.UTF_8).removePrefix("\uFEFF")
     }
 
@@ -442,15 +625,28 @@ class SettingsActivity : Activity() {
     private fun confirmRestore(p: SettingsCodec.Parsed, title: String) {
         val changes = SettingsCodec.describeChanges(prefs.values(), p.values)
         val msg = buildString {
-            if (changes.isEmpty()) append("現在の設定と同じです。") else append("次の${changes.size}件を変更します。\n\n" + changes.joinToString("\n"))
-            if (p.errors.isNotEmpty()) append("\n\n採用しない値（範囲外など）:\n" + p.errors.joinToString("\n"))
-            if (p.unknown.isNotEmpty()) append("\n\n不明な項目（無視）: " + p.unknown.joinToString(", "))
+            val n = changes.size
+            if (changes.isEmpty()) {
+                append(tr("現在の設定と同じです。", "Same as the current settings.", "Identique aux paramètres actuels."))
+            } else {
+                append(
+                    tr("次の${n}件を変更します。", "The following $n setting(s) will change.", "Les $n paramètre(s) suivant(s) vont changer.") +
+                        "\n\n" + changes.joinToString("\n"),
+                )
+            }
+            if (p.errors.isNotEmpty()) {
+                append("\n\n" + tr("採用しない値（範囲外など）:", "Values not applied (out of range, etc.):", "Valeurs non appliquées (hors limites, etc.) :"))
+                append("\n" + p.errors.joinToString("\n"))
+            }
+            if (p.unknown.isNotEmpty()) {
+                append("\n\n" + tr("不明な項目（無視）: ", "Unknown items (ignored): ", "Éléments inconnus (ignorés) : ") + p.unknown.joinToString(", "))
+            }
         }
-        val b = AlertDialog.Builder(this).setTitle(title).setMessage(msg).setNegativeButton("キャンセル", null)
+        val b = AlertDialog.Builder(this).setTitle(title).setMessage(msg).setNegativeButton(Ui.cancel(), null)
         if (changes.isNotEmpty()) {
-            b.setPositiveButton("変更する") { _, _ ->
+            b.setPositiveButton(tr("変更する", "Apply", "Appliquer")) { _, _ ->
                 applyValues(p.values, Ev.RESTORE, changes)
-                toast("反映しました")
+                toast(tr("反映しました", "Applied", "Appliqué"))
                 recreate()
             }
         }
@@ -461,7 +657,7 @@ class SettingsActivity : Activity() {
         bg.execute {
             val parsed = runCatching { parseBackup(File(filesDir, BEFORE_FILE).readText(Charsets.UTF_8)) }
             main.post {
-                parsed.onSuccess { confirmRestore(it, "直前の設定に戻す") }.onFailure { toast("戻せる設定がありません") }
+                parsed.onSuccess { confirmRestore(it, undoLabel()) }.onFailure { toast(tr("戻せる設定がありません", "Nothing to undo", "Rien à annuler")) }
             }
         }
     }
@@ -474,39 +670,56 @@ class SettingsActivity : Activity() {
         Defs.texts.forEach { defaults[it.key] = it.def }
         val changes = SettingsCodec.describeChanges(prefs.values(), defaults)
         if (changes.isEmpty()) {
-            toast("すでに初期値です")
+            toast(tr("すでに初期値です", "Already at defaults", "Déjà aux valeurs par défaut"))
             return
         }
+        val n = changes.size
         AlertDialog.Builder(this)
-            .setTitle("初期値に戻す")
-            .setMessage("次の${changes.size}件を初期値に戻します（「直前の設定に戻す」で取り消せます）。\n\n" + changes.joinToString("\n"))
-            .setPositiveButton("戻す") { _, _ ->
+            .setTitle(resetLabel())
+            .setMessage(
+                tr(
+                    "次の${n}件を初期値に戻します（「直前の設定に戻す」で取り消せます）。",
+                    "The following $n setting(s) will go back to their defaults (you can revert with “Undo last change”).",
+                    "Les $n paramètre(s) suivant(s) reprendront leur valeur par défaut (annulable avec « Annuler la dernière modification »).",
+                ) + "\n\n" + changes.joinToString("\n"),
+            )
+            .setPositiveButton(tr("戻す", "Reset", "Rétablir")) { _, _ ->
                 writeBefore()
                 prefs.resetToDefaults()
-                LogStore.write(this, Ev.SETTINGS, StateStore.state, result = "初期値に戻した", detail = changes.joinToString(" / "))
+                LogStore.write(
+                    this, Ev.SETTINGS, StateStore.state, result = tr("初期値に戻した", "Reset to defaults", "Valeurs par défaut rétablies"),
+                    detail = changes.joinToString(" / "),
+                )
                 notifyService()
                 recreate()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(Ui.cancel(), null)
             .show()
     }
 
     private fun confirmClearLogs() {
         AlertDialog.Builder(this)
-            .setTitle("ログを消去しますか？")
-            .setMessage("端末内の操作ログと電力の記録（CSV）をすべて削除します。日次レポートも消えます。必要なら先に CSV で書き出してください。")
-            .setPositiveButton("消去する") { _, _ ->
+            .setTitle(tr("ログを消去しますか？", "Clear the logs?", "Effacer les journaux ?"))
+            .setMessage(
+                tr(
+                    "端末内の操作ログと電力の記録（CSV）をすべて削除します。日次レポートも消えます。必要なら先に CSV で書き出してください。",
+                    "Deletes all event logs and power records (CSV) on the phone. Daily reports disappear too. Export them as CSV first if you need them.",
+                    "Supprime tous les journaux d'événements et relevés de consommation (CSV) du téléphone. Les rapports quotidiens disparaissent aussi. Exportez-les d'abord en CSV si nécessaire.",
+                ),
+            )
+            .setPositiveButton(tr("消去する", "Clear", "Effacer")) { _, _ ->
                 bg.execute {
                     runCatching { LogStore.clear(this) }
                     runCatching { PowerStore.clear(this) }
                     main.post {
-                        LogStore.write(this, Ev.SETTINGS, StateStore.state, result = "ログを消去")
-                        toast("ログを消去しました")
+                        val text = tr("ログを消去しました", "Logs cleared", "Journaux effacés")
+                        LogStore.write(this, Ev.SETTINGS, StateStore.state, result = tr("ログを消去", "Logs cleared", "Journaux effacés"))
+                        toast(text)
                         refreshFooter()
                     }
                 }
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(Ui.cancel(), null)
             .show()
     }
 

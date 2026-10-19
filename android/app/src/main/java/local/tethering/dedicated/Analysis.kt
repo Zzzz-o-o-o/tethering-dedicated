@@ -10,7 +10,7 @@ import java.util.TimeZone
  */
 
 /** 区間の集まりの集計 */
-class PowerGroup(val label: String) {
+class PowerGroup(var label: String) {
     var sec = 0L
     var mah = 0.0
     var kb = 0L
@@ -33,12 +33,16 @@ class PowerGroup(val label: String) {
 /** 電波と消費の関係（仕様 F-30） */
 object SignalPower {
     /** RSRP の区分（しきい値以上がその区分） */
-    val BUCKETS = listOf(
-        -90 to "−90 dBm 以上（良い）",
-        -100 to "−90〜−100 dBm",
-        -110 to "−100〜−110 dBm",
-        Int.MIN_VALUE to "−110 dBm 未満（弱い）",
-    )
+    val BUCKETS: List<Pair<Int, String>>
+        get() = listOf(
+            -90 to tr("−90 dBm 以上（良い）", "−90 dBm or better (good)", "−90 dBm ou mieux (bon)"),
+            -100 to tr("−90〜−100 dBm", "−90 to −100 dBm", "−90 à −100 dBm"),
+            -110 to tr("−100〜−110 dBm", "−100 to −110 dBm", "−100 à −110 dBm"),
+            Int.MIN_VALUE to tr("−110 dBm 未満（弱い）", "below −110 dBm (weak)", "sous −110 dBm (faible)"),
+        )
+
+    /** バンドが分からない区間のまとめの名前 */
+    val UNKNOWN_BAND: String get() = tr("不明", "Unknown", "Inconnue")
 
     private fun measured(rows: List<PowerRow>) = rows.filter { it.onBattery && it.mah != null && it.sec > 0 }
 
@@ -50,9 +54,16 @@ object SignalPower {
         return groups
     }
 
+    /** バンドの番号でまとめる（記録した時の言語で表示名の形が違うため）。表示名は新しい記録のもの */
     fun byBand(rows: List<PowerRow>): List<PowerGroup> {
         val map = LinkedHashMap<String, PowerGroup>()
-        for (r in measured(rows)) map.getOrPut(r.band ?: "不明") { PowerGroup(r.band ?: "不明") }.add(r)
+        val unknown = UNKNOWN_BAND
+        for (r in measured(rows)) {
+            val label = r.band ?: unknown
+            val g = map.getOrPut(Bands.key(r.band) ?: label) { PowerGroup(label) }
+            g.label = label
+            g.add(r)
+        }
         return map.values.sortedByDescending { it.sec }
     }
 
@@ -196,13 +207,15 @@ object AppTraffic {
 
     data class AppInfo(val label: String, val pkg: String?, val system: Boolean, val others: Int = 0)
 
-    enum class Kind(val label: String) {
-        TETHERING("テザリング（接続端末）"),
-        OS("Android システム"),
-        SYSTEM_APP("システムアプリ"),
-        USER_APP("ユーザーアプリ"),
-        REMOVED("削除済みのアプリ"),
-        SELF("このアプリ"),
+    enum class Kind(private val tx: Tx) {
+        TETHERING(Tx("テザリング（接続端末）", "Tethering (connected devices)", "Partage de connexion (appareils connectés)")),
+        OS(Tx("Android システム", "Android system", "Système Android")),
+        SYSTEM_APP(Tx("システムアプリ", "System app", "Application système")),
+        USER_APP(Tx("ユーザーアプリ", "User app", "Application utilisateur")),
+        REMOVED(Tx("削除済みのアプリ", "Removed apps", "Applications supprimées")),
+        SELF(Tx("このアプリ", "This app", "Cette application"));
+
+        val label: String get() = tx.get()
     }
 
     data class Row(
@@ -235,10 +248,13 @@ object AppTraffic {
             }
             val label = when {
                 kind == Kind.TETHERING || kind == Kind.REMOVED -> kind.label
-                u.uid == 0 -> "Android システム（カーネル・root）"
-                u.uid == 1000 -> "Android システム"
-                kind == Kind.OS -> "Android システム（UID ${u.uid}）"
-                else -> (i?.label ?: "UID ${u.uid}") + if ((i?.others ?: 0) > 0) "（ほか ${i!!.others} 個）" else ""
+                u.uid == 0 -> Kind.OS.label + Fmt.paren(tr("カーネル・root", "kernel, root", "noyau, root"))
+                u.uid == 1000 -> Kind.OS.label
+                kind == Kind.OS -> Kind.OS.label + Fmt.paren("UID ${u.uid}")
+                else -> {
+                    val n = i?.others ?: 0
+                    (i?.label ?: "UID ${u.uid}") + if (n > 0) Fmt.paren(tr("ほか $n 個", "+$n more", "+$n autres")) else ""
+                }
             }
             val ev = i?.pkg?.let { events[it] }
             Row(u.uid, label, i?.pkg, kind, u.fgBytes, u.bgBytes, ev?.getOrNull(0) ?: 0, ev?.getOrNull(1) ?: 0)
@@ -278,8 +294,8 @@ object NetworkModes {
     )
 
     fun label(mode: Int): String {
-        val t = TECH[mode] ?: return "種類 $mode"
-        return t.joinToString("/") + if (t.size > 1) "（自動）" else "のみ"
+        val t = TECH[mode] ?: return tr("種類 $mode", "Type $mode", "Type $mode")
+        return t.joinToString("/") + if (t.size > 1) Fmt.paren(tr("自動", "auto", "auto")) else tr("のみ", " only", " uniquement")
     }
 
     fun hasNr(mode: Int): Boolean = TECH[mode]?.contains(NR) == true

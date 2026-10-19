@@ -141,18 +141,25 @@ class AlertTracker {
 }
 
 /** 運用プロファイル（仕様 F-02 / F-15） */
-enum class BaseMode(val key: String, val label: String) {
-    AUTO("auto", "自動"),
-    NORMAL("normal", "通常"),
-    SAVER("saver", "省電力");
+enum class BaseMode(val key: String, private val tx: Tx) {
+    AUTO("auto", Tx("自動", "Auto", "Auto")),
+    NORMAL("normal", Tx("通常", "Normal", "Normal")),
+    SAVER("saver", Tx("省電力", "Power saving", "Économie d'énergie"));
+
+    val label: String get() = tx.get()
 
     companion object {
         fun of(key: String?): BaseMode = entries.firstOrNull { it.key == key } ?: AUTO
     }
 }
 
-enum class Effective(val label: String) {
-    NORMAL("通常"), SAVER("省電力"), MAINTENANCE("メンテナンス"), RECOVERY("復旧")
+enum class Effective(private val tx: Tx) {
+    NORMAL(Tx("通常", "Normal", "Normal")),
+    SAVER(Tx("省電力", "Power saving", "Économie d'énergie")),
+    MAINTENANCE(Tx("メンテナンス", "Maintenance", "Maintenance")),
+    RECOVERY(Tx("復旧", "Recovery", "Rétablissement"));
+
+    val label: String get() = tx.get()
 }
 
 object Profiles {
@@ -187,22 +194,46 @@ object Diagnosis {
     }
 
     fun text(failure: Anomaly?, line: LineInfo?, httpCode: Int?, httpDetail: String?): String = when (failure) {
-        null -> "インターネットに正常に到達できます"
-        Anomaly.SIM -> "SIMを認識していません（挿入・接触・PINロックを確認）"
+        null -> tr("インターネットに正常に到達できます", "The internet is reachable", "Internet est accessible")
+        Anomaly.SIM -> tr(
+            "SIMを認識していません（挿入・接触・PINロックを確認）",
+            "The SIM is not detected (check that it is inserted, its contacts and the PIN lock)",
+            "La SIM n'est pas détectée (vérifiez son insertion, ses contacts et le code PIN)",
+        )
         Anomaly.NO_SERVICE -> when {
-            line?.airplane == true -> "機内モードがONです"
-            else -> "モバイル回線に登録できていません（圏外・回線停止・APN不一致の可能性）"
+            line?.airplane == true -> tr("機内モードがONです", "Airplane mode is on", "Le mode avion est activé")
+            else -> tr(
+                "モバイル回線に登録できていません（圏外・回線停止・APN不一致の可能性）",
+                "Not registered on the mobile network (no coverage, suspended line or wrong APN)",
+                "Non enregistré sur le réseau mobile (pas de couverture, ligne suspendue ou APN incorrect)",
+            )
         }
         Anomaly.NO_DATA -> when {
-            line?.dataEnabled == false -> "モバイルデータ通信がOFFです"
-            else -> "回線には登録済みですが、データ通信（IP）が確立していません（APN・データ設定を確認）"
+            line?.dataEnabled == false -> tr("モバイルデータ通信がOFFです", "Mobile data is off", "Les données mobiles sont désactivées")
+            else -> tr(
+                "回線には登録済みですが、データ通信（IP）が確立していません（APN・データ設定を確認）",
+                "Registered on the network, but no data connection (IP) (check the APN and data settings)",
+                "Enregistré sur le réseau, mais sans connexion de données (IP) (vérifiez l'APN et les paramètres de données)",
+            )
         }
-        Anomaly.DNS -> "IP通信はありますが、DNSで名前を解決できません"
+        Anomaly.DNS -> tr(
+            "IP通信はありますが、DNSで名前を解決できません",
+            "There is an IP connection, but DNS lookups fail",
+            "La connexion IP fonctionne, mais la résolution DNS échoue",
+        )
         Anomaly.INTERNET -> when {
-            httpCode != null -> "外部サイトの応答が想定と違います（HTTP $httpCode：認証画面や通信制限の可能性）"
-            else -> "DNSは成功しましたが、外部サイトに到達できません" + (httpDetail?.let { "（$it）" } ?: "")
+            httpCode != null -> tr(
+                "外部サイトの応答が想定と違います（HTTP $httpCode：認証画面や通信制限の可能性）",
+                "Unexpected response from the test site (HTTP $httpCode: possibly a login page or a data limit)",
+                "Réponse inattendue du site de test (HTTP $httpCode : page de connexion ou limite de données possible)",
+            )
+            else -> tr(
+                "DNSは成功しましたが、外部サイトに到達できません",
+                "DNS works, but the test site can't be reached",
+                "Le DNS fonctionne, mais le site de test est inaccessible",
+            ) + (httpDetail?.let { tr("（$it）", " ($it)", " ($it)") } ?: "")
         }
-        Anomaly.TETHER_OFF -> "Wi-Fiテザリングが停止しています"
-        Anomaly.TETHER_FAILED -> "Wi-Fiテザリングの起動に失敗しました"
+        Anomaly.TETHER_OFF -> tr("Wi-Fiテザリングが停止しています", "The Wi-Fi hotspot is off", "Le point d'accès Wi-Fi est arrêté")
+        Anomaly.TETHER_FAILED -> tr("Wi-Fiテザリングの起動に失敗しました", "The Wi-Fi hotspot failed to start", "Le point d'accès Wi-Fi n'a pas pu démarrer")
     }
 }

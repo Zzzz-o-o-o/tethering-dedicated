@@ -9,10 +9,16 @@ import kotlin.math.pow
  * 計測はバッテリー駆動中だけ行う（給電中は電池への出入りの差しか分からず、消費を測れないため）。
  * 方法の優先順位: ① 充電カウンタの減り（クーロンカウンタ。最も正確）② 電流の平均 ③ 電池残量（%）の変化。
  */
-enum class Method(val label: String) {
-    COUNTER("充電カウンタ"),
-    CURRENT("電流の平均"),
-    LEVEL("電池残量の変化"),
+enum class Method(
+    /** 電力の記録（CSV）に保存する値。言語によらず同じ（読み戻すため） */
+    val key: String,
+    private val tx: Tx,
+) {
+    COUNTER("充電カウンタ", Tx("充電カウンタ", "Charge counter", "Compteur de charge")),
+    CURRENT("電流の平均", Tx("電流の平均", "Average current", "Courant moyen")),
+    LEVEL("電池残量の変化", Tx("電池残量の変化", "Battery level change", "Variation du niveau de batterie"));
+
+    val label: String get() = tx.get()
 }
 
 /** 区間の始まり・終わりの読み取り値（時刻は端末の経過時間 ms） */

@@ -23,7 +23,12 @@ object SystemScreens {
             } catch (_: SecurityException) {
             }
         }
-        Toast.makeText(ctx, "この端末では設定画面を開けませんでした。設定アプリから手動で開いてください", Toast.LENGTH_LONG).show()
+        val msg = tr(
+            "この端末では設定画面を開けませんでした。設定アプリから手動で開いてください",
+            "Couldn't open this settings screen on this phone. Open it from the Settings app manually",
+            "Impossible d'ouvrir cet écran de paramètres sur ce téléphone. Ouvrez-le manuellement depuis l'application Paramètres",
+        )
+        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
         return false
     }
 
@@ -76,7 +81,7 @@ object SystemScreens {
 
     fun usageAccess(ctx: Context) = open(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), Intent(Settings.ACTION_SECURITY_SETTINGS))
 
-    /** 「システム設定の変更」の許可（時間帯スケジュール F-37 でテザリングを切り替えるため） */
+    /** 「システム設定の変更」の許可（起動時のテザリング ON と、時間帯スケジュール F-37 でテザリングを切り替えるため） */
     fun writeSettings(ctx: Context) = open(
         ctx,
         Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${ctx.packageName}")),

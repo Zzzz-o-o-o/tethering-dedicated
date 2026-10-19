@@ -7,8 +7,14 @@ import kotlin.math.roundToInt
  * 電波が良いほど端末の送信電力が下がり、同じ通信量でも消費と発熱が減る。
  */
 object SignalQuality {
-    enum class Grade(val label: String) {
-        EXCELLENT("とても良い"), GOOD("良い"), FAIR("普通"), POOR("弱い"), BAD("とても弱い"),
+    enum class Grade(private val tx: Tx) {
+        EXCELLENT(Tx("とても良い", "Excellent", "Excellent")),
+        GOOD(Tx("良い", "Good", "Bon")),
+        FAIR(Tx("普通", "Fair", "Moyen")),
+        POOR(Tx("弱い", "Weak", "Faible")),
+        BAD(Tx("とても弱い", "Very weak", "Très faible"));
+
+        val label: String get() = tx.get()
     }
 
     /** 点数（0〜100）。RSRP は −120→0・−80→1、SINR は −5→0・25→1 に直して 6:4 で合わせる。どちらもなければ null */
@@ -113,7 +119,7 @@ object Places {
         val sinr = median(ok.mapNotNull { it.sinr })?.let { (it * 10).roundToInt() / 10.0 }
         val rsrq = median(ok.mapNotNull { it.rsrq?.toDouble() })?.roundToInt()
         val band = ok.mapNotNull { it.band }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-        return Place(at, cleanName(name).ifEmpty { "場所" }, ok.size, rsrp, sinr, rsrq, band, SignalQuality.score(rsrp, sinr))
+        return Place(at, cleanName(name).ifEmpty { tr("場所", "Spot", "Emplacement") }, ok.size, rsrp, sinr, rsrq, band, SignalQuality.score(rsrp, sinr))
     }
 
     fun median(v: List<Double>): Double? {

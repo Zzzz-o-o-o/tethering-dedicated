@@ -22,7 +22,7 @@ object ExtNotify {
 
     class Dest(val kind: Kind, val target: WebClient.Target) {
         /** 画面・診断に出す名前（トークンを含む URL は出さない） */
-        val label: String get() = "${kind.label}（${target.host}）"
+        val label: String get() = kind.label + Fmt.paren(target.host)
     }
 
     class Request(val url: WebClient.Target, val headers: List<Pair<String, String>>, val contentType: String, val body: String)
@@ -42,8 +42,14 @@ object ExtNotify {
 
     fun check(s: String): String? = when {
         s.isBlank() -> null
-        WebClient.parse(s) == null -> "http:// または https:// で始まる URL を入れてください"
-        parse(s) == null -> "ntfy はトピック名まで入れてください（例: https://ntfy.sh/トピック名）"
+        WebClient.parse(s) == null -> tr(
+            "http:// または https:// で始まる URL を入れてください", "Enter a URL starting with http:// or https://",
+            "Saisissez une URL commençant par http:// ou https://",
+        )
+        parse(s) == null -> tr(
+            "ntfy はトピック名まで入れてください（例: https://ntfy.sh/トピック名）", "For ntfy, include the topic name (e.g. https://ntfy.sh/your-topic)",
+            "Pour ntfy, indiquez aussi le nom du sujet (ex. https://ntfy.sh/votre-sujet)",
+        )
         else -> null
     }
 
@@ -72,7 +78,11 @@ object ExtNotify {
 
     /** テスト送信（設定画面から。待ち行列を通さない）。UI スレッド以外で呼ぶ */
     fun sendTest(d: Dest, device: String, now: Long): WebClient.Result {
-        val req = build(d, Msg(now, "テスト通知", "テザリング専用化からのテスト送信です。", false), device)
+        val msg = Msg(
+            now, tr("テスト通知", "Test notification", "Notification de test"),
+            tr("テザリング専用化からのテスト送信です。", "This is a test from Tethering Dedicated.", "Ceci est un test envoyé par Tethering Dedicated."), false,
+        )
+        val req = build(d, msg, device)
         return WebClient.send("POST", req.url, req.headers, req.contentType, req.body.toByteArray(Charsets.UTF_8), 10_000)
     }
 
@@ -188,10 +198,25 @@ class ExtSender(private val prefs: Prefs) {
                         // 宛先の誤りなどは送り直しても通らないので捨てる（設定の見直しを促す）
                         queue.drop(m)
                         save()
-                        onLog?.invoke("送信先に断られました（${r.text}・${dest.kind.label}）。通知先の URL を確認してください")
+                        val k = dest.kind.label
+                        onLog?.invoke(
+                            tr(
+                                "送信先に断られました（${r.text}・$k）。通知先の URL を確認してください",
+                                "Rejected by the destination (${r.text}, $k). Check the destination URL",
+                                "Refusé par la destination (${r.text}, $k). Vérifiez l'URL de destination",
+                            ),
+                        )
                     }
                     // 回線の不調などは残して、次の機会に送り直す
-                    else -> onLog?.invoke("送れませんでした（${r.text}）。回線が戻ったら送り直します（${queue.items.size}件）")
+                    else -> {
+                        val n = queue.items.size
+                        onLog?.invoke(
+                            tr(
+                                "送れませんでした（${r.text}）。回線が戻ったら送り直します（${n}件）", "Couldn't send (${r.text}). Will retry when the line is back ($n queued)",
+                                "Envoi impossible (${r.text}). Nouvel essai au retour de la ligne ($n en attente)",
+                            ),
+                        )
+                    }
                 }
                 onChanged?.invoke()
             }
