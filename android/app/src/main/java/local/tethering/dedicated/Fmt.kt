@@ -123,6 +123,9 @@ object Fmt {
 
     fun dateTime(ms: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.JAPAN).format(Date(ms))
 
+    /** 月日と時刻（例: 10/20 08:12。フランス語は 20/10 08:12） */
+    fun mdhm(ms: Long): String = if (ms <= 0) "－" else SimpleDateFormat(tr("M/d HH:mm", "M/d HH:mm", "d/M HH:mm"), Locale.US).format(Date(ms))
+
     fun fileStamp(ms: Long): String = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date(ms))
 
     /** 経過時間（約X分・X時間Y分） */

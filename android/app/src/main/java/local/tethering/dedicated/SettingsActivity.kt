@@ -58,7 +58,7 @@ class SettingsActivity : Activity() {
             page, tr("インターネット到達確認", "Internet reachability check", "Test d'accès à Internet"),
             listOf(Defs.EXPECT_CODE), bools = listOf(Defs.HTTP), texts = listOf(Defs.URL), boolsFirst = true,
         )
-        section(page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(), bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.TETHER_ON_BOOT)).also { c ->
+        section(page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(), bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.DEVICE_LIST, Defs.TETHER_ON_BOOT)).also { c ->
             Ui.spacer(c, 4)
             bootStatus = Ui.small(c, "")
             tetherControlButtons(c)

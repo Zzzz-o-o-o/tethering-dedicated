@@ -169,7 +169,11 @@ class MainActivity : Activity() {
             vAutoOff = Ui.kv(c, tr("自動OFF設定", "Auto turn-off", "Arrêt automatique"))
             vSched = Ui.kv(c, tr("時間帯スケジュール", "Quiet-hours schedule", "Planification"))
             vWeb = Ui.kv(c, tr("管理画面（接続端末から）", "Local web page", "Page web locale"))
-            Ui.button(c, tr("テザリング設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès")) { SystemScreens.tether(this) }
+            Ui.buttonRow(
+                c,
+                tr("テザリングの詳細", "Hotspot details", "Détails") to { startActivity(Intent(this, TetherDetailsActivity::class.java)) },
+                tr("テザリング設定を開く", "Open hotspot settings", "Paramètres du point d'accès") to { SystemScreens.tether(this) },
+            )
         }
 
         Ui.card(page).also { c ->

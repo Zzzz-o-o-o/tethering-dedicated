@@ -112,6 +112,31 @@ class Prefs(context: Context) {
         get() = state.getLong("sched_handled_window", 0L)
         set(v) = state.edit().putLong("sched_handled_window", v).apply()
 
+    // テザリングの連続稼働時間（v0.9.0）。アプリが更新・再起動しても続けて数えられるよう保存する
+    /** アクセスポイントが ON になった時刻（0 = OFF・不明） */
+    var apOnSince: Long
+        get() = state.getLong("ap_on_since", 0L)
+        set(v) = state.edit().putLong("ap_on_since", v).apply()
+
+    /** [apOnSince] が ON になった時刻そのものか（false なら、監視を始めた時刻で、それより前から ON） */
+    var apOnExact: Boolean
+        get() = state.getBoolean("ap_on_exact", false)
+        set(v) = state.edit().putBoolean("ap_on_exact", v).apply()
+
+    /** アクセスポイントが OFF になった時刻（0 = ON・不明） */
+    var apOffAt: Long
+        get() = state.getLong("ap_off_at", 0L)
+        set(v) = state.edit().putLong("ap_off_at", v).apply()
+
+    /** 前回の停止の始まりと長さ（0 = なし・不明） */
+    var apLastOffStart: Long
+        get() = state.getLong("ap_last_off_start", 0L)
+        set(v) = state.edit().putLong("ap_last_off_start", v).apply()
+
+    var apLastOffMs: Long
+        get() = state.getLong("ap_last_off_ms", 0L)
+        set(v) = state.edit().putLong("ap_last_off_ms", v).apply()
+
     // 月の通信量の上限（v0.8.0）。知らせた段階は、記録した期間の開始（capCycle）と組で使う
     var capCycle: Long
         get() = state.getLong("cap_cycle", 0L)

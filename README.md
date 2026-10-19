@@ -23,7 +23,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | File | Contents |
 |---|---|
-| `TetheringDedicated-v0.8.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
+| `TetheringDedicated-v0.9.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
 | `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
@@ -33,7 +33,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 ## Quick start (phone only)
 
-1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.8.0.apk`.
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.9.0.apk`.
 2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
 3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
    1. **Phone** permission — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS.
@@ -57,7 +57,7 @@ The PC script applies the recommended system settings in one go, can undo them, 
 1. **Enable USB debugging** on the phone: Settings → About phone → tap *Build number* seven times, then Settings → System → Advanced → Developer options → *USB debugging*. Connect the phone to the PC and allow the "Allow USB debugging?" prompt on the phone.
 2. From the project folder on the PC:
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.8.0.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.9.0.apk -Apply
    ```
    This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
@@ -113,6 +113,7 @@ All thresholds and intervals can be changed in **Settings**.
 | **Comparison test** | Measures the effect of one change (for example, turning off Bluetooth or switching the hotspot band): before (A) and after (B), alternately, on battery. Tells you whether to keep the change |
 | **Daily report** | Average consumption, estimated runtime from a full charge, data used, uptime and alerts per day. CSV export |
 | **Initial setup** | The permissions and settings needed to start, in order, each with its state and a button (opens by itself the first time) |
+| **Hotspot details** (button in the main screen's Tethering card) | How long the hotspot has been on without a break (for example "On (since 10/20 08:12, 3 h 12 min)"), the last time it was off, its uptime over the last 24 hours, the hotspot interface and mode, and — if turned on in Settings — the list of connected devices, which you can name |
 | **Setup guide** | Current value and recommended value of each phone setting that matters, with buttons to open the right settings screen. It never changes settings itself |
 | **App list** (from the Setup guide) | Apps you installed, to review and uninstall unused ones |
 | **Diagnostics** | What this phone can and cannot report. Copy or share it when asking for help. Contains no phone number, IMEI, SSID or MAC address, and nothing about connected devices |
@@ -149,6 +150,13 @@ What it does:
 - It doesn't work on lines where the carrier must approve each hotspot use (Android refuses the request). The check button in step 2 tells you.
 
 On the tested phone (UMIDIGI A9 Pro with a PIN lock), the hotspot came on about 20 seconds after power-on, before unlocking, and connected devices rejoined it.
+
+### Connected device list
+
+Settings → **Tethering** → **Show the list of connected devices**. The **Hotspot details** screen then lists the devices connected now (IP address, "Connected" / "Connected (idle)" / "Left", and the end of the MAC address). Tap **Name it** to give a device a name such as "Home PC".
+
+- Names are remembered by MAC address, so a device keeps its name when its IP address changes. Most devices keep the same MAC address for the same Wi-Fi network; if a device changes it (for example with a "rotating" private address setting), name it again.
+- The list is read only while the screen is open (no extra background work). Names stay on the phone: they are never written to the log, CSV files, external notifications, the local web page or settings backup files.
 
 ### Monthly data cap
 
@@ -276,6 +284,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 ## Privacy
 
 - The log stays on the phone (30 days, 10 MB). It contains no SSID, no information that identifies connected devices (only how many), no phone number and no IP address.
+- The optional connected-device list is shown only on the phone's screen, and the names you give are stored only on the phone.
 - The app's own network use: one small reachability request per check (`connectivitycheck.gstatic.com/generate_204`, about 1 KB). Optionally, notifications to the service you chose and commands to your smart plug.
 - Settings backup files don't include the notification URL or the smart plug address/URLs.
 - The local web page has no password; anyone connected to your hotspot can view it. Turn it off in Settings if you don't need it.

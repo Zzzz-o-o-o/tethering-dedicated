@@ -122,6 +122,8 @@ object BootTether {
     private const val KEY_RESULTS = "results"
     private const val KEY_LAST = "last"
     private const val KEY_BLOCK_UNTIL = "block_until"
+    private const val KEY_REQUESTED_WALL = "requested_wall"
+    private const val KEY_ON_AT = "on_at"
     private const val MAX_RESULTS = 8
 
     private fun store(ctx: Context): SharedPreferences =
@@ -153,6 +155,12 @@ object BootTether {
     fun unblock(ctx: Context) {
         val sp = store(ctx)
         if (sp.contains(KEY_BLOCK_UNTIL)) sp.edit().remove(KEY_BLOCK_UNTIL).commit()
+    }
+
+    /** この起動で、このアプリがテザリングを ON にした時刻（ON にしていなければ null） */
+    fun turnedOnAt(ctx: Context): Long? {
+        if (status(ctx) != Status.TURNED_ON) return null
+        return store(ctx).getLong(KEY_ON_AT, 0L).takeIf { it > 0 }
     }
 
     /** 起動しても ON にしない期間の終わり（なければ null） */
@@ -244,7 +252,7 @@ object BootTether {
         if (sp.getInt(KEY_BOOT, Int.MIN_VALUE) != boot) {
             // 新しい起動。前の起動の記録を消す（結果の一覧は、ログへ移すまで残す）
             val e = sp.edit().putInt(KEY_BOOT, boot)
-            listOf(KEY_ATTEMPTS, KEY_RUNS, KEY_REQUESTED, KEY_ACCEPTED, KEY_ERROR, KEY_DONE, KEY_REPORTED).forEach { e.remove(it) }
+            listOf(KEY_ATTEMPTS, KEY_RUNS, KEY_REQUESTED, KEY_REQUESTED_WALL, KEY_ACCEPTED, KEY_ERROR, KEY_DONE, KEY_REPORTED, KEY_ON_AT).forEach { e.remove(it) }
             e.commit()
         }
         val attempts = sp.getInt(KEY_ATTEMPTS, 0)
@@ -259,7 +267,10 @@ object BootTether {
         when (act) {
             Act.DISABLED, Act.DONE -> Unit
             Act.ALREADY_ON -> {
-                sp.edit().putBoolean(KEY_DONE, true).commit()
+                // このアプリが依頼して ON になったなら、依頼した時刻を ON になった時刻とする（連続稼働時間の始まり）
+                val e = sp.edit().putBoolean(KEY_DONE, true)
+                if (attempts > 0) e.putLong(KEY_ON_AT, sp.getLong(KEY_REQUESTED_WALL, 0L))
+                e.commit()
                 cancel(ctx)
                 addResult(
                     ctx,
@@ -311,7 +322,8 @@ object BootTether {
                 // 依頼は受け付けられたのに ON にならなかった（次に依頼する前に理由を残す）
                 if (attempts > 0 && sp.getBoolean(KEY_ACCEPTED, false)) sp.edit().putString(KEY_ERROR, notOn(ap)).commit()
                 val n = attempts + 1
-                sp.edit().putInt(KEY_ATTEMPTS, n).putLong(KEY_REQUESTED, SystemClock.elapsedRealtime()).putBoolean(KEY_ACCEPTED, false).commit()
+                sp.edit().putInt(KEY_ATTEMPTS, n).putLong(KEY_REQUESTED, SystemClock.elapsedRealtime())
+                    .putLong(KEY_REQUESTED_WALL, System.currentTimeMillis()).putBoolean(KEY_ACCEPTED, false).commit()
                 // ON になったかの確認（と、ならなかったときのやり直し）を先に予約しておく（OS の返事が来ないまま終わっても続けられるように）
                 schedule(ctx, gapMs(n))
                 // OS の返事が来なくても受信を長く止めないよう、一定時間で終える（依頼そのものは OS 側で続く）

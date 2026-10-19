@@ -380,6 +380,20 @@ object Defs {
             "Seul le nombre est compté ; les adresses MAC, etc. ne sont pas enregistrées",
         ),
     )
+    /** 接続端末の一覧（v0.9.0。テザリングの詳細の画面） */
+    val DEVICE_LIST = BoolDef(
+        "device_list",
+        Tx("接続端末の一覧を表示する", "Show the list of connected devices", "Afficher la liste des appareils connectés"), false,
+        Tx(
+            "「テザリングの詳細」の画面に、いまつながっている端末を IP アドレスと状態で表示し、名前を付けられます。一覧は画面を開いている間だけ読みます。" +
+                "名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面・設定のファイルには含めません",
+            "Shows the devices connected now, with their IP address and state, on the “Hotspot details” screen, and lets you name them. The list is read only while the screen is open. " +
+                "Names are stored only on this phone and are never put in logs, CSV files, external notifications, the web page or settings files",
+            "Affiche les appareils connectés, avec leur adresse IP et leur état, sur l'écran « Détails du point d'accès », et permet de les nommer. La liste n'est lue que pendant que l'écran est ouvert. " +
+                "Les noms restent sur ce téléphone et ne figurent jamais dans les journaux, les CSV, les notifications externes, la page web ou les fichiers de paramètres",
+        ),
+    )
+
     /** 月の通信量の上限（v0.8.0。DataCap） */
     val DATA_CAP = BoolDef(
         "data_cap",
@@ -511,7 +525,7 @@ object Defs {
     )
     val bools = listOf(
         HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE,
-        TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG, TETHER_ON_BOOT, DATA_CAP, DATA_CAP_STOP,
+        TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG, TETHER_ON_BOOT, DATA_CAP, DATA_CAP_STOP, DEVICE_LIST,
     )
     val texts = listOf(URL, RECHECK, QUIET_HOURS, EXT_URL, PLUG_KIND, PLUG_HOST, PLUG_ON_URL, PLUG_OFF_URL)
 

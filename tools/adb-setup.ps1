@@ -32,7 +32,7 @@
 
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.8.0.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.9.0.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote

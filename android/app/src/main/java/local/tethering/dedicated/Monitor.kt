@@ -331,6 +331,7 @@ class Monitor(private val ctx: Context) {
         lastCheckElapsed = SystemClock.elapsedRealtime()
         lastRx = pr.rx
         StateStore.update { it.copy(checking = false, power = pr.power, tether = pr.tether, line = pr.line, check = r) }
+        noteApSession(pr.tether.wifiOn)
         noteZero(pr.tether)
         autoEvaluate(pr.power)
         noteProfileChange(pr.power.plug)
@@ -498,6 +499,7 @@ class Monitor(private val ctx: Context) {
         if (closed) return
         val prev = StateStore.state.tether?.wifiOn
         StateStore.update { it.copy(tether = t) }
+        noteApSession(t.wifiOn)
         noteZero(t)
         if (!prefs.bool(Defs.TETHER_EXPECTED) && prev != null && prev != t.wifiOn) {
             val ap = Fmt.ap(t.apState)
@@ -917,6 +919,28 @@ class Monitor(private val ctx: Context) {
         // 境目のちょうど後に判断する。接続 0 台が 10 分に達するのを待っているなら、その時刻にも判断し直す
         val boundary = (due - nowWall).coerceAtLeast(0) + 2_000L
         return schedIdleDue?.let { minOf(boundary, (it - nowEl).coerceAtLeast(0)) } ?: boundary
+    }
+
+    // ---- テザリングの連続稼働時間（v0.9.0。テザリングの詳細の画面に出す） ----
+
+    /** このプロセスで最後に見たアクセスポイントの状態（null = まだ見ていない） */
+    private var lastApOn: Boolean? = null
+
+    private fun noteApSession(on: Boolean?) {
+        if (on == null) return
+        val prev = lastApOn
+        lastApOn = on
+        if (prev == on) return
+        val now = System.currentTimeMillis()
+        val s = ApSession.Stored(prefs.apOnSince, prefs.apOnExact, prefs.apOffAt, prefs.apLastOffStart, prefs.apLastOffMs)
+        val bootOnAt = if (on && prev == null) BootTether.turnedOnAt(ctx) else null
+        val n = ApSession.next(s, prev, on, now, now - SystemClock.elapsedRealtime(), bootOnAt)
+        if (n == s) return
+        prefs.apOnSince = n.onSince
+        prefs.apOnExact = n.exact
+        prefs.apOffAt = n.offAt
+        prefs.apLastOffStart = n.lastOffStart
+        prefs.apLastOffMs = n.lastOffMs
     }
 
     // ---- 月の通信量の上限（v0.8.0）。チェック・テザリングの放送・設定の変更のたびに判断する ----

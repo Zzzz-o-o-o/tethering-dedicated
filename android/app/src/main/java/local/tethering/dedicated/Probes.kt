@@ -164,6 +164,26 @@ object Clients {
         }
         return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
     }
+
+    /** 接続端末の一覧（v0.9.0。テザリングの詳細の画面で、開いている間だけ読む。記録しない）。読めなければ null。UI スレッド以外で呼ぶ */
+    fun list(iface: String?): List<Parsers.Neighbor>? {
+        try {
+            return Parsers.arpNeighbors(File("/proc/net/arp").readLines(), iface)
+        } catch (_: Exception) {
+            // Android 10 では読めない機種がある → 次の方法へ
+        }
+        try {
+            val p = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
+            if (!p.waitFor(3, TimeUnit.SECONDS)) {
+                p.destroy()
+                return null
+            }
+            val out = p.inputStream.bufferedReader().use { it.readText() }
+            if (p.exitValue() == 0) return Parsers.neighbors(out, iface)
+        } catch (_: Exception) {
+        }
+        return null
+    }
 }
 
 /** OS の設定値を読む（読むだけ。書き込みは ADB 事前設定スクリプトで行う） */
