@@ -93,6 +93,18 @@ class SettingsActivity : Activity() {
             page, tr("自動切り替え（バッテリー駆動中）", "Auto switching (on battery)", "Bascule automatique (sur batterie)"),
             listOf(Defs.AUTO_SAVER_PCT), bools = listOf(Defs.AUTO_SAVER, Defs.AUTO_DOZE), boolsFirst = true,
         ).also { c ->
+            // Android 12 からは Doze の設定をアプリから変えられないので、選べないようにして理由を出す
+            if (!AutoSwitch.dozeWorks) {
+                boolFields[Defs.AUTO_DOZE]?.isEnabled = false
+                Ui.small(
+                    c,
+                    tr(
+                        "「Doze を早める」は Android 12 以降では使えません（Doze の設定が、アプリから変えられない場所に移ったため）。",
+                        "“Enter Doze sooner” doesn't work on Android 12 and later (Doze settings moved where apps can't change them).",
+                        "« Entrer plus tôt en Doze » ne fonctionne pas sur Android 12 et ultérieur (les réglages Doze ont été déplacés là où les applications ne peuvent pas les modifier).",
+                    ),
+                )
+            }
             autoStatus = Ui.small(c, "")
             Ui.button(c, restoreAllLabel()) { confirmAutoRestore() }
         }

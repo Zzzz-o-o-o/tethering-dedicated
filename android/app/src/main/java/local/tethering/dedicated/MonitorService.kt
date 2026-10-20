@@ -17,6 +17,7 @@ import android.os.PowerManager
 import android.telephony.PhoneStateListener
 import android.telephony.ServiceState
 import android.telephony.TelephonyManager
+import android.util.Log
 
 /**
  * 画面消灯中も監視を続けるフォアグラウンドサービス（仕様 設計目標 2）。
@@ -44,19 +45,48 @@ class MonitorService : Service() {
         const val EXTRA_LABEL_A = "label_a"
         const val EXTRA_LABEL_B = "label_b"
 
+        /** 動いているか（常駐通知を出してから止まるまで。同じプロセスの中だけで使う） */
+        @Volatile
+        var running = false
+            private set
+
         /** [trustedBoot] は OS だけが送れる起動の通知（BOOT_COMPLETED）で起こされたとき */
         fun send(ctx: Context, action: String, until: Long? = null, trustedBoot: Boolean = false) {
             val i = Intent(ctx, MonitorService::class.java).setAction(action)
             if (until != null) i.putExtra(EXTRA_UNTIL, until)
             if (trustedBoot) i.putExtra(EXTRA_TRUSTED_BOOT, true)
-            ctx.startForegroundService(i)
+            start(ctx, i)
         }
 
         fun startExperiment(ctx: Context, candidate: String, labelA: String?, labelB: String?) {
-            ctx.startForegroundService(
+            start(
+                ctx,
                 Intent(ctx, MonitorService::class.java).setAction(ACTION_EXP_START)
                     .putExtra(EXTRA_CANDIDATE, candidate).putExtra(EXTRA_LABEL_A, labelA).putExtra(EXTRA_LABEL_B, labelB),
             )
+        }
+
+        /**
+         * 動いているあいだは startService で送る（常駐通知があるので、アプリは前面と同じ扱いになる）。止まっているときは
+         * startForegroundService で開始する。Android 12 用の版（targetSdk 31）では、裏からの開始を OS が断ることがある
+         * （電池の最適化の対象外・起動の直後・正確なアラームのときは開始できる）ので、断られても落ちないようにする
+         * （次の正確なアラームや、画面を開いたときに始まる）
+         */
+        private fun start(ctx: Context, i: Intent) {
+            if (running) {
+                try {
+                    ctx.startService(i)
+                    return
+                } catch (_: IllegalStateException) {
+                    // 止まる途中など。開始からやり直す
+                }
+            }
+            try {
+                ctx.startForegroundService(i)
+            } catch (e: IllegalStateException) {
+                // Android 12 以降の ForegroundServiceStartNotAllowedException
+                Log.w("TDservice", "start not allowed: ${i.action}: ${e.javaClass.simpleName}")
+            }
         }
     }
 
@@ -83,8 +113,16 @@ class MonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // startForegroundService() から 5 秒以内に呼ぶ必要があるので最初に行う
-        startForeground(Notifier.ID_ONGOING, Notifier.ongoing(this, StateStore.state.copy(running = true)))
+        // startForegroundService() から 5 秒以内に呼ぶ必要があるので最初に行う。Android 12 用の版では、裏から始まったときに
+        // OS が断ることがある（そのときは止める。次の正確なアラームや、画面を開いたときに始まる）
+        try {
+            startForeground(Notifier.ID_ONGOING, Notifier.ongoing(this, StateStore.state.copy(running = true)))
+        } catch (e: IllegalStateException) {
+            Log.w("TDservice", "startForeground not allowed: ${e.javaClass.simpleName}")
+            stopSelf()
+            return
+        }
+        running = true
         val m = Monitor(this)
         monitor = m
         registerEvents(m)
@@ -150,6 +188,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         unregisterEvents()
         monitor?.close()
         monitor = null

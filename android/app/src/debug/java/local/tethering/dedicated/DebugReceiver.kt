@@ -75,6 +75,29 @@ class DebugReceiver : BroadcastReceiver() {
             }
             // ファイルに書き出す設定（通知先の URL などが含まれないことの確認）
             "export_json" -> out(Prefs(ctx).toJson().toString())
+            // アプリが読む OS の設定値を、1 つずつ読めるか確かめる（Android 12 で targetSdk 31 だと、非公開のキーの多くが読めない）
+            "settings_read" -> {
+                val cr = ctx.contentResolver
+                val keys = listOf(
+                    "global" to "soft_ap_timeout_enabled", "global" to "tether_offload_disabled", "global" to "ota_disable_automatic_update",
+                    "global" to "mobile_data_always_on", "global" to "low_power", "global" to "low_power_sticky", "global" to "device_idle_constants",
+                    "global" to "wifi_scan_always_enabled", "global" to "ble_scan_always_enabled", "global" to "stay_on_while_plugged_in",
+                    "global" to "airplane_mode_on", "global" to "boot_count", "global" to "preferred_network_mode", "global" to "preferred_network_mode1",
+                    "secure" to "doze_enabled", "secure" to "doze_always_on", "secure" to "doze_pulse_on_pick_up", "secure" to "doze_pulse_on_double_tap",
+                    "secure" to "doze_tap_gesture", "secure" to "wake_gesture_enabled", "secure" to "double_tap_to_wake", "secure" to "location_mode",
+                    "system" to "screen_off_timeout", "system" to "screen_brightness_mode", "system" to "screen_brightness",
+                )
+                for ((ns, k) in keys) {
+                    val r = runCatching {
+                        when (ns) {
+                            "global" -> android.provider.Settings.Global.getString(cr, k)
+                            "secure" -> android.provider.Settings.Secure.getString(cr, k)
+                            else -> android.provider.Settings.System.getString(cr, k)
+                        }
+                    }
+                    out("$ns $k = " + r.fold({ it ?: "(null)" }, { "DENIED ${it.javaClass.simpleName}" }))
+                }
+            }
             // 見えるアプリの数（Android 11 の「パッケージの公開範囲」の確認用。QUERY_ALL_PACKAGES がないと少なくなる）
             "pkgs" -> out("installed=${ctx.packageManager.getInstalledApplications(0).size} target=${ctx.applicationInfo.targetSdkVersion}")
             // 接続端末の読み取り方を確かめる（ip neigh の生の結果と、数え方・一覧。Android 11 の制限の確認用）

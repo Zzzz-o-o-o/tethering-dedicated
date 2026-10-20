@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -62,14 +63,19 @@ class SetupActivity : Activity() {
                 "回線の種類（LTE など）と電波を読むために使います。OS の画面には「電話の発信と管理」と出ますが、発信・通話・SMS はしません。",
                 "Used to read the network type (LTE etc.) and the signal. The system screen says “make and manage phone calls”, but the app never makes calls or sends SMS.",
                 "Sert à lire le type de réseau (LTE, etc.) et le signal. L'écran du système indique « passer et gérer des appels », mais l'application ne passe jamais d'appel et n'envoie pas de SMS.",
-            ) + if (AutoRevoke.applies) {
-                "\n" + tr(
+            ) + when {
+                // Android 12 からは権限を外すだけでなく、アプリを休止状態にする（裏での動作・アラームも止まる）。スイッチはアプリ情報の画面に直接ある
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> "\n" + tr(
+                    "Android 12 以降は、しばらくアプリを開かないと OS がこの権限を外し、アプリを休止状態にします（監視も止まります）。「外れないようにする」で開く画面の「使用されていないアプリ」で、「権限を削除して空き容量を増やす」を OFF にしてください。",
+                    "On Android 12 and later, the system removes this permission and puts the app to sleep (monitoring stops) when it isn't opened for a while. Tap “Keep it” and turn off “Remove permissions and free up space” under “Unused apps”.",
+                    "Sur Android 12 et ultérieur, le système retire cette autorisation et met l'application en veille (la surveillance s'arrête) si elle n'est pas ouverte pendant un moment. Touchez « La conserver » et désactivez « Supprimer les autorisations et libérer de l'espace » sous « Applis inutilisées ».",
+                )
+                AutoRevoke.applies -> "\n" + tr(
                     "Android 11 以降は、しばらくアプリを開かないと OS がこの権限を外します。「外れないようにする」で開く画面の「権限」で、「アプリが使用されていない場合に権限を削除」を OFF にしてください。",
                     "On Android 11 and later, the system removes this permission when the app isn't opened for a while. Tap “Keep it”, open “Permissions” and turn off “Remove permissions if app isn't used”.",
                     "Sur Android 11 et ultérieur, le système retire cette autorisation si l'application n'est pas ouverte pendant un moment. Touchez « La conserver », ouvrez « Autorisations » et désactivez « Supprimer les autorisations si l'application n'est pas utilisée ».",
                 )
-            } else {
-                ""
+                else -> ""
             },
             { c ->
                 when {

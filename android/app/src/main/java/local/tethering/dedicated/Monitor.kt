@@ -1628,7 +1628,7 @@ class Monitor(private val ctx: Context) {
             recent(Ev.PROFILE, text)
         }
         val autoView = StateStore.AutoView(
-            enabled = prefs.bool(Defs.AUTO_SAVER) || prefs.bool(Defs.AUTO_DOZE),
+            enabled = prefs.bool(Defs.AUTO_SAVER) || AutoSwitch.dozeEnabled(prefs),
             permitted = AutoSwitch.permitted(ctx),
             saverOn = prefs.autoSaverApplied,
             dozeOn = prefs.autoDozeApplied,

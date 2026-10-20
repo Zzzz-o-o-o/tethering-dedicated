@@ -3,6 +3,7 @@ package local.tethering.dedicated
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 
 /**
@@ -53,11 +54,20 @@ class AutoSwitch(private val ctx: Context, private val prefs: Prefs) {
 
         fun permitted(ctx: Context): Boolean =
             ctx.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
+
+        /**
+         * 「Doze を早める」が効く OS か。Android 12 からは Doze の設定が DeviceConfig（device_idle）に移り、
+         * device_idle_constants を書いても変わらない（アプリからは DeviceConfig を変えられない）ので、Android 12 以降では使わない
+         */
+        val dozeWorks: Boolean get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+
+        /** 「Doze を早める」を使う設定で、効く OS か */
+        fun dozeEnabled(prefs: Prefs): Boolean = prefs.bool(Defs.AUTO_DOZE) && dozeWorks
     }
 
     val applied: AutoPolicy.Want get() = AutoPolicy.Want(prefs.autoSaverApplied, prefs.autoDozeApplied)
 
-    private fun config() = AutoPolicy.Config(prefs.bool(Defs.AUTO_SAVER), prefs.int(Defs.AUTO_SAVER_PCT), prefs.bool(Defs.AUTO_DOZE))
+    private fun config() = AutoPolicy.Config(prefs.bool(Defs.AUTO_SAVER), prefs.int(Defs.AUTO_SAVER_PCT), dozeEnabled(prefs))
 
     /** 必要なら切り替え、行った変更の説明を返す。[hold] のあいだ（比較テスト中）は変えない */
     fun evaluate(p: PowerInfo?, hold: Boolean): List<String> {

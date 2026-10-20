@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10・11 用） v0.10.0
+# テザリング専用化（Android 10・11・12 用） v0.10.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -10,6 +10,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 |---|---|
 | `TetheringDedicated-v0.10.0_android10.apk` | Android 10 用のインストール用（署名済み・約 690 KB・targetSdk 29。日本語・英語・フランス語）。GitHub の Releases にも置く |
 | `TetheringDedicated-v0.10.0_android11.apk` | Android 11 用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 30。Android 10 には入らない）。→「Android 11 用の版」 |
+| `TetheringDedicated-v0.10.0_android12.apk` | Android 12（12L も）用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 31。Android 11 以前には入らない）。→「Android 12 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
@@ -22,7 +23,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 **スマホだけで導入できます（v0.8.0 から。PC は任意）。**
 
-1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`）をダウンロードします。
+1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`）をダウンロードします。
 2. ダウンロードしたファイルを開いてインストールします（「提供元不明のアプリ」の許可を求められたら許可。Google Play プロテクトの警告が出たら、そのままインストール）。
 3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
 4. 以後は、端末の再起動後・アプリ更新後に自動で監視を再開します。
@@ -36,7 +37,7 @@ APK だけでも、機能は減りません。PC の ADB が必須なのは、�
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   （Android 11 の端末には `_android11.apk`。逆の組み合わせはスクリプトが知らせます）
+   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`。合わない組み合わせはスクリプトが知らせます）
    ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
 3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。PC から入れた場合も、メイン画面の「はじめの設定」で残りを確かめられます。
 
@@ -215,6 +216,20 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 - **PC のスクリプト**（`tools/adb-setup.ps1`）：Android 11（API 30）では、自動 OFF の項目を扱わない（以前から）。`-Apply` で「使わないときの権限の削除」を OFF（`cmd appops set --uid <アプリ> AUTO_REVOKE_PERMISSIONS_IF_UNUSED ignore`。端末の画面のスイッチは UID 単位の値を変え、こちらが優先されるので `--uid`）、`-Restore` で元に戻す。帯域は Android 11 の形式（`mApConfig.SoftApConfiguration.mBand`。ビットの組み合わせ 1 = 2.4GHz・2 = 5GHz・4 = 6GHz）も読む。`-Install` で APK と端末の Android のバージョンが合わないと知らせる（`_android11.apk` を Android 10 に入れようとすると止める）。Android 11 の端末に Android 10 用の APK が入っていたら、入れ替えを勧める。位置情報（`location_mode`）と画面ロックの判定は Android 11 でもそのまま使えることを確かめた。
 - **診断情報**の 1 行目に版（android10／android11）と targetSdk を出す（不具合の報告で分かるように）。
 
+### Android 12 用の版（v0.10.0）
+
+利用者の依頼で、Android 12 用の `TetheringDedicated-v0.10.0_android12.apk` を作りました（Android 10 用・11 用の APK はそのまま）。product flavor `android12`（minSdk・targetSdk 31。12L＝API 32 にも入る）。Android 12 用の版だけの内容は `src/android12/`（マニフェストと `res/xml/data_extraction_rules.xml`）。
+
+- **Android 12 のエミュレーター（API 31）で調べた結果**：
+  - テザリングの切り替え（リフレクション）・状態の放送・起動時の ON（ロック解除前）・タイル・netlink での接続端末・OS の設定値の読み取り（アプリが使うキーはすべて読めた。拒否は 0 件）・バッテリーセーバーの切り替え（`global low_power`）は動いた。`ip neigh` は Android 11 と同じく bind が拒否される（netlink で読むので影響なし）。
+  - **正確なアラーム**：targetSdk 31 では `SCHEDULE_EXACT_ALARM` が要る → Android 12 用の版のマニフェストで宣言（Android 12 では宣言すれば既定で許可。定期チェックのアラームは `exactAllowReason=permission` で正確になった）。許可がないときに正確でないアラームにする処理は以前からあった（`Scheduler`）。
+  - **裏からの常駐サービスの開始**（targetSdk 31 から制限）：電池の最適化の対象外のアプリ・起動直後（BOOT_COMPLETED）・正確なアラーム・通知のボタンは例外で開始できる。それ以外で `startForegroundService()` を呼ぶと `ForegroundServiceStartNotAllowedException` で落ちるので、`MonitorService.send` を、動いているあいだは `startService` で送り、止まっているときの開始が断られても落ちない作りにした（`onCreate` の `startForeground` も同じ）。電池の最適化の対象外を外し、監視を止めて裏に回した状態でアラームの受信を模すと、OS は開始を断り（`startForegroundService() not allowed`）、アプリは記録しただけで落ちなかった。
+  - **「Doze を早める」は効かない**：Android 12 から Doze の設定は DeviceConfig（device_idle）に移り、`device_idle_constants` を書いても変わらなかった（`inactive_to` が 30 分のまま）。DeviceConfig はアプリから変えられないので、Android 12 以降では動かさず（`AutoSwitch.dozeWorks`）、設定画面では選べないようにして理由を出す。診断情報にも「Android 12 以降は使えない」と出す。
+  - **使わないアプリの扱い**：Android 12 からは権限を外すだけでなく、アプリを休止状態にする（裏での動作・アラームも止まる）。スイッチはアプリ情報の画面の「使用されていないアプリ」の「権限を削除して空き容量を増やす」（Android 11 は「権限」の中の「アプリが使用されていない場合に権限を削除」）。「はじめの設定」の 1 の説明を、Android 12 以降はこちらの名前と影響で出す。開く画面・読む API・PC のスクリプトの設定（`AUTO_REVOKE_PERMISSIONS_IF_UNUSED`）は Android 11 と同じ。
+  - **バックアップ**：targetSdk 31 では `allowBackup="false"` だけでは機種変更時の端末間の転送が止まらないので、`dataExtractionRules` でクラウドのバックアップも端末間の転送もすべて除いた（ログ・設定・接続端末の名前を端末の外へ出さない、これまでの方針のまま。lint の DataExtractionRules の指摘も消えた）。
+  - PendingIntent は以前からすべて FLAG_IMMUTABLE、部品の exported も明示済みで、targetSdk 31 の必須事項を満たしていた。
+- **PC のスクリプト**：Android 12（API 31・32）も対象に。帯域は Android 12 の行の名前（`mCurrentSoftApConfiguration.mBand`）も読む。APK の名前（`_android10`／`_android11`／`_android12`）と端末の Android のバージョンを比べ、新しすぎる APK は止め、古い APK には合う APK を勧める（入っているアプリの targetSdk でも同じく勧める）。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -333,6 +348,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | （追加） | クイック設定のタイル | ✅ v0.10.0（状態と接続台数を表示し、タップで ON・OFF。ロック中は解除を求める。「システム設定の変更」の許可が必要） |
 | （追加） | GitHub の自動テストと不具合の報告のひな形 | ✅ v0.10.0（push・pull request ごとに単体テスト・lint・debug ビルド。署名鍵は使わない） |
 | （追加） | Android 11 用の APK | ✅ v0.10.0（targetSdk 30。接続端末は netlink で数える。権限の自動削除の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
+| （追加） | Android 12 用の APK | ✅ v0.10.0（targetSdk 31。正確なアラームの許可、裏からの開始の制限への対応、Doze を早めるは使えない、休止状態の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 
 ## 実機での確認結果（UMIDIGI A9 Pro・Android 10・SoftBank、2026-10-16）
 
@@ -583,6 +599,31 @@ Android 11 エミュレーター（API 30・日本語。PIN ありの試験を�
 
 単体テストは各版 139 件（`NetlinkTest` 3 件を追加：依頼の電文、`ip neigh` と同じ行への変換と NOARP の除外、エラーと途中で切れた電文）。lint のエラー・警告なし（Gradle・AGP の新版案内を除く。Android 11 用の版で出る「不要な SDK_INT の判定」は、Android 10 用の版と共通のコードのため対象外にした）。
 
+### v0.10.0 Android 12 用の版の確認（2026-10-20）
+
+Android 12 エミュレーター（API 31・英語と日本語。PIN ありの試験を含む）。**Android 12 の実機では、まだ確かめていません**。
+
+| 項目 | 結果 |
+|---|---|
+| テザリング | ✓ 確認・開始・停止が動いた（非公開 API の警告なし） |
+| 接続端末 | `ip neigh` は bind が拒否される → netlink で ✓ テザリング側「0台（netlink）」、上流側（eth0）の 3 件も読めた |
+| OS の設定値 | ✓ アプリが使う 25 個のキーをすべて読めた（拒否なし。未設定のものは null） |
+| 他のアプリ | ✓ 137 個（`pm list packages` と同数） |
+| 正確なアラーム | ✓ 定期チェックのアラームが `exactAllowReason=permission`（宣言した `SCHEDULE_EXACT_ALARM` で許可） |
+| 裏からの命令 | ✓ 動いているときは PC からの「今すぐチェック」・通知の「今すぐチェック」とも届いた。電池の最適化の対象外を外し、監視を止めて裏に回してアラームの受信を模すと、OS が開始を断り（`startForegroundService() not allowed`）、アプリは落ちずに記録した（断られたサービスは起動していない）。対象外に戻して監視を再開すると常駐した |
+| Doze を早める | `device_idle_constants` を書いても Doze の値は変わらない（Android 12 は DeviceConfig）→ 設定画面で選べず、「Android 12 以降では使えません」と表示。診断情報も同じ |
+| バッテリーセーバー | ✓ `global low_power` の書き換えで ON・OFF |
+| はじめの設定 | ✓ 1 は Android 12 の説明（「使用されていないアプリ」の「権限を削除して空き容量を増やす」）。「外れないようにする」→ アプリ情報 → スイッチを OFF → 戻ると「✓ 済み」 |
+| タイル | ✓ Android 12 の形のタイルで OFF → タップで「ON・端末0台」 |
+| 起動時の ON（PIN あり） | ✓ ロック解除前（RUNNING_LOCKED）に、起動の約 10 秒後に ON。解除後、監視が自動で始まり、ログに「テザリングを ON にした（起動62秒後）」 |
+| メイン画面・診断情報 | ✓「正常」・「0台（netlinkで推定）」。診断情報「アプリ: 0.10.0 android12（11, targetSdk 31）」・「Doze を早める 使わない（Android 12 以降は使えない）」 |
+| リリース版（署名・難読化済み） | ✓ はじめの設定・タイルで ON・メイン画面、クラッシュなし。マニフェストに `SCHEDULE_EXACT_ALARM`・`QUERY_ALL_PACKAGES`・`dataExtractionRules` |
+| PC のスクリプト | ✓ 確認・`-Apply`・`-Restore`、帯域「2.4GHz」（Android 12 の形式）。名前の判定：Android 12 に `_android11` の名前の APK → 警告して入れる、`_android13` の名前 → 止める |
+
+エミュレーターでは、`adb reboot` や `stop; start`（OS の再起動を飛ばす）の直前に変えた「使わないときの権限の削除」の値が保存されずに戻ることがありました（OS が許可の変更をすぐには書き込まないため。普通の再起動では保存される。Android 10 の実機でも同じことがあった）。
+
+単体テストは各版 139 件。lint のエラー・警告なし（Gradle・AGP の新版案内を除く）。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -661,8 +702,17 @@ Android 11 エミュレーター（API 30・日本語。PIN ありの試験を�
 - [x] 読めなくなった設定（アクセスポイントの自動 OFF）を「未設定」と誤って出さず、権限の自動削除を止める方法を案内する — エミュレーター
 - [ ] Android 11 の実機での確認（まだ）
 
+### Android 12 用の版（v0.10.0。この README で決めた確認項目）
+
+- [x] Android 12 で、テザリングの切り替え・起動時の ON（ロック解除前）・タイル・接続端末（netlink）が動く — エミュレーター
+- [x] targetSdk 31 の制限（正確なアラーム・裏からの常駐サービスの開始）で落ちず、正確なアラームと起動直後には監視を始められる — エミュレーター
+- [x] Android 12 で効かない機能（Doze を早める）は選べないようにして理由を出し、休止状態を止める方法を案内する — エミュレーター
+- [x] アプリのデータを、クラウドのバックアップにも端末間の転送にも含めない — マニフェスト（`dataExtractionRules`）
+- [ ] Android 12 の実機での確認（まだ）
+
 ## 既知の制約
 
+- **Android 12 用の版も、エミュレーターでしか確かめていません**（Android 12 の実機がないため）。Android 12 では「Doze を早める」は使えません（Doze の設定がアプリから変えられない場所に移ったため。バッテリーセーバーの自動切り替えは使える）。電池の最適化の対象外にしていないと、止まった監視を裏から始め直せないことがあります（正確なアラーム・起動直後は始められる）。
 - **Android 11 用の版は、エミュレーターでしか確かめていません**（Android 11 の実機がないため）。メーカーの改変で、テザリングの切り替えや netlink での読み取りが違う動きをすることがあります。Android 11 ではアクセスポイントの自動 OFF をアプリから読めないので、端末の画面で OFF にしてください（AOSP の既定は ON で、接続 0 台が 10 分続くと止まる）。
 
 - 月の通信量の上限は、「使用状況へのアクセス」がないと通信量を読めません。チェックのたびに読むので、知らせが届くのは上限に達してから最大でチェック間隔 1 回分あとです。数え方は端末の記録なので、キャリアの数え方と少し違うことがあります。
@@ -699,8 +749,8 @@ Android 11 エミュレーター（API 30・日本語。PIN ありの試験を�
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 2 つあり、`app/build/outputs/apk/android10/release/` と `…/android11/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`・`_android11.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest testAndroid11DebugUnitTest`、lint は `gradlew lintAndroid10Debug lintAndroid11Debug`。GitHub に push すると、GitHub Actions が両方の版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。
-  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）と、見えるアプリの数を出す `pkgs` を足しました。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 3 つあり、`app/build/outputs/apk/android10/release/`・`…/android11/release/`・`…/android12/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`・`_android11.apk`・`_android12.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest testAndroid11DebugUnitTest testAndroid12DebugUnitTest`、lint は `gradlew lintAndroid10Debug lintAndroid11Debug lintAndroid12Debug`。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用の APK は、それぞれコミット 9caccdb・7181fa5 の時点で作ったものです（Android 12 用の版で足した処理は、Android 10・11 では動きが変わらないか、Android 12 以降だけで働く）。
+  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。
 
 ## この端末で行った ADB 事前設定（2026-10-16）
 

@@ -447,7 +447,7 @@ class GuideActivity : Activity() {
                 tr("バッテリー駆動中の自動切り替え", "Auto switching on battery", "Bascule automatique sur batterie"), tags(apk(), adbSetup()),
                 { c ->
                     val prefs = Prefs(c)
-                    val on = prefs.bool(Defs.AUTO_SAVER) || prefs.bool(Defs.AUTO_DOZE)
+                    val on = prefs.bool(Defs.AUTO_SAVER) || AutoSwitch.dozeEnabled(prefs)
                     val permitted = AutoSwitch.permitted(c)
                     when {
                         !on -> notUsed() + (if (permitted) Fmt.paren(tr("権限は付与済み", "permission granted", "autorisation accordée")) else "") to Level.INFO
@@ -458,7 +458,7 @@ class GuideActivity : Activity() {
                         else -> Fmt.join(
                             listOfNotNull(
                                 tr("バッテリーセーバー", "Battery Saver", "Économiseur de batterie").takeIf { prefs.bool(Defs.AUTO_SAVER) },
-                                tr("Doze を早める", "earlier Doze", "Doze avancé").takeIf { prefs.bool(Defs.AUTO_DOZE) },
+                                tr("Doze を早める", "earlier Doze", "Doze avancé").takeIf { AutoSwitch.dozeEnabled(prefs) },
                             ),
                         ).let { tr("$it を自動で切り替え", "$it switched automatically", "$it en bascule automatique") } to Level.OK
                     }

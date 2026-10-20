@@ -37,6 +37,12 @@ android {
             minSdk = 30
             targetSdk = 30
         }
+        // Android 12 用（v0.10.0 から。12L も）。Android 12 の仕様（targetSdk 31）に合わせ、Android 11 以前には入らない
+        create("android12") {
+            dimension = "os"
+            minSdk = 31
+            targetSdk = 31
+        }
     }
 
     signingConfigs {

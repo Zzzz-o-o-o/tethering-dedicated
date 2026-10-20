@@ -317,7 +317,8 @@ object Diagnostics {
                     tr("自動切り替え", "Auto switching", "Bascule automatique"),
                     tr("バッテリーセーバー", "Battery Saver", "économiseur de batterie") + " " + use(prefs.bool(Defs.AUTO_SAVER)) +
                         Fmt.paren(tr("残量 $pct 以下", "at or below $pct", "à $pct ou moins")) + " / " +
-                        tr("Doze を早める", "earlier Doze", "Doze avancé") + " " + use(prefs.bool(Defs.AUTO_DOZE)),
+                        tr("Doze を早める", "earlier Doze", "Doze avancé") + " " + use(prefs.bool(Defs.AUTO_DOZE)) +
+                        if (AutoSwitch.dozeWorks) "" else Fmt.paren(tr("Android 12 以降は使えない", "not available on Android 12+", "indisponible sur Android 12+")),
                 ),
             )
             appendLine(

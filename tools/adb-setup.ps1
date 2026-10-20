@@ -30,13 +30,13 @@
     端末にオフロードの HAL（tetheroffload）がないときは効果がないので変更しない
   - アクセスポイントの帯域（2.4GHz／5GHz）とオフロードの対応を表示する（アプリからは読めないため。表示だけ）
 
-  Android 11（API 30）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android11.apk を使う）:
+  Android 11（API 30）・Android 12（API 31・32）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android11.apk・_android12.apk を使う）:
   - 「アクセスポイントの自動OFF」は OS の設定値ではなくなり、ADB では変えられないので扱わない（端末の画面で OFF にする）
-  - このアプリの「使わないときの権限の削除」を OFF にする（しばらく開かないと「電話」の権限が外れないように）… -Apply に含む
+  - このアプリの「使わないときの権限の削除」を OFF にする（しばらく開かないと「電話」の権限が外れないように。Android 12 では休止状態も防ぐ）… -Apply に含む
 
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11 の端末には _android11.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11 の端末には _android11.apk、Android 12 には _android12.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
@@ -214,11 +214,23 @@ function Get-AutoRevokeMode {
     return $null
 }
 
-# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用の APK）
+# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用）
 function Get-AppTargetSdk {
     $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
     if ($d -match 'targetSdk=(\d+)') { return [int]$Matches[1] }
     return $null
+}
+
+# API レベルから Android のバージョン（29 = 10、30 = 11、31・32 = 12（12L）、33 = 13 …）
+function Get-AndroidMajor([int]$Sdk) {
+    if ($Sdk -le 30) { return $Sdk - 19 }
+    if ($Sdk -le 32) { return 12 }
+    return $Sdk - 20
+}
+
+# この端末に合う APK の Android のバージョン（APK は Android 10・11・12 用がある。13 以降には 12 用）
+function Get-BestApkMajor([int]$Sdk) {
+    return [Math]::Max(10, [Math]::Min(12, (Get-AndroidMajor $Sdk)))
 }
 
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
@@ -230,10 +242,11 @@ function Test-OffloadHal {
 }
 
 # アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）。
-# Android 11 からは SoftApConfiguration の mBand（ビットの組み合わせ: 1 = 2.4GHz、2 = 5GHz、4 = 6GHz）
+# Android 11 からは SoftApConfiguration の mBand（ビットの組み合わせ: 1 = 2.4GHz、2 = 5GHz、4 = 6GHz）。
+# 行の名前は Android 11 が mApConfig.SoftApConfiguration.mBand、Android 12 が mCurrentSoftApConfiguration.mBand
 function Get-ApBand {
     $r = Invoke-Adb -Arguments @('shell', 'dumpsys', 'wifi') -AllowFail
-    if ($r -match 'mApConfig\.SoftApConfiguration\.mBand:\s*(\d+)') {
+    if ($r -match '(?:mApConfig\.SoftApConfiguration|mCurrentSoftApConfiguration)\.mBand:\s*(\d+)') {
         $v = [int]$Matches[1]
         $names = @()
         if ($v -band 1) { $names += (T "2.4GHz" "2.4 GHz" "2,4 GHz") }
@@ -308,19 +321,24 @@ $sdk = [int](Invoke-Adb -Arguments @('shell', 'getprop', 'ro.build.version.sdk')
 $sn = $script:DeviceSerial
 Write-Host (T "端末: $model（$sn） / Android API $sdk" "Phone: $model ($sn) / Android API $sdk" "Téléphone : $model ($sn) / Android API $sdk")
 Write-Host "adb : $($script:AdbPath)"
-if ($sdk -lt 29 -or $sdk -gt 30) {
-    Write-Warning (T "このアプリと設定は Android 10・11（API 29・30）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 and 11 (API 29 and 30). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 et 11 (API 29 et 30). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
+if ($sdk -lt 29 -or $sdk -gt 32) {
+    Write-Warning (T "このアプリと設定は Android 10・11・12（API 29〜32）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10, 11 and 12 (API 29 to 32). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10, 11 et 12 (API 29 à 32). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
 }
+$phoneMajor = Get-AndroidMajor $sdk
+$bestMajor = Get-BestApkMajor $sdk
 
 if ($Install) {
     if (-not (Test-Path $Install)) { throw (T "APK が見つかりません: $Install" "APK not found: $Install" "APK introuvable : $Install") }
-    # APK は Android のバージョンごとに分かれている（_android10 / _android11）
+    # APK は Android のバージョンごとに分かれている（_android10 / _android11 / _android12。それより新しい端末には入らない）
     $leaf = Split-Path $Install -Leaf
-    if ($sdk -lt 30 -and $leaf -match '_android11') {
-        throw (T "$leaf は Android 11 以降用です。この端末（API $sdk）には _android10.apk を使ってください。" "$leaf is for Android 11 and later. Use the _android10.apk on this phone (API $sdk)." "$leaf est prévu pour Android 11 et ultérieur. Utilisez le fichier _android10.apk sur ce téléphone (API $sdk).")
-    }
-    if ($sdk -ge 30 -and $leaf -match '_android10') {
-        Write-Warning (T "この端末は Android 11 以降です。_android11.apk を使ってください（_android10.apk でも動きますが、Android 10 用です）。" "This phone runs Android 11 or later. Use the _android11.apk (the _android10.apk works, but it's made for Android 10)." "Ce téléphone utilise Android 11 ou ultérieur. Utilisez le fichier _android11.apk (le fichier _android10.apk fonctionne, mais il est prévu pour Android 10).")
+    if ($leaf -match '_android(\d+)') {
+        $apkMajor = [int]$Matches[1]
+        if ($apkMajor -gt $phoneMajor) {
+            throw (T "$leaf は Android $apkMajor 以降用です。この端末（Android $phoneMajor）には _android$bestMajor.apk を使ってください。" "$leaf is for Android $apkMajor and later. Use the _android$bestMajor.apk on this phone (Android $phoneMajor)." "$leaf est prévu pour Android $apkMajor et ultérieur. Utilisez le fichier _android$bestMajor.apk sur ce téléphone (Android $phoneMajor).")
+        }
+        if ($apkMajor -lt $bestMajor) {
+            Write-Warning (T "この端末は Android $phoneMajor です。_android$bestMajor.apk を使ってください（$leaf でも動きますが、Android $apkMajor 用です）。" "This phone runs Android $phoneMajor. Use the _android$bestMajor.apk ($leaf works, but it's made for Android $apkMajor)." "Ce téléphone utilise Android $phoneMajor. Utilisez le fichier _android$bestMajor.apk ($leaf fonctionne, mais il est prévu pour Android $apkMajor).")
+        }
     }
     $apk = (Resolve-Path $Install).Path
     Write-Host (T "インストール: $apk" "Installing: $apk" "Installation : $apk")
@@ -555,12 +573,16 @@ if ($installed) {
     if ($sdk -ge 30) {
         $arNow = Get-AutoRevokeMode
         $rows = @($rows) + [pscustomobject]@{
-            Name = (T "使わないときの権限の削除（本アプリ・Android 11）" "Remove permissions if unused (this app, Android 11)" "Suppression des autorisations si inutilisée (cette appli, Android 11)")
+            Name = (T "使わないときの権限の削除（本アプリ・Android 11 以降）" "Remove permissions if unused (this app, Android 11+)" "Suppression des autorisations si inutilisée (cette appli, Android 11+)")
             Current = $(if ($arNow -eq 'ignore') { 'OFF' } else { 'ON' }); Want = 'OFF'; Status = $(if ($arNow -eq 'ignore') { $ok } else { $change })
         }
+        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用）が入っているか
         $tsdk = Get-AppTargetSdk
-        if ($tsdk -eq 29) {
-            Write-Warning (T "インストールされているのは Android 10 用の APK（targetSdk 29）です。Android 11 用の _android11.apk に入れ替えるのがおすすめです（設定とログは引き継がれます）。" "The installed APK is the Android 10 one (targetSdk 29). Replacing it with the _android11.apk is recommended (settings and logs are kept)." "L'APK installé est celui pour Android 10 (targetSdk 29). Il est conseillé de le remplacer par le fichier _android11.apk (paramètres et journaux conservés).")
+        if ($null -ne $tsdk -and $tsdk -ge 29) {
+            $appMajor = Get-AndroidMajor $tsdk
+            if ($appMajor -lt $bestMajor) {
+                Write-Warning (T "インストールされているのは Android $appMajor 用の APK（targetSdk $tsdk）です。_android$bestMajor.apk に入れ替えるのがおすすめです（設定とログは引き継がれます）。" "The installed APK is the Android $appMajor one (targetSdk $tsdk). Replacing it with the _android$bestMajor.apk is recommended (settings and logs are kept)." "L'APK installé est celui pour Android $appMajor (targetSdk $tsdk). Il est conseillé de le remplacer par le fichier _android$bestMajor.apk (paramètres et journaux conservés).")
+            }
         }
     }
     $sg = Test-SecureSettingsGranted

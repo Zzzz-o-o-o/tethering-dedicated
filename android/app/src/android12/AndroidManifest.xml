@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 用の版（targetSdk 31）だけに加える内容。共通の内容は src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Android 11 から、targetSdk 30 以上のアプリには他のアプリの一覧が見えない（パッケージの公開範囲）。
+      設定ガイドの「アプリの整理」と、アプリ別の通信量（F-35）のアプリ名に使う（読むだけ。Android 11 用の版と同じ）
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <!--
+      Android 12 から、targetSdk 31 以上のアプリが正確な時刻のアラーム（定期チェック）を使うには、この許可が要る
+      （Android 12 では宣言すれば既定で許可される）。正確なアラームで起きたときは、裏からでも監視サービスを開始できる
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- ログ・設定・接続端末の名前は、クラウドのバックアップにも、機種変更時の端末間の転送にも含めない -->
+    <application android:dataExtractionRules="@xml/data_extraction_rules" />
+</manifest>
