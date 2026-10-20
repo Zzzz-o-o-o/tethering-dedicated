@@ -1,12 +1,14 @@
 # Tethering Dedicated for Android 10
 
+[![CI](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml)
+
 Turn a spare Android 10 phone into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
 The app keeps an eye on the hotspot, the mobile line, the internet connection, the battery and the temperature,
 alerts you when something goes wrong, keeps a log, and helps you reduce power consumption.
 
 - No root required. The app does not change carrier settings.
 - It uses the phone's own hotspot as is. It never toggles airplane mode, mobile data or Data Saver, and never reboots the phone.
-- It turns the hotspot on or off only if you enable one of the optional features **Turn on the hotspot at startup**, **quiet-hours schedule** and **monthly data cap**, or tap **Turn on now** in the initial setup.
+- It turns the hotspot on or off only if you enable one of the optional features **Turn on the hotspot at startup**, **quiet-hours schedule** and **monthly data cap**, tap **Turn on now** in the initial setup, or tap its **quick settings tile**.
 
 **Languages:** English, French and Japanese. The app follows the phone's language (Settings → System → Languages & input → Languages); any other language shows English. The PC script follows the PC's display language.
 
@@ -23,17 +25,18 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | File | Contents |
 |---|---|
-| `TetheringDedicated-v0.9.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
+| `TetheringDedicated-v0.10.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
 | `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
+| `.github\` | GitHub Actions CI (unit tests, lint, debug build) and the bug report form |
 | `LICENSE` | MIT License |
 
 ---
 
 ## Quick start (phone only)
 
-1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.9.0.apk`.
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.10.0.apk`.
 2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
 3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
    1. **Phone** permission — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS.
@@ -57,7 +60,7 @@ The PC script applies the recommended system settings in one go, can undo them, 
 1. **Enable USB debugging** on the phone: Settings → About phone → tap *Build number* seven times, then Settings → System → Advanced → Developer options → *USB debugging*. Connect the phone to the PC and allow the "Allow USB debugging?" prompt on the phone.
 2. From the project folder on the PC:
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.9.0.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.10.0.apk -Apply
    ```
    This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
@@ -119,6 +122,18 @@ All thresholds and intervals can be changed in **Settings**.
 | **Diagnostics** | What this phone can and cannot report. Copy or share it when asking for help. Contains no phone number, IMEI, SSID or MAC address, and nothing about connected devices |
 | **Save log as CSV** | Saves the log as a CSV file (opens in Excel) |
 | **Settings** | All settings, file backup/restore, **Undo last change**, **Reset to defaults** |
+
+### Quick settings tile
+
+Turn the hotspot on or off from the quick settings panel (swipe down from the top of the screen), without opening the app.
+
+1. **Add the tile once**: open the quick settings panel fully (swipe down twice), tap the pencil (edit) icon, and drag **Tethering Dedicated** into the panel.
+2. The tile shows whether the hotspot is on and how many devices are connected (for example "ON · 2 device(s)"). **Tap it** to turn the hotspot on or off.
+
+- It needs **Modify system settings** (Initial setup step 3). Without it, the tile shows "Permission needed" and a tap opens Initial setup.
+- After a restart, the tile works once you have unlocked the phone (if it has a screen lock).
+- When the phone is locked, Android asks you to unlock it first, so nobody can switch the hotspot from the lock screen.
+- Turning the hotspot off from the tile is not reported as a problem. It stays off until you turn it on again (with **Turn on the hotspot at startup**, it also comes back on at the next startup). Both actions are written in the log and **Recent events**.
 
 ### Local web page (read-only)
 
@@ -318,7 +333,14 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 | The schedule didn't turn the hotspot off | Check that "Modify system settings" is allowed and the check button succeeds. It waits until no device has been connected for 10 minutes |
 | "Can't start/stop charging with the smart plug" | Check the plug's power and Wi-Fi, its address, and the charging cable |
 | The test notification fails | Check the URL. "HTTP 4xx" usually means a wrong URL or token |
-| Something else | Open **Diagnostics**, then copy or share it |
+| The quick settings tile shows "Permission needed" | Allow "Modify system settings" (Initial setup step 3) |
+| The quick settings tile is grayed out and does nothing | After a restart, unlock the phone once |
+| Something else | Open **Diagnostics**, then copy or share it (see below) |
+
+### Reporting a problem
+
+Open a [bug report](https://github.com/Zzzz-o-o-o/tethering-dedicated/issues/new/choose) on GitHub (in English or Japanese). The form asks what happened, the app version, your phone, and the **Diagnostics** text: main screen → **Diagnostics** → **Copy**, then paste it into the form.
+Don't paste phone numbers, IMEI, SSIDs, passwords or MAC addresses. Diagnostics contains none of these.
 
 ---
 
@@ -332,7 +354,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 
 ---
 
-For build instructions, design notes and test records, see `developer-memo.md` (Japanese).
+For build instructions, design notes and test records, see `developer-memo.md` (Japanese). Every push and pull request runs the unit tests, lint and a debug build on GitHub Actions ([CI](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml)).
 
 ## License
 

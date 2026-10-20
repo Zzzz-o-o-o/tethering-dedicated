@@ -6,6 +6,7 @@
     <string name="title_guide">Guide de configuration</string>
     <string name="title_setup">Configuration initiale</string>
     <string name="title_tether_details">Détails du point d\'accès</string>
+    <string name="tile_label">Tethering Dedicated</string>
     <string name="title_apps">Liste des applications</string>
     <string name="title_diagnostics">Diagnostic</string>
     <string name="title_experiment">Test comparatif</string>

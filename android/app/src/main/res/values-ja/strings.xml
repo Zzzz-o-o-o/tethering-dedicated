@@ -6,6 +6,7 @@
     <string name="title_guide">設定ガイド</string>
     <string name="title_setup">はじめの設定</string>
     <string name="title_tether_details">テザリングの詳細</string>
+    <string name="tile_label">テザリング専用化</string>
     <string name="title_apps">アプリの整理</string>
     <string name="title_diagnostics">診断情報</string>
     <string name="title_experiment">比較テスト</string>

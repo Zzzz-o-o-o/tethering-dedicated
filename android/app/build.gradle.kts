@@ -20,8 +20,8 @@ android {
         // Android 11 以降で厳しくなった制限（設定値の読み取り・パッケージ一覧など）の影響を受けないようにする
         minSdk = 29
         targetSdk = 29
-        versionCode = 10
-        versionName = "0.9.0"
+        versionCode = 11
+        versionName = "0.10.0"
     }
 
     signingConfigs {

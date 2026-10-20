@@ -112,6 +112,11 @@ class Prefs(context: Context) {
         get() = state.getLong("sched_handled_window", 0L)
         set(v) = state.edit().putLong("sched_handled_window", v).apply()
 
+    /** クイック設定のタイルでテザリングを OFF にした時刻（0 = なし。ON になったら消す）。意図した停止なので異常として知らせない */
+    var tileOffAt: Long
+        get() = state.getLong("tile_off_at", 0L)
+        set(v) = state.edit().putLong("tile_off_at", v).apply()
+
     // テザリングの連続稼働時間（v0.9.0）。アプリが更新・再起動しても続けて数えられるよう保存する
     /** アクセスポイントが ON になった時刻（0 = OFF・不明） */
     var apOnSince: Long

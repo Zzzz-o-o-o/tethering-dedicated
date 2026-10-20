@@ -144,6 +144,18 @@
             android:name=".MonitorService"
             android:exported="false" />
 
+        <!-- クイック設定のタイル（v0.10.0）。OS のシステム UI だけが結び付ける（BIND_QUICK_SETTINGS_TILE） -->
+        <service
+            android:name=".HotspotTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_hotspot"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".AlarmReceiver"
             android:exported="false" />

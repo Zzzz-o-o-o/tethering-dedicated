@@ -527,7 +527,8 @@ class Monitor(private val ctx: Context) {
         // 比較テスト「使わないときはテザリングを止める」の間は、テザリングの停止を異常としない（利用者が止めるため）
         val testingOff = exp?.candidate?.key == Candidates.KEY_TETHER_OFF
         // 時間帯スケジュールで止めている間（再開のやり直し中を含む）・月の通信量の上限で止めている間も異常としない（仕様 F-37・v0.8.0）
-        val scheduled = prefs.schedStoppedWindow != 0L || prefs.capStoppedCycle != 0L
+        // クイック設定のタイルで OFF にした（意図した停止）間も異常としない（v0.10.0）
+        val scheduled = prefs.schedStoppedWindow != 0L || prefs.capStoppedCycle != 0L || (prefs.tileOffAt != 0L && t.wifiOn != true)
         if (!prefs.bool(Defs.TETHER_EXPECTED) || testingOff || scheduled) {
             if (tether.episode != null) {
                 tether.reset()
@@ -928,6 +929,8 @@ class Monitor(private val ctx: Context) {
 
     private fun noteApSession(on: Boolean?) {
         if (on == null) return
+        // タイルで OFF にしたあと ON になったら、意図した停止は終わり
+        if (on && prefs.tileOffAt != 0L) prefs.tileOffAt = 0L
         val prev = lastApOn
         lastApOn = on
         if (prev == on) return

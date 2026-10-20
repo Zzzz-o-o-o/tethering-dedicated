@@ -1,0 +1,50 @@
+name: Bug report / 不具合の報告
+description: Something doesn't work as expected / 思ったとおりに動かない
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please don't paste phone numbers, IMEI, SSIDs, passwords or MAC addresses. The app's **Diagnostics** text contains none of these.
+        報告ありがとうございます。電話番号・IMEI・SSID・パスワード・MAC アドレスは貼らないでください（アプリの「診断情報」にはこれらは含まれません）。
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / 何が起きましたか
+      description: What you did, what you expected, and what happened instead. / 何をしたら、何を期待して、実際にどうなったか
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version / アプリのバージョン
+      description: Shown on the first lines of Diagnostics. / 「診断情報」の最初の行にあります
+      placeholder: "0.10.0"
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone and Android version / 端末と Android のバージョン
+      placeholder: "e.g. UMIDIGI A9 Pro, Android 10"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How was the app set up? / 導入の方法
+      options:
+        - APK only (Initial setup) / APK だけ（はじめの設定）
+        - With the PC script (adb-setup) / PC のスクリプト（adb-setup）も使った
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / 診断情報
+      description: Main screen → Diagnostics → Copy, then paste here. / メイン画面 →「診断情報」→「コピー」で貼り付け
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines (optional) / ログ（任意）
+      description: Relevant lines from "Save log as CSV", if any. / 「ログを CSV で保存」の該当する行
+      render: text
