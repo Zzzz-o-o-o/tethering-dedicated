@@ -57,13 +57,36 @@ class SetupActivity : Activity() {
             )
         }
 
+        // Android 13 用の版は、通知の許可も自分で求める（番号を変えないよう、1 にまとめる）
+        val askNotify = NotifyPermission.requestable(this)
         step(
-            page, 1, tr("「電話」の権限", "“Phone” permission", "Autorisation « Téléphone »"),
+            page, 1,
+            if (askNotify) {
+                tr("「電話」と「通知」の権限", "“Phone” and “Notifications” permissions", "Autorisations « Téléphone » et « Notifications »")
+            } else {
+                tr("「電話」の権限", "“Phone” permission", "Autorisation « Téléphone »")
+            },
             tr(
                 "回線の種類（LTE など）と電波を読むために使います。OS の画面には「電話の発信と管理」と出ますが、発信・通話・SMS はしません。",
                 "Used to read the network type (LTE etc.) and the signal. The system screen says “make and manage phone calls”, but the app never makes calls or sends SMS.",
                 "Sert à lire le type de réseau (LTE, etc.) et le signal. L'écran du système indique « passer et gérer des appels », mais l'application ne passe jamais d'appel et n'envoie pas de SMS.",
-            ) + when {
+            ) + (
+                if (askNotify) {
+                    "\n" + tr(
+                        "通知は、テザリングの停止などの異常を知らせるために使います（Android 13 から許可が必要です）。",
+                        "Notifications are used to tell you about problems such as the hotspot stopping (Android 13 asks for your permission).",
+                        "Les notifications servent à vous prévenir des problèmes, comme l'arrêt du point d'accès (Android 13 demande votre autorisation).",
+                    )
+                } else {
+                    ""
+                }
+                ) + when {
+                // Android 13 からは名前が「使用していないアプリを一時停止する」になり、通知も止まる
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> "\n" + tr(
+                    "Android 13 以降は、しばらくアプリを開かないと OS がアプリを一時停止します（権限が外れ、通知と監視も止まります）。「外れないようにする」で開く画面の「使用していないアプリの設定」で、「使用していないアプリを一時停止する」を OFF にしてください。",
+                    "On Android 13 and later, the system pauses the app when it isn't opened for a while (permissions are removed, and notifications and monitoring stop). Tap “Keep it” and turn off “Pause app activity if unused” under “Unused app settings”.",
+                    "Sur Android 13 et ultérieur, le système suspend l'application si elle n'est pas ouverte pendant un moment (les autorisations sont retirées, les notifications et la surveillance s'arrêtent). Touchez « La conserver » et désactivez « Suspendre activité appli si inutilisée » sous « Paramètres des applis inutilisées ».",
+                )
                 // Android 12 からは権限を外すだけでなく、アプリを休止状態にする（裏での動作・アラームも止まる）。スイッチはアプリ情報の画面に直接ある
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> "\n" + tr(
                     "Android 12 以降は、しばらくアプリを開かないと OS がこの権限を外し、アプリを休止状態にします（監視も止まります）。「外れないようにする」で開く画面の「使用されていないアプリ」で、「権限を削除して空き容量を増やす」を OFF にしてください。",
@@ -78,8 +101,15 @@ class SetupActivity : Activity() {
                 else -> ""
             },
             { c ->
+                val phone = c.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+                val notify = !askNotify || NotifyPermission.enabled(c)
                 when {
-                    c.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED -> notYet()
+                    !phone && !notify -> notYet()
+                    !phone -> tr("通知は許可済み・「電話」はまだ", "Notifications allowed, “Phone” not yet", "Notifications autorisées, « Téléphone » pas encore") to Level.TODO
+                    !notify -> tr(
+                        "「電話」は許可済み・通知はまだ（異常を知らせられません）", "“Phone” allowed, notifications not yet (problems can't be reported)",
+                        "« Téléphone » autorisée, notifications pas encore (les problèmes ne peuvent pas être signalés)",
+                    ) to Level.TODO
                     !AutoRevoke.exempt(c) -> tr(
                         "許可済み（使わないと自動で外れる設定です）", "Allowed (but removed automatically if the app isn't used)",
                         "Autorisée (mais retirée automatiquement si l'application n'est pas utilisée)",
@@ -272,14 +302,30 @@ class SetupActivity : Activity() {
         }
     }
 
+    /** 「電話」と（Android 13 用の版では）「通知」のうち、まだのものを求める */
     private fun requestPhone() {
-        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) return refresh()
+        val wanted = buildList {
+            if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.READ_PHONE_STATE)
+            if (NotifyPermission.requestable(this@SetupActivity) && checkSelfPermission(NotifyPermission.PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+                add(NotifyPermission.PERMISSION)
+            }
+        }
+        if (wanted.isEmpty()) {
+            // 許可はあるのに通知が OFF（アプリの通知の設定で OFF にした）なら、通知の設定を開く
+            if (!NotifyPermission.enabled(this)) SystemScreens.appNotifications(this)
+            return refresh()
+        }
         val ui = getSharedPreferences("ui", MODE_PRIVATE)
-        if (shouldShowRequestPermissionRationale(Manifest.permission.READ_PHONE_STATE) || !ui.getBoolean("phone_denied", false)) {
-            requestPermissions(arrayOf(Manifest.permission.READ_PHONE_STATE), REQ_PHONE)
+        if (wanted.any { shouldShowRequestPermissionRationale(it) } || !ui.getBoolean("phone_denied", false)) {
+            requestPermissions(wanted.toTypedArray(), REQ_PHONE)
         } else {
             // 「今後表示しない」が選ばれた後はダイアログが出ないので、アプリ情報の権限画面を開く
-            toast(tr("「権限」から「電話」を許可してください", "Allow “Phone” under “Permissions”", "Autorisez « Téléphone » dans « Autorisations »"))
+            val what = when {
+                wanted.size > 1 -> tr("「電話」と「通知」", "“Phone” and “Notifications”", "« Téléphone » et « Notifications »")
+                wanted[0] == NotifyPermission.PERMISSION -> tr("「通知」", "“Notifications”", "« Notifications »")
+                else -> tr("「電話」", "“Phone”", "« Téléphone »")
+            }
+            toast(tr("「権限」から${what}を許可してください", "Allow $what under “Permissions”", "Autorisez $what dans « Autorisations »"))
             SystemScreens.open(this, SystemScreens.appDetails(packageName))
         }
     }
@@ -287,9 +333,10 @@ class SetupActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_PHONE) return
-        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("phone_denied", !granted).apply()
-        if (granted && prefs.monitoring) MonitorService.send(this, MonitorService.ACTION_CHECK_NOW)
+        val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("phone_denied", !allGranted).apply()
+        // 監視に反映する（回線の情報を読み直し、通知を許可したなら常駐通知も出し直す）
+        if (grantResults.any { it == PackageManager.PERMISSION_GRANTED } && prefs.monitoring) MonitorService.send(this, MonitorService.ACTION_CHECK_NOW)
         refresh()
     }
 

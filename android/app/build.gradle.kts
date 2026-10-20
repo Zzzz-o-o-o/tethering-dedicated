@@ -43,6 +43,12 @@ android {
             minSdk = 31
             targetSdk = 31
         }
+        // Android 13 用（v0.10.0 から）。Android 13 の仕様（targetSdk 33）に合わせ、Android 12L 以前には入らない
+        create("android13") {
+            dimension = "os"
+            minSdk = 33
+            targetSdk = 33
+        }
     }
 
     signingConfigs {

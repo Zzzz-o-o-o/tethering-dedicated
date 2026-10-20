@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13 用の版（targetSdk 33）だけに加える内容。共通の内容は src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Android 11 から、targetSdk 30 以上のアプリには他のアプリの一覧が見えない（パッケージの公開範囲）。
+      設定ガイドの「アプリの整理」と、アプリ別の通信量（F-35）のアプリ名に使う（読むだけ。Android 11・12 用の版と同じ）
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <!-- 正確な時刻のアラーム（定期チェック）。Android 12 用の版と同じ。Android 13 では宣言すれば既定で許可される -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!--
+      Android 13 から、通知を出すには実行時の許可が要る（はじめの設定の 1 とメイン画面で求める）。
+      許可がないと、テザリングの停止などの異常を通知で知らせられない（常駐のサービスは動く）
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ログ・設定・接続端末の名前は、クラウドのバックアップにも、機種変更時の端末間の転送にも含めない（Android 12 用の版と同じ） -->
+    <application android:dataExtractionRules="@xml/data_extraction_rules" />
+</manifest>

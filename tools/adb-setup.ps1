@@ -34,9 +34,12 @@
   - 「アクセスポイントの自動OFF」は OS の設定値ではなくなり、ADB では変えられないので扱わない（端末の画面で OFF にする）
   - このアプリの「使わないときの権限の削除」を OFF にする（しばらく開かないと「電話」の権限が外れないように。Android 12 では休止状態も防ぐ）… -Apply に含む
 
+  Android 13（API 33）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android13.apk を使う）:
+  - このアプリに「通知」の権限を付ける（Android 13 から通知は許可が要る。テザリングの停止などを知らせるため）… -Apply に含む
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11 の端末には _android11.apk、Android 12 には _android12.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11・12・13 の端末には _android11.apk・_android12.apk・_android13.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
@@ -185,6 +188,12 @@ function Test-PhoneGranted {
     return ($d -match 'android\.permission\.READ_PHONE_STATE: granted=true')
 }
 
+# 「通知」の権限（Android 13 から。テザリングの停止などを知らせる）
+function Test-NotifyGranted {
+    $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
+    return ($d -match 'android\.permission\.POST_NOTIFICATIONS: granted=true')
+}
+
 # 設定変更の権限（自動切り替え用。第 3 段階）
 function Test-SecureSettingsGranted {
     $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
@@ -214,7 +223,7 @@ function Get-AutoRevokeMode {
     return $null
 }
 
-# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用）
+# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用、33 = Android 13 用）
 function Get-AppTargetSdk {
     $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
     if ($d -match 'targetSdk=(\d+)') { return [int]$Matches[1] }
@@ -228,9 +237,9 @@ function Get-AndroidMajor([int]$Sdk) {
     return $Sdk - 20
 }
 
-# この端末に合う APK の Android のバージョン（APK は Android 10・11・12 用がある。13 以降には 12 用）
+# この端末に合う APK の Android のバージョン（APK は Android 10・11・12・13 用がある。14 以降には 13 用）
 function Get-BestApkMajor([int]$Sdk) {
-    return [Math]::Max(10, [Math]::Min(12, (Get-AndroidMajor $Sdk)))
+    return [Math]::Max(10, [Math]::Min(13, (Get-AndroidMajor $Sdk)))
 }
 
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
@@ -243,15 +252,31 @@ function Test-OffloadHal {
 
 # アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）。
 # Android 11 からは SoftApConfiguration の mBand（ビットの組み合わせ: 1 = 2.4GHz、2 = 5GHz、4 = 6GHz）。
-# 行の名前は Android 11 が mApConfig.SoftApConfiguration.mBand、Android 12 が mCurrentSoftApConfiguration.mBand
+# 行の名前は Android 11 が mApConfig.SoftApConfiguration.mBand、Android 12 が mCurrentSoftApConfiguration.mBand。
+# Android 13 は設定をまとめて出し、帯域は「Channels = {帯域=チャンネル, …}」（帯域が 2 つなら、2 つを同時に使う）
+function Get-BandNames([int]$v) {
+    $names = @()
+    if ($v -band 1) { $names += (T "2.4GHz" "2.4 GHz" "2,4 GHz") }
+    if ($v -band 2) { $names += (T "5GHz" "5 GHz" "5 GHz") }
+    if ($v -band 4) { $names += (T "6GHz" "6 GHz" "6 GHz") }
+    return $names
+}
+
 function Get-ApBand {
     $r = Invoke-Adb -Arguments @('shell', 'dumpsys', 'wifi') -AllowFail
+    $v = $null
     if ($r -match '(?:mApConfig\.SoftApConfiguration|mCurrentSoftApConfiguration)\.mBand:\s*(\d+)') {
         $v = [int]$Matches[1]
-        $names = @()
-        if ($v -band 1) { $names += (T "2.4GHz" "2.4 GHz" "2,4 GHz") }
-        if ($v -band 2) { $names += (T "5GHz" "5 GHz" "5 GHz") }
-        if ($v -band 4) { $names += (T "6GHz" "6 GHz" "6 GHz") }
+    } elseif ($r -match 'mCurrentSoftApConfiguration:[^\n]*(?:\n[^\n]*){0,40}?Channels = \{([^}]*)\}') {
+        $keys = @([regex]::Matches($Matches[1], '(\d+)=') | ForEach-Object { [int]$_.Groups[1].Value })
+        if ($keys.Count -gt 1) {
+            $names = @($keys | ForEach-Object { Get-BandNames $_ })
+            return (T "同時（$($names -join '／')）" "simultaneous ($($names -join '/'))" "simultané ($($names -join '/'))")
+        }
+        if ($keys.Count -eq 1) { $v = $keys[0] }
+    }
+    if ($null -ne $v) {
+        $names = @(Get-BandNames $v)
         if ($names.Count -eq 0) { return (T "不明（$v）" "unknown ($v)" "inconnu ($v)") }
         if ($names.Count -eq 1) { return $names[0] }
         $j = $names -join '／'
@@ -321,15 +346,15 @@ $sdk = [int](Invoke-Adb -Arguments @('shell', 'getprop', 'ro.build.version.sdk')
 $sn = $script:DeviceSerial
 Write-Host (T "端末: $model（$sn） / Android API $sdk" "Phone: $model ($sn) / Android API $sdk" "Téléphone : $model ($sn) / Android API $sdk")
 Write-Host "adb : $($script:AdbPath)"
-if ($sdk -lt 29 -or $sdk -gt 32) {
-    Write-Warning (T "このアプリと設定は Android 10・11・12（API 29〜32）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10, 11 and 12 (API 29 to 32). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10, 11 et 12 (API 29 à 32). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
+if ($sdk -lt 29 -or $sdk -gt 33) {
+    Write-Warning (T "このアプリと設定は Android 10〜13（API 29〜33）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 to 13 (API 29 to 33). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 à 13 (API 29 à 33). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
 }
 $phoneMajor = Get-AndroidMajor $sdk
 $bestMajor = Get-BestApkMajor $sdk
 
 if ($Install) {
     if (-not (Test-Path $Install)) { throw (T "APK が見つかりません: $Install" "APK not found: $Install" "APK introuvable : $Install") }
-    # APK は Android のバージョンごとに分かれている（_android10 / _android11 / _android12。それより新しい端末には入らない）
+    # APK は Android のバージョンごとに分かれている（_android10 / _android11 / _android12 / _android13。それより古い端末には入らない）
     $leaf = Split-Path $Install -Leaf
     if ($leaf -match '_android(\d+)') {
         $apkMajor = [int]$Matches[1]
@@ -424,6 +449,10 @@ if ($Restore) {
         Invoke-Adb -Arguments @('shell', 'pm', 'revoke', $Package, 'android.permission.READ_PHONE_STATE') -AllowFail | Out-Null
         Write-Host (T "戻しました: 電話の権限を取り消し" "Restored: revoked the Phone permission" "Rétabli : autorisation Téléphone révoquée")
     }
+    if ($installed -and $sdk -ge 33 -and $b.PSObject.Properties.Name -contains 'notifyGranted' -and $null -ne $b.notifyGranted -and -not $b.notifyGranted -and (Test-NotifyGranted)) {
+        Invoke-Adb -Arguments @('shell', 'pm', 'revoke', $Package, 'android.permission.POST_NOTIFICATIONS') -AllowFail | Out-Null
+        Write-Host (T "戻しました: 通知の権限を取り消し（テザリングの停止などを知らせられなくなります）" "Restored: revoked the Notifications permission (the app can no longer alert you, e.g. when the hotspot stops)" "Rétabli : autorisation Notifications révoquée (l'application ne peut plus vous alerter, par ex. à l'arrêt du point d'accès)")
+    }
     if ($installed -and $b.PSObject.Properties.Name -contains 'usageStatsMode' -and $b.usageStatsMode -ne 'allow' -and (Get-UsageMode) -eq 'allow') {
         $mode = if ($b.usageStatsMode) { $b.usageStatsMode } else { 'default' }
         Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'GET_USAGE_STATS', $mode) -AllowFail | Out-Null
@@ -486,6 +515,8 @@ if ($Apply) {
     $ws = if ($old -and $old.PSObject.Properties.Name -contains 'writeSettingsMode') { $old.writeSettingsMode } elseif ($installed) { Get-WriteSettingsMode } else { $null }
     # Android 11 から。保存データにないときだけ今の状態を保存する
     $ar = if ($old -and $old.PSObject.Properties.Name -contains 'autoRevokeMode') { $old.autoRevokeMode } elseif ($installed -and $sdk -ge 30) { Get-AutoRevokeMode } else { $null }
+    # Android 13 から。保存データにないときだけ今の状態を保存する
+    $nt = if ($old -and $old.PSObject.Properties.Name -contains 'notifyGranted' -and $null -ne $old.notifyGranted) { $old.notifyGranted } elseif ($installed -and $sdk -ge 33) { Test-NotifyGranted } else { $null }
     $backup = [ordered]@{
         createdAt             = if ($old) { $old.createdAt } else { (Get-Date).ToString('s') }
         serial                = $script:DeviceSerial
@@ -499,6 +530,7 @@ if ($Apply) {
         secureSettingsGranted = $ss
         writeSettingsMode     = $ws
         autoRevokeMode        = $ar
+        notifyGranted         = $nt
     }
     New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
     $backup | ConvertTo-Json -Depth 5 | Set-Content -Path $backupPath -Encoding UTF8
@@ -521,6 +553,10 @@ if ($Apply) {
         if ($sdk -ge 30) {
             # Android 11 から。しばらくアプリを開かなくても「電話」の権限が外れないようにする
             Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', '--uid', $Package, 'AUTO_REVOKE_PERMISSIONS_IF_UNUSED', 'ignore') -AllowFail | Out-Null
+        }
+        if ($sdk -ge 33) {
+            # Android 13 から。テザリングの停止などを通知で知らせる
+            Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.POST_NOTIFICATIONS') -AllowFail | Out-Null
         }
         if ($AllowAutoSwitch) {
             # 自動切り替え（バッテリーセーバー・Doze）。アプリは global low_power と device_idle_constants だけを変える
@@ -576,7 +612,14 @@ if ($installed) {
             Name = (T "使わないときの権限の削除（本アプリ・Android 11 以降）" "Remove permissions if unused (this app, Android 11+)" "Suppression des autorisations si inutilisée (cette appli, Android 11+)")
             Current = $(if ($arNow -eq 'ignore') { 'OFF' } else { 'ON' }); Want = 'OFF'; Status = $(if ($arNow -eq 'ignore') { $ok } else { $change })
         }
-        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用）が入っているか
+        if ($sdk -ge 33) {
+            $ntNow = Test-NotifyGranted
+            $rows = @($rows) + [pscustomobject]@{
+                Name = (T "通知の権限（本アプリ・Android 13 以降）" "Notifications permission (this app, Android 13+)" "Autorisation Notifications (cette appli, Android 13+)")
+                Current = $(if ($ntNow) { $allowed } else { $notAllowed }); Want = $allowed; Status = $(if ($ntNow) { $ok } else { $change })
+            }
+        }
+        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用、33 = 13 用）が入っているか
         $tsdk = Get-AppTargetSdk
         if ($null -ne $tsdk -and $tsdk -ge 29) {
             $appMajor = Get-AndroidMajor $tsdk
@@ -645,6 +688,7 @@ if ($Install) {
     # 権限の付与（-Apply）が済んでから起動する。一度起動しておかないと、再起動後の自動開始（BOOT_COMPLETED）が届かない
     Invoke-Adb -Arguments @('shell', 'am', 'start', '-n', "$Package/.MainActivity") | Out-Null
     if ($Apply) { Write-Host (T "アプリを起動しました。" "App started." "Application démarrée.") }
+    elseif ($sdk -ge 33) { Write-Host (T "アプリを起動しました。端末の画面で「電話」と「通知」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone and Notifications permissions and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et « Notifications », ainsi que l'exemption d'optimisation de la batterie.") }
     else { Write-Host (T "アプリを起動しました。端末の画面で「電話」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone permission and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et l'exemption d'optimisation de la batterie.") }
 }
 if (-not $Apply -and -not $Install) { Write-Host (T "確認のみです（変更していません）。適用は -Apply、元に戻すのは -Restore。" "Check only (nothing was changed). Apply with -Apply, undo with -Restore." "Vérification seulement (rien n'a été modifié). Appliquez avec -Apply, annulez avec -Restore.") }

@@ -200,7 +200,7 @@ class TetherDetailsActivity : Activity() {
 
     private fun renderList(t: TetherInfo, devices: List<Parsers.Neighbor>?, listOn: Boolean) {
         val names = DeviceNames.all(this)
-        val key = "$listOn|${t.wifiOn}|" + devices?.joinToString { "${it.mac}${it.ip}${it.state}${names[it.mac]}" }
+        val key = "$listOn|${t.wifiOn}|" + devices?.joinToString { "${it.mac}${it.ip}${it.state}${names[DeviceNames.key(it)]}" }
         if (key == listKey) return
         listKey = key
         listBox.removeAllViews()
@@ -223,7 +223,7 @@ class TetherDetailsActivity : Activity() {
                 val exclude = PlugUrls.exclude(prefs)
                 for (d in devices.sortedWith(compareBy({ it.state.ordinal }, { it.ip }))) {
                     Ui.spacer(listBox, 6)
-                    val name = names[d.mac]
+                    val name = names[DeviceNames.key(d)]
                     Ui.text(listBox, name ?: tr("名前なし", "No name", "Sans nom"), 15f, if (name == null) R.color.text_secondary else R.color.text_primary, bold = name != null)
                     val state = when (d.state) {
                         Parsers.Neighbor.State.REACHABLE -> tr("接続中", "Connected", "Connecté")
@@ -231,23 +231,36 @@ class TetherDetailsActivity : Activity() {
                         Parsers.Neighbor.State.GONE -> tr("離れた（応答なし）", "Left (no response)", "Parti (pas de réponse)")
                     }
                     val plug = if (d.ip in exclude) Fmt.paren(tr("スマートプラグ・数えない", "smart plug, not counted", "prise connectée, non comptée")) else ""
-                    Ui.small(listBox, "${d.ip} · $state · " + tr("MAC 末尾 ${macTail(d.mac)}", "MAC …${macTail(d.mac)}", "MAC …${macTail(d.mac)}") + plug)
+                    Ui.small(listBox, "${d.ip} · $state" + macPart(d) + plug)
                     Ui.button(listBox, if (name == null) tr("名前を付ける", "Name it", "Le nommer") else tr("名前を変える", "Rename", "Renommer")) { rename(d, name) }
                 }
                 Ui.spacer(listBox, 6)
                 Ui.small(
                     listBox,
-                    tr(
-                        "名前は MAC アドレスで覚えます（同じ端末なら IP アドレスが変わっても同じ名前）。端末側の設定で MAC アドレスが変わると、名前は付け直しになります。名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面には出しません。",
-                        "Names are remembered by MAC address (the same device keeps its name even if its IP address changes). If the device changes its MAC address, name it again. Names stay on this phone and never appear in logs, CSV files, external notifications or the web page.",
-                        "Les noms sont mémorisés par adresse MAC (un appareil garde son nom même si son adresse IP change). Si l'appareil change d'adresse MAC, nommez-le à nouveau. Les noms restent sur ce téléphone et n'apparaissent jamais dans les journaux, les CSV, les notifications externes ou la page web.",
-                    ),
+                    if (devices.any { it.mac.isEmpty() }) {
+                        // Android 13 用の版は、小さな確認で端末を見つけるので MAC アドレスが分からない
+                        tr(
+                            "Android 13 では MAC アドレスを読めないため、名前は IP アドレスで覚えます（端末の IP アドレスが変わると、名前は付け直しになります）。一覧は、テザリングの範囲へ小さな確認を送って作ります。名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面には出しません。",
+                            "Android 13 doesn't let apps read MAC addresses, so names are remembered by IP address (if a device's IP address changes, name it again). The list is built by sending a small probe across the hotspot's address range. Names stay on this phone and never appear in logs, CSV files, external notifications or the web page.",
+                            "Android 13 ne permet pas de lire les adresses MAC : les noms sont mémorisés par adresse IP (si l'adresse IP d'un appareil change, nommez-le à nouveau). La liste est établie en envoyant un petit sondage sur la plage d'adresses du point d'accès. Les noms restent sur ce téléphone et n'apparaissent jamais dans les journaux, les CSV, les notifications externes ou la page web.",
+                        )
+                    } else {
+                        tr(
+                            "名前は MAC アドレスで覚えます（同じ端末なら IP アドレスが変わっても同じ名前）。端末側の設定で MAC アドレスが変わると、名前は付け直しになります。名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面には出しません。",
+                            "Names are remembered by MAC address (the same device keeps its name even if its IP address changes). If the device changes its MAC address, name it again. Names stay on this phone and never appear in logs, CSV files, external notifications or the web page.",
+                            "Les noms sont mémorisés par adresse MAC (un appareil garde son nom même si son adresse IP change). Si l'appareil change d'adresse MAC, nommez-le à nouveau. Les noms restent sur ce téléphone et n'apparaissent jamais dans les journaux, les CSV, les notifications externes ou la page web.",
+                        )
+                    },
                 )
             }
         }
     }
 
     private fun macTail(mac: String): String = mac.split(':').takeLast(2).joinToString(":")
+
+    /** 「 · MAC 末尾 xx:xx」（MAC アドレスが分からないときは何も出さない） */
+    private fun macPart(d: Parsers.Neighbor): String =
+        if (d.mac.isEmpty()) "" else " · " + tr("MAC 末尾 ${macTail(d.mac)}", "MAC …${macTail(d.mac)}", "MAC …${macTail(d.mac)}")
 
     private fun rename(d: Parsers.Neighbor, current: String?) {
         val edit = EditText(this).apply {
@@ -258,17 +271,17 @@ class TetherDetailsActivity : Activity() {
         }
         val b = AlertDialog.Builder(this)
             .setTitle(tr("端末の名前", "Device name", "Nom de l'appareil"))
-            .setMessage("${d.ip} · " + tr("MAC 末尾 ${macTail(d.mac)}", "MAC …${macTail(d.mac)}", "MAC …${macTail(d.mac)}"))
+            .setMessage(d.ip + macPart(d))
             .setView(edit)
             .setPositiveButton(tr("保存", "Save", "Enregistrer")) { _, _ ->
-                DeviceNames.set(this, d.mac, edit.text.toString())
+                DeviceNames.set(this, DeviceNames.key(d), edit.text.toString())
                 listKey = ""
                 tick()
             }
             .setNegativeButton(Ui.cancel(), null)
         if (current != null) {
             b.setNeutralButton(tr("名前を消す", "Remove name", "Supprimer le nom")) { _, _ ->
-                DeviceNames.set(this, d.mac, "")
+                DeviceNames.set(this, DeviceNames.key(d), "")
                 listKey = ""
                 tick()
             }
@@ -281,6 +294,9 @@ class TetherDetailsActivity : Activity() {
 object DeviceNames {
     const val MAX_LENGTH = 30
     private const val FILE = "device_names"
+
+    /** 名前を覚える鍵。ふつうは MAC アドレス。MAC アドレスが分からない（Android 13 用の版）ときは IP アドレス */
+    fun key(n: Parsers.Neighbor): String = n.mac.ifEmpty { "ip:" + n.ip }
 
     fun all(ctx: Context): Map<String, String> =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()

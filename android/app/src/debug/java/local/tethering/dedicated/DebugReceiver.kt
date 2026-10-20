@@ -98,6 +98,12 @@ class DebugReceiver : BroadcastReceiver() {
                     out("$ns $k = " + r.fold({ it ?: "(null)" }, { "DENIED ${it.javaClass.simpleName}" }))
                 }
             }
+            // 通知を出せるかの読み取り（Android 13 の通知の許可の確認用）
+            "notify_state" -> {
+                val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+                val perm = ctx.checkSelfPermission(NotifyPermission.PERMISSION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                out("enabled=${nm?.areNotificationsEnabled()} importance=${nm?.importance} permission=$perm helper=${NotifyPermission.enabled(ctx)}")
+            }
             // 見えるアプリの数（Android 11 の「パッケージの公開範囲」の確認用。QUERY_ALL_PACKAGES がないと少なくなる）
             "pkgs" -> out("installed=${ctx.packageManager.getInstalledApplications(0).size} target=${ctx.applicationInfo.targetSdkVersion}")
             // 接続端末の読み取り方を確かめる（ip neigh の生の結果と、数え方・一覧。Android 11 の制限の確認用）
@@ -113,7 +119,16 @@ class DebugReceiver : BroadcastReceiver() {
                     }.getOrElse { "error=${it.javaClass.simpleName}: ${it.message}" }
                     out("iface=$iface sdk=${android.os.Build.VERSION.SDK_INT} target=${ctx.applicationInfo.targetSdkVersion} ip neigh: $raw")
                     out("netlink=" + (Netlink.neighbors()?.replace("\n", " | ")?.take(600) ?: "null"))
-                    out("count=${Clients.count(iface)} list=${Clients.list(iface)?.map { it.ip + "/" + it.state }}")
+                    // --ei prefix <長さ> で、範囲の長さを変えて小さな確認を試す（エミュレーターの eth0 は /8 で広すぎるため）
+                    val prefix = intent.getIntExtra("prefix", 0)
+                    if (prefix > 0 && iface != null) {
+                        val a = ProbeScan.ipv4Of(iface)
+                        val t0 = android.os.SystemClock.elapsedRealtime()
+                        val r = a?.let { ProbeScan.scan(iface, it.first, prefix) }
+                        out("probe /$prefix: ${r?.size} present=${r?.take(20)} ms=${android.os.SystemClock.elapsedRealtime() - t0}")
+                    }
+                    val t1 = android.os.SystemClock.elapsedRealtime()
+                    out("count=${Clients.count(iface)} list=${Clients.list(iface)?.map { it.ip + "/" + it.state }} ms=${android.os.SystemClock.elapsedRealtime() - t1}")
                     pr.finish()
                 }.start()
                 return

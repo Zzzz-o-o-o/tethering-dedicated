@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10・11・12 用） v0.10.0
+# テザリング専用化（Android 10〜13 用） v0.10.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -11,6 +11,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 | `TetheringDedicated-v0.10.0_android10.apk` | Android 10 用のインストール用（署名済み・約 690 KB・targetSdk 29。日本語・英語・フランス語）。GitHub の Releases にも置く |
 | `TetheringDedicated-v0.10.0_android11.apk` | Android 11 用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 30。Android 10 には入らない）。→「Android 11 用の版」 |
 | `TetheringDedicated-v0.10.0_android12.apk` | Android 12（12L も）用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 31。Android 11 以前には入らない）。→「Android 12 用の版」 |
+| `TetheringDedicated-v0.10.0_android13.apk` | Android 13 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 33。Android 12L 以前には入らない）。→「Android 13 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
@@ -23,9 +24,9 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 **スマホだけで導入できます（v0.8.0 から。PC は任意）。**
 
-1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`）をダウンロードします。
+1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`、Android 13 は `_android13.apk`）をダウンロードします。
 2. ダウンロードしたファイルを開いてインストールします（「提供元不明のアプリ」の許可を求められたら許可。Google Play プロテクトの警告が出たら、そのままインストール）。
-3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
+3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限（Android 13 は「通知」も）・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
 4. 以後は、端末の再起動後・アプリ更新後に自動で監視を再開します。
 
 APK だけでも、機能は減りません。PC の ADB が必須なのは、バッテリー駆動中の自動切り替え（F-42。設定変更の権限）だけです。PC の `-Apply` がまとめて変える OS の設定は、設定ガイドから 1 つずつ変えられます。
@@ -37,7 +38,7 @@ APK だけでも、機能は減りません。PC の ADB が必須なのは、�
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`。合わない組み合わせはスクリプトが知らせます）
+   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`。合わない組み合わせはスクリプトが知らせます）
    ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
 3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。PC から入れた場合も、メイン画面の「はじめの設定」で残りを確かめられます。
 
@@ -230,6 +231,23 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
   - PendingIntent は以前からすべて FLAG_IMMUTABLE、部品の exported も明示済みで、targetSdk 31 の必須事項を満たしていた。
 - **PC のスクリプト**：Android 12（API 31・32）も対象に。帯域は Android 12 の行の名前（`mCurrentSoftApConfiguration.mBand`）も読む。APK の名前（`_android10`／`_android11`／`_android12`）と端末の Android のバージョンを比べ、新しすぎる APK は止め、古い APK には合う APK を勧める（入っているアプリの targetSdk でも同じく勧める）。
 
+### Android 13 用の版（v0.10.0）
+
+利用者の依頼で、Android 13 用の `TetheringDedicated-v0.10.0_android13.apk` を作りました（Android 10〜12 用の APK はそのまま）。product flavor `android13`（minSdk・targetSdk 33）。Android 13 用の版だけの内容は `src/android13/`（マニフェストと `res/xml/data_extraction_rules.xml`。データの除き方は Android 12 用の版と同じ）。
+
+- **Android 13 のエミュレーター（API 33）で調べた結果**：
+  - テザリングの切り替え（リフレクション）・起動時の ON（ロック解除前）・OS の設定値の読み取り（拒否 0 件）・正確なアラーム（`exactAllowReason=permission`）・バッテリーセーバーの切り替え（`global low_power`）・他のアプリの一覧（`QUERY_ALL_PACKAGES` で 157 個＝`pm list packages` と同数）は、Android 12 と同じく動いた。
+  - **通知の権限**：targetSdk 33 のアプリは、通知に実行時の許可（`POST_NOTIFICATIONS`）が要る → マニフェストで宣言し、「はじめの設定」の 1 を「『電話』と『通知』の権限」にして続けて求める（`NotifyPermission`）。許可がない・アプリの通知を OFF にしたときは、メイン画面の「要確認」に「通知が OFF です…」と「許可する」を出す（ダイアログを出せないときは、アプリの通知の設定を開く）。許可がなくても常駐サービスは動く（常駐の通知が見えないだけ）。
+  - **アクセスポイントの状態の放送が残らない**：Android 13 では `WIFI_AP_STATE_CHANGED` が最新の放送として残らなくなった（端末の側の変更で、targetSdk に関係しない）。これまでの版は「放送が残っていない＝起動から OFF のまま」と読むので、テザリングが ON でも OFF と表示し、停止として知らせてしまう（Android 12 用の APK を Android 13 のエミュレーターに入れて確かめた）→ 放送が残っていないときは `WifiManager.getWifiApState()`（非公開のシステム API。ACCESS_WIFI_STATE で読める。非公開 API の警告なし）で尋ね、尋ねられなければ共有中のインターフェースから判断する（`TetherProbe.apStateOf`）。Android 12 までは放送が残るので、動きは変わらない。Android 10〜12 用の APK は作り直していないので、Android 13 では Android 13 用の版を使うよう README で案内する。
+  - **近隣テーブルが読めない**：targetSdk 33 だと、Android 11・12 用の版で使った netlink の RTM_GETNEIGH も SELinux で拒否される（`nlmsg_getneigh`。targetSdk 31 の版は Android 13 でも読めた）。`/proc/net/arp`・`ip neigh` も読めないので、接続端末は**小さな確認で数える**ことにした（利用者の選択。`ProbeScan.kt`）。テザリングの範囲（/24 まで。ふつう 253 個）の各アドレスへ UDP の 1 バイト（ポート 9）を送り、相手がいなければカーネルが近隣の解決（ARP）に失敗して自分あてに出す「到達できない」（ICMP）を受け取る。返らなかったアドレスに端末がいるとみなす（ARP には、通信を受け付けない設定の端末も答える）。表示は「応答で推定」。結果は 30 秒使い回す（チェックと詳細の画面が続けて数えるため）。
+    - ソケットに **IP_RECVERR** を付けないと、この「到達できない」は捨てられる（Linux の UDP は、接続済みのソケットでも「ホストに到達できない」を知らせない）。初めは付けておらず、エミュレーターで 253 個すべてに端末がいると数えてしまったので直した。
+    - 「到達できない」は、Linux の既定では OS 全体で 1 秒に 1000 個まで（一度に 50 個まで）に抑えられ、超えた分は捨てられる（捨てられると、いないアドレスもいると数える）。一度に送ると約 3 秒後に一斉に失敗するので、3 ミリ秒おきに送る（1 秒に約 330 個）。待つ時間は決め打ちにせず、「到達できない」が途切れて 1 秒たったら終わる（最初の 1 つは、送り終えてから 8 秒まで待つ）。範囲が 8 個以上あるのに 1 つも返らなければ、この方法が使えない（VPN など）とみなして「取得不可」にする。
+    - 送るのは自分のテザリングの範囲だけ（インターネットには出ない）。数えるのはチェックのときと、詳細の画面を開いている間だけ。MAC アドレスは分からないので、接続端末の一覧は IP アドレスと「接続中」だけで、名前は IP アドレスで覚える（`DeviceNames.key` が `ip:<アドレス>`。MAC アドレスで覚えた名前とは別。一覧の下の説明も Android 13 用に変えた）。
+  - **使わないアプリの扱い**：Android 13 のスイッチは、アプリ情報の画面の「使用していないアプリの設定」の「使用していないアプリを一時停止する」（英語は Unused app settings／Pause app activity if unused）。「はじめの設定」の 1 の説明を Android 13 以降はこの名前で出す。仕組み（`AUTO_REVOKE_PERMISSIONS_IF_UNUSED`）は Android 11・12 と同じ。
+  - 「Doze を早める」は Android 12 と同じく使えない（設定画面で選べず、理由を出す）。
+- **メイン画面の「要確認」が消えない不具合を直した**（v0.1.0 から）：権限を許可したあと「要確認」を描き直すための目印を空の文字列に戻していたので、許可して注意点がなくなると「注意点なし」と同じになり、前の表示が残っていた（通知の許可で見つかった。「電話」の権限でも起こりえた）。
+- **PC のスクリプト**：Android 13（API 33）も対象に。`-Apply` で「通知」の権限を付け（`pm grant … POST_NOTIFICATIONS`）、`-Restore` で付ける前の状態に戻す。確認の表に「通知の権限（本アプリ・Android 13 以降）」を出す。帯域は Android 13 の形式（アクセスポイントの設定をまとめて出す中の `Channels = {帯域=チャンネル}`。帯域が 2 つなら「同時」）も読む。APK の名前の判定と、入っているアプリの targetSdk からの入れ替えの勧めを Android 13 まで広げた。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -283,7 +301,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 - 無線：Wi-Fi／Bluetooth の常時スキャン（`0`）、**位置情報**（`secure location_mode=0`。`-KeepLocation` で変えない）、**モバイルデータを常に ON**（`global mobile_data_always_on=0`。Wi-Fi に接続しているあいだモバイル回線を待機させる機能。テザリング中は Wi-Fi に接続しないので影響しません）
 - **画面の不意な点灯（F-39）**：通知で点灯（`secure doze_enabled`）・常に表示（`doze_always_on`）・持ち上げて／タップ／ダブルタップで通知を確認（`doze_pulse_on_pick_up`／`doze_tap_gesture`／`doze_pulse_on_double_tap`）・持ち上げて点灯（`wake_gesture_enabled`）・ダブルタップで点灯（`double_tap_to_wake`）をすべて `0`。未設定（機種の既定）の項目も `0` にし、`-Restore` で未設定に戻します。メーカー独自のジェスチャーは設定アプリから手動で OFF にしてください
 - 任意：`-IncludeOta` でシステムの自動更新を止める（`ota_disable_automatic_update=1`）
-- このアプリの権限：電池の最適化からの除外、「電話」の権限、**使用状況へのアクセス**（F-35。アプリ別の通信量を読むだけ）。`-AllowAutoSwitch` のときだけ**設定変更の権限**（F-42）、`-AllowTetherControl` のときだけ**システム設定の変更**（起動時のテザリング ON・F-37）も付けます。`-Restore` では、付ける前の状態に戻します（アプリが「Doze を早める」設定を戻さないまま削除された場合の後始末もします）
+- このアプリの権限：電池の最適化からの除外、「電話」の権限、**使用状況へのアクセス**（F-35。アプリ別の通信量を読むだけ）、Android 13 では「通知」の権限。`-AllowAutoSwitch` のときだけ**設定変更の権限**（F-42）、`-AllowTetherControl` のときだけ**システム設定の変更**（起動時のテザリング ON・F-37）も付けます。`-Restore` では、付ける前の状態に戻します（アプリが「Doze を早める」設定を戻さないまま削除された場合の後始末もします）
 - 表示だけ（第 4 段階）：テザリングのハードウェアアクセラレーションの設定とオフロードの HAL の有無（VINTF マニフェストの宣言）、アクセスポイントの帯域（`dumpsys wifi` の `apBand`。アクセスポイントが ON のときだけ読めます）
 
 **ほかのアプリの制限（F-40、`-RestrictApps` のときだけ）**：このアプリ以外のユーザーアプリ（システムアプリは対象外）を、「バックグラウンドでの動作を制限」（`cmd appops set <pkg> RUN_ANY_IN_BACKGROUND ignore`）と、使用頻度「低い」（`am set-standby-bucket <pkg> rare`）にします。アプリを開けば普通に使えます。変更前の状態は保存し、`-Restore` で戻します。裏で動いてほしいアプリ（VPN・遠隔操作など）は `-KeepApps` で除外してください。確認だけの実行でも、ユーザーアプリの一覧と現在の状態を表示します。
@@ -349,6 +367,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | （追加） | GitHub の自動テストと不具合の報告のひな形 | ✅ v0.10.0（push・pull request ごとに単体テスト・lint・debug ビルド。署名鍵は使わない） |
 | （追加） | Android 11 用の APK | ✅ v0.10.0（targetSdk 30。接続端末は netlink で数える。権限の自動削除の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 | （追加） | Android 12 用の APK | ✅ v0.10.0（targetSdk 31。正確なアラームの許可、裏からの開始の制限への対応、Doze を早めるは使えない、休止状態の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
+| （追加） | Android 13 用の APK | ✅ v0.10.0（targetSdk 33。通知の許可、アクセスポイントの状態を OS に尋ねる、接続端末は小さな確認で数える（名前は IP アドレスで覚える）。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 
 ## 実機での確認結果（UMIDIGI A9 Pro・Android 10・SoftBank、2026-10-16）
 
@@ -624,6 +643,29 @@ Android 12 エミュレーター（API 31・英語と日本語。PIN ありの�
 
 単体テストは各版 139 件。lint のエラー・警告なし（Gradle・AGP の新版案内を除く）。
 
+### v0.10.0 Android 13 用の版の確認（2026-10-20）
+
+Android 13 エミュレーター（API 33・英語と日本語。PIN ありの試験を含む）。**Android 13 の実機では、まだ確かめていません**。
+
+| 項目 | 結果 |
+|---|---|
+| テザリング | ✓ 確認・開始・停止が動いた（非公開 API の警告なし） |
+| アクセスポイントの状態 | Android 12 用の APK を入れると、テザリングが ON（共有中 Wi-Fi）なのに「OFF」「Wi-Fiテザリングが停止中」 → Android 13 用の版では ✓ ON（タイル・メイン画面とも） |
+| 接続端末 | netlink は `nlmsg_getneigh` が拒否される → 小さな確認で ✓ テザリング側（/24・253 個）「0台（応答で推定）」約 4 秒。上流側（eth0 を開発用の機能で /24 として試す）は 10.0.2.2・10.0.2.3 の 2 つだけ（ほかの 251 個は「到達できない」）・約 6 秒。テザリング側に仮の端末を 2 つ置く（`ip neigh add … nud permanent`）と、2台・常駐通知「2 device(s)」・詳細の一覧に 2 つ → 消すと 0台・「いまつながっている端末はありません」 |
+| 接続端末の名前 | ✓ 一覧の IP アドレスに名前を付けられ、`ip:<アドレス>` で保存された |
+| 通知の権限 | ✓ はじめの設定の 1 で「電話」と「通知」の許可を続けて求め、両方許可で済み。許可を外すとメイン画面に「通知が OFF です」と「許可する」→ 許可すると消える（消えなかったのを直した。上の「Android 13 用の版」） |
+| OS の設定値・他のアプリ・正確なアラーム | ✓ 拒否 0 件・157 個（`pm list packages` と同数）・`exactAllowReason=permission` |
+| はじめの設定 | ✓ 1 は Android 13 の説明（「使用していないアプリの設定」の「使用していないアプリを一時停止する」）。外れないようにする → スイッチを OFF → 戻ると「✓ 済み」 |
+| タイル | ✓ パネルを開いた状態で OFF → タップで「ON・端末0台」→ タップで OFF |
+| 起動時の ON（PIN あり） | ✓ ロック解除前（RUNNING_LOCKED・ロック画面表示中）に ON。記録「Hotspot turned on (64 s after startup, before unlock)」。解除後、監視が常駐し、常駐通知に「0 device(s)」 |
+| バッテリーセーバー | ✓ バッテリー駆動で `low_power=1`（OS の表示も ON）、給電で 0 に戻り、`low_power_sticky` も戻った |
+| ローカル管理画面 | ✓ テザリングのアドレスで HTTP 200、「Connected devices 0」 |
+| 診断情報 | ✓「アプリ: 0.10.0 android13（11, targetSdk 33）」「通知: 有効」「接続端末数: 0台（方法: 応答）」「Doze を早める 使わない（Android 12 以降は使えない）」 |
+| リリース版（署名・難読化済み） | ✓ はじめの設定（「電話」と「通知」の許可のダイアログ）・タイルで ON・OFF・メイン画面「0台（応答で推定）」、クラッシュなし。マニフェストに `POST_NOTIFICATIONS`・`SCHEDULE_EXACT_ALARM`・`QUERY_ALL_PACKAGES`・`dataExtractionRules`。署名は Android 10〜12 用と同じ鍵 |
+| PC のスクリプト | ✓ 確認・`-Apply`（通知の権限を付ける）・`-Restore`（付ける前＝未許可に戻す。フランス語で確認）、帯域「2.4GHz」（Android 13 の形式）、範囲外の警告なし |
+
+単体テストは各版 142 件（`SubnetTest` 3 件を追加：/24 の範囲から自分・ネットワーク・ブロードキャストを除く、/30 と /22、広すぎる範囲・/31・IPv6 を断る）。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く）。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -710,8 +752,16 @@ Android 12 エミュレーター（API 31・英語と日本語。PIN ありの�
 - [x] アプリのデータを、クラウドのバックアップにも端末間の転送にも含めない — マニフェスト（`dataExtractionRules`）
 - [ ] Android 12 の実機での確認（まだ）
 
+### Android 13 用の版（v0.10.0。この README で決めた確認項目）
+
+- [x] Android 13 で、テザリングの切り替え・起動時の ON（ロック解除前）・タイル・アクセスポイントの状態の読み取りが動く（放送が残らなくても ON と読める） — エミュレーター
+- [x] 近隣テーブルが読めなくても、テザリングの範囲だけへの小さな確認で接続端末を数え、いないアドレスを数えない（「到達できない」が届かないときは推測で数えず「取得不可」） — エミュレーター・単体テスト
+- [x] 通知の許可を求め、許可がないときはそれと分かる表示と許可の方法を出す — エミュレーター
+- [ ] Android 13 の実機での確認（まだ）
+
 ## 既知の制約
 
+- **Android 13 用の版も、エミュレーターでしか確かめていません**（Android 13 の実機がないため）。Android 13 では、接続端末をテザリングの範囲への小さな確認で数えます（約 5 秒。テザリングの範囲は /24 までで、それより広いと「取得不可」）。MAC アドレスが読めないので、接続端末の名前は IP アドレスで覚えます（IP アドレスが変わると付け直し）。Android 10〜12 用の APK を Android 13 で使うと、テザリングが ON でも OFF と出て、停止として知らせてしまいます（Android 13 用の版を使ってください）。
 - **Android 12 用の版も、エミュレーターでしか確かめていません**（Android 12 の実機がないため）。Android 12 では「Doze を早める」は使えません（Doze の設定がアプリから変えられない場所に移ったため。バッテリーセーバーの自動切り替えは使える）。電池の最適化の対象外にしていないと、止まった監視を裏から始め直せないことがあります（正確なアラーム・起動直後は始められる）。
 - **Android 11 用の版は、エミュレーターでしか確かめていません**（Android 11 の実機がないため）。メーカーの改変で、テザリングの切り替えや netlink での読み取りが違う動きをすることがあります。Android 11 ではアクセスポイントの自動 OFF をアプリから読めないので、端末の画面で OFF にしてください（AOSP の既定は ON で、接続 0 台が 10 分続くと止まる）。
 
@@ -749,8 +799,8 @@ Android 12 エミュレーター（API 31・英語と日本語。PIN ありの�
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 3 つあり、`app/build/outputs/apk/android10/release/`・`…/android11/release/`・`…/android12/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`・`_android11.apk`・`_android12.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest testAndroid11DebugUnitTest testAndroid12DebugUnitTest`、lint は `gradlew lintAndroid10Debug lintAndroid11Debug lintAndroid12Debug`。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用の APK は、それぞれコミット 9caccdb・7181fa5 の時点で作ったものです（Android 12 用の版で足した処理は、Android 10・11 では動きが変わらないか、Android 12 以降だけで働く）。
-  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 4 つあり、`app/build/outputs/apk/android10/release/`・`…/android11/release/`・`…/android12/release/`・`…/android13/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`・`_android11.apk`・`_android12.apk`・`_android13.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest testAndroid11DebugUnitTest testAndroid12DebugUnitTest testAndroid13DebugUnitTest`、lint は `gradlew lintAndroid10Debug lintAndroid11Debug lintAndroid12Debug lintAndroid13Debug`。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f の時点で作ったものです（Android 12 用・13 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない）。
+  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。Android 13 用の版で、`clients` に `--ei prefix <長さ>`（範囲の長さを変えて小さな確認を試す。エミュレーターの eth0 は /8 で広すぎるため）と、通知を出せるかを読む `notify_state` を足しました。
 
 ## この端末で行った ADB 事前設定（2026-10-16）
 

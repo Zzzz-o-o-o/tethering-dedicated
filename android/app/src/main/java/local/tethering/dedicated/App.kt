@@ -11,8 +11,14 @@ class App : Application() {
         // 表示の言語は端末の言語に合わせる（最初に行う。ほかの処理が文字列を作る前に）
         I18n.sync(resources)
         Notifier.createChannels(this)
-        // Android 11 用の版（targetSdk 30）では、接続端末を netlink で直接読む（ip neigh が使えないため）
-        Clients.netlinkFirst = applicationInfo.targetSdkVersion >= Build.VERSION_CODES.R
+        // 接続端末の読み方。Android 11・12 用の版は netlink で直接読み（ip neigh が使えないため）、Android 13 用の版は近隣テーブルを
+        // どれも読めないので、小さな確認で数える
+        val target = applicationInfo.targetSdkVersion
+        Clients.way = when {
+            target >= Build.VERSION_CODES.TIRAMISU && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> Clients.Way.PROBE
+            target >= Build.VERSION_CODES.R -> Clients.Way.NETLINK_FIRST
+            else -> Clients.Way.DEFAULT
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

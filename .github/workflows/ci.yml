@@ -1,5 +1,5 @@
 # 単体テスト・lint・debug ビルドを、push と pull request のたびに GitHub 上で実行する（署名鍵は使わない）。
-# Android 10 用（android10）・Android 11 用（android11）・Android 12 用（android12）のすべての版で行う
+# Android 10 用（android10）・Android 11 用（android11）・Android 12 用（android12）・Android 13 用（android13）のすべての版で行う
 name: CI
 
 on:
@@ -34,8 +34,8 @@ jobs:
       - name: Unit tests, lint and debug build
         run: >-
           ./gradlew --console=plain
-          testAndroid10DebugUnitTest testAndroid11DebugUnitTest testAndroid12DebugUnitTest
-          lintAndroid10Debug lintAndroid11Debug lintAndroid12Debug assembleDebug
+          testAndroid10DebugUnitTest testAndroid11DebugUnitTest testAndroid12DebugUnitTest testAndroid13DebugUnitTest
+          lintAndroid10Debug lintAndroid11Debug lintAndroid12Debug lintAndroid13Debug assembleDebug
       - name: Upload test and lint reports
         if: always()
         uses: actions/upload-artifact@v7

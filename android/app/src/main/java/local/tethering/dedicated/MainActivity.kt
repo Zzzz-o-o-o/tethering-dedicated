@@ -23,6 +23,7 @@ class MainActivity : Activity() {
         const val EXTRA_OPEN_TETHER = "open_tether"
         private const val REQ_PHONE = 1
         private const val REQ_EXPORT = 2
+        private const val REQ_NOTIFY = 3
     }
 
     private lateinit var prefs: Prefs
@@ -30,7 +31,8 @@ class MainActivity : Activity() {
     private val bg = Executors.newSingleThreadExecutor()
     private var resumed = false
     private var live: Live? = null
-    private var bannerKey = ""
+    /** 表示中の「要確認」の中身（null = 次の表示で必ず描き直す） */
+    private var bannerKey: String? = null
     private var recentKey = ""
 
     /** 画面表示中だけ 5 秒ごとに読む値（定期チェックとは別。通信はしない） */
@@ -576,6 +578,19 @@ class MainActivity : Activity() {
                 ) { requestPhonePermission() },
             )
         }
+        // 通知が出せないと、異常を知らせられない（Android 13 からは通知に許可が要る）
+        if (!NotifyPermission.enabled(this)) {
+            items.add(
+                Triple(
+                    tr(
+                        "通知が OFF です。テザリングの停止などの異常を知らせられません。",
+                        "Notifications are off. The app can't tell you about problems such as the hotspot stopping.",
+                        "Les notifications sont désactivées. L'application ne peut pas vous prévenir des problèmes, comme l'arrêt du point d'accès.",
+                    ),
+                    allow(),
+                ) { requestNotifications() },
+            )
+        }
         if (p?.batteryOptExempt == false) {
             items.add(
                 Triple(
@@ -876,13 +891,31 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 通知の許可を求める（Android 13 用の版）。ダイアログを出せないとき（Android 12 以前・「今後表示しない」の後・
+     * アプリの通知の設定で OFF にしたとき）は、アプリの通知の設定を開く
+     */
+    private fun requestNotifications() {
+        val ui = getSharedPreferences("ui", MODE_PRIVATE)
+        val canAsk = NotifyPermission.requestable(this) && checkSelfPermission(NotifyPermission.PERMISSION) != PackageManager.PERMISSION_GRANTED &&
+            (shouldShowRequestPermissionRationale(NotifyPermission.PERMISSION) || !ui.getBoolean("notify_asked", false))
+        if (canAsk) {
+            ui.edit().putBoolean("notify_asked", true).apply()
+            requestPermissions(arrayOf(NotifyPermission.PERMISSION), REQ_NOTIFY)
+        } else {
+            SystemScreens.appNotifications(this)
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_PHONE) return
+        if (requestCode != REQ_PHONE && requestCode != REQ_NOTIFY) return
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("phone_denied", !granted).apply()
+        if (requestCode == REQ_PHONE) getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("phone_denied", !granted).apply()
+        // 監視に反映する（回線の情報を読み直し、通知を許可したなら常駐通知も出し直す）
         if (granted && prefs.monitoring) MonitorService.send(this, MonitorService.ACTION_CHECK_NOW)
-        bannerKey = ""
+        // 空の文字列にすると、許可して注意点がなくなったときに「なし」と同じになり、前の表示が残ってしまう
+        bannerKey = null
         tick()
     }
 

@@ -2,6 +2,7 @@ package local.tethering.dedicated
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -9,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
@@ -92,7 +94,9 @@ object PowerProbe {
 
 /**
  * Wi-Fi テザリング（仕様 F-10）。
- * 状態は OS が送るスティッキーブロードキャストから読む（非公開 API の呼び出しやリフレクションは使わない）。
+ * 状態は OS が送るスティッキーブロードキャストから読む。Android 13 からはアクセスポイントの状態の放送が残らない（スティッキーでない）ので、
+ * そのときは OS に尋ね（WifiManager.getWifiApState。テザリングの切り替えと同じくシステム API をリフレクションで呼ぶ）、
+ * それもできなければ共有中のインターフェースから判断する
  */
 object TetherProbe {
     const val ACTION_AP = "android.net.wifi.WIFI_AP_STATE_CHANGED"
@@ -122,12 +126,12 @@ object TetherProbe {
     fun read(ctx: Context, countClients: Boolean, ap: Intent? = null, tether: Intent? = null, exclude: Set<String> = emptySet()): TetherInfo {
         val apLookup = ap?.let { Result.success(it) } ?: sticky(ctx, ACTION_AP)
         val apIntent = apLookup.getOrNull()
-        val apState = apStateOf(apLookup)
         val apIface = apIntent?.getStringExtra(EXTRA_AP_IFACE)?.takeIf { it.isNotEmpty() }
         val apMode = apIntent?.getIntExtra(EXTRA_AP_MODE, -1)?.takeIf { it >= 0 }
         val tetherLookup = tether?.let { Result.success(it) } ?: sticky(ctx, ACTION_TETHER)
         // 放送が一度もない＝起動してから共有を始めていない
         val active = tetherLookup.getOrNull()?.getStringArrayListExtra(EXTRA_ACTIVE)?.toList() ?: if (tetherLookup.isSuccess) emptyList() else null
+        val apState = apStateOf(ctx, apLookup, active)
         val autoOff = if (autoOffReadable) Os.global(ctx, KEY_SOFT_AP_TIMEOUT)?.toIntOrNull()?.let { it != 0 } else null
         val wifiIface = apIface ?: active?.firstOrNull { Ifaces.isWifi(it) }
         val running = apState == TetherInfo.AP_ENABLED || active?.any { Ifaces.isWifi(it) } == true
@@ -140,16 +144,33 @@ object TetherProbe {
     }
 
     /** アクセスポイントの状態（TetherInfo.AP_*）だけを読む。読めなければ null（ロック解除前でも使える） */
-    fun apState(ctx: Context): Int? = apStateOf(sticky(ctx, ACTION_AP))
+    fun apState(ctx: Context): Int? {
+        val r = sticky(ctx, ACTION_AP)
+        // 放送が残っていない（Android 13 など）ときだけ、共有中のインターフェースも読む
+        val active = if (r.getOrNull() == null) sticky(ctx, ACTION_TETHER).getOrNull()?.getStringArrayListExtra(EXTRA_ACTIVE)?.toList() else null
+        return apStateOf(ctx, r, active)
+    }
 
     /**
-     * OS は状態が変わるたびに放送し、最新のものを残す。放送が一度もない（null）なら、端末の起動から状態が変わっていない。
-     * アクセスポイントは OFF で始まるので OFF とみなす（再起動の直後に「取得不可」にしないため）。読み取りに失敗したら null
+     * Android 12 までは、OS は状態が変わるたびに放送し、最新のものを残す。放送が一度もない（null）なら、端末の起動から状態が変わっていない
+     * （アクセスポイントは OFF で始まるので OFF。再起動の直後に「取得不可」にしないため）。Android 13 からは放送が残らないので、
+     * 放送がないときは OS に尋ね、尋ねられなければ Wi-Fi のインターフェースが共有中なら ON とみなす。読み取りに失敗したら null
      */
-    private fun apStateOf(r: Result<Intent?>): Int? = when {
-        r.isFailure -> null
-        else -> r.getOrNull()?.getIntExtra(EXTRA_AP_STATE, -1)?.takeIf { it >= 0 } ?: TetherInfo.AP_DISABLED.takeIf { r.getOrNull() == null }
+    private fun apStateOf(ctx: Context, r: Result<Intent?>, active: List<String>?): Int? {
+        r.getOrNull()?.let { i -> return i.getIntExtra(EXTRA_AP_STATE, -1).takeIf { it >= 0 } ?: wifiApState(ctx) }
+        wifiApState(ctx)?.let { return it }
+        return when {
+            r.isFailure -> null
+            active?.any { Ifaces.isWifi(it) } == true -> TetherInfo.AP_ENABLED
+            else -> TetherInfo.AP_DISABLED
+        }
     }
+
+    /** WifiManager.getWifiApState()（非公開のシステム API。ACCESS_WIFI_STATE で読める）。呼べなければ null */
+    private fun wifiApState(ctx: Context): Int? = runCatching {
+        val wm = ctx.applicationContext.getSystemService(WifiManager::class.java)
+        (WifiManager::class.java.getMethod("getWifiApState").invoke(wm) as Int).takeIf { it in TetherInfo.AP_DISABLING..TetherInfo.AP_FAILED }
+    }.getOrNull()
 
     /** 最新の放送（成功して null なら、端末の起動から一度も送られていない） */
     private fun sticky(ctx: Context, action: String): Result<Intent?> =
@@ -158,15 +179,32 @@ object TetherProbe {
 
 /** 接続端末数の推定。台数だけを数え、MAC アドレス・IP アドレスは保存しない */
 object Clients {
-    /**
-     * netlink で直接読む方法（[Netlink]）を最初に使うか。targetSdk 30 以上（Android 11 用の版）では /proc/net/arp も
-     * ip neigh も OS に拒否されるので最初から使う。それ以外では、ほかの方法で読めなかったときだけ使う。アプリの起動時に決める
-     */
+    /** 読み方（アプリの起動時に、targetSdk と OS のバージョンで決める） */
+    enum class Way {
+        /** Android 10 用の版：/proc/net/arp → ip neigh → netlink */
+        DEFAULT,
+
+        /** Android 11・12 用の版（targetSdk 30〜32）：/proc/net/arp も ip neigh も拒否されるので、netlink（[Netlink]）を最初に使う */
+        NETLINK_FIRST,
+
+        /** Android 13 用の版（targetSdk 33）：近隣テーブルをどれも読めないので、小さな確認（[ProbeScan]）で数える */
+        PROBE,
+    }
+
     @Volatile
-    var netlinkFirst = false
+    var way = Way.DEFAULT
+
+    private val netlinkFirst get() = way == Way.NETLINK_FIRST
+
+    /** [ProbeScan] で数えたときの方法の表示 */
+    private fun probeLabel() = tr("応答", "probe", "sondage")
 
     fun count(iface: String?, exclude: Set<String> = emptySet()): Pair<Int?, String> {
         val note = if (exclude.isEmpty()) "" else tr("・プラグを除く", ", plug excluded", ", prise exclue")
+        if (way == Way.PROBE) {
+            val present = ProbeScan.scan(iface) ?: return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
+            return present.count { it !in exclude } to probeLabel() + note
+        }
         if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.countNeigh(it, iface, exclude) to "netlink$note" }
         try {
             return Parsers.countArp(File("/proc/net/arp").readLines(), iface, exclude) to "ARP$note"
@@ -187,8 +225,12 @@ object Clients {
         return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
     }
 
-    /** 接続端末の一覧（v0.9.0。テザリングの詳細の画面で、開いている間だけ読む。記録しない）。読めなければ null。UI スレッド以外で呼ぶ */
+    /**
+     * 接続端末の一覧（v0.9.0。テザリングの詳細の画面で、開いている間だけ読む。記録しない）。読めなければ null。UI スレッド以外で呼ぶ。
+     * [Way.PROBE] では MAC アドレスが分からない（mac は空）
+     */
     fun list(iface: String?): List<Parsers.Neighbor>? {
+        if (way == Way.PROBE) return ProbeScan.scan(iface)?.map { Parsers.Neighbor(it, "", Parsers.Neighbor.State.REACHABLE) }
         if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.neighbors(it, iface) }
         try {
             return Parsers.arpNeighbors(File("/proc/net/arp").readLines(), iface)
@@ -220,6 +262,21 @@ object AutoRevoke {
 
     /** 権限が外されない（利用者が対象外にした、または仕組みがない）か */
     fun exempt(ctx: Context): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || ctx.packageManager.isAutoRevokeWhitelisted
+}
+
+/**
+ * Android 13 からの通知の許可（POST_NOTIFICATIONS）。許可がないと、テザリングの停止などの異常を通知で知らせられない。
+ * targetSdk 33 以上のアプリ（Android 13 用の版）は自分で許可を求める（それより前の版を Android 13 で使うと、OS が尋ねる）
+ */
+object NotifyPermission {
+    /** Manifest.permission.POST_NOTIFICATIONS（Android 13 から） */
+    const val PERMISSION = "android.permission.POST_NOTIFICATIONS"
+
+    /** このアプリが自分で許可を求める OS・版か */
+    fun requestable(ctx: Context): Boolean = Build.VERSION.SDK_INT >= 33 && ctx.applicationInfo.targetSdkVersion >= 33
+
+    /** 通知を出せるか（許可と、アプリの通知の設定） */
+    fun enabled(ctx: Context): Boolean = ctx.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() != false
 }
 
 /** OS の設定値を読む（読むだけ。書き込みは ADB 事前設定スクリプトで行う） */
