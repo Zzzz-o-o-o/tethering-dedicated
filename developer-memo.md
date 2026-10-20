@@ -195,6 +195,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
   - 2 行目（サブタイトル）は約 20 文字で切れて流れる表示になるので、英語・フランス語は短くしました（「ON · 2 device(s)」「Permission needed」など）。ON・OFF はメイン画面と同じく、どの言語でもこの表記です。
   - タイルで OFF にしたら、意図した停止なので**テザリング停止の異常として知らせません**（`Prefs.tileOffAt`。次に ON になったら消す）。ほかの機能が後から ON に戻すことはありません（時間帯スケジュールと上限は、自分が止めたときだけ再開する）。再起動したときは、起動時の ON が ON ならこれまでどおり ON にし、OFF なら起動後チェックが「テザリングが OFF」を知らせます。ON・OFF はログと直近の記録に「クイック設定のタイルで ON／OFF にした」と残します。
 - **GitHub の自動テスト**（`.github/workflows/ci.yml`）：push と pull request のたびに、GitHub Actions（ubuntu・JDK 21）で単体テスト・lint・debug ビルドを行い、テストと lint の報告を 14 日残します。署名鍵は使いません（release ビルドはしない）。README の先頭に結果のバッジを出します。Linux で動かすため、`android/gradlew` に実行の属性を付けました（`git update-index --chmod=+x`）。
+  - 使う部品は Node.js 24 で動く版（checkout v7・setup-java v6・upload-artifact v7）。Gradle のキャッシュは setup-java の機能で行い、Gradle ラッパーの検証は `gradle/actions/wrapper-validation` で行います。`gradle/actions` v6 の `setup-gradle` は、キャッシュ機能が Gradle 社の独自ライセンスの部品になり、使うと同社の利用規約に同意したことになるため使っていません（v4 は Node.js 20 向けで古い）。
 - **不具合の報告のひな形**（`.github/ISSUE_TEMPLATE/bug_report.yml`）：英語・日本語の入力フォームで、何が起きたか・アプリのバージョン・端末と Android のバージョン・導入の方法（APK だけ／PC のスクリプト）・診断情報・ログを書いてもらいます。電話番号・IMEI・SSID・パスワード・MAC アドレスは貼らないよう注意書きを出します（診断情報にはこれらを含めていない）。
 
 ## 初期値（仕様「9. 実装前に決めること」への回答）

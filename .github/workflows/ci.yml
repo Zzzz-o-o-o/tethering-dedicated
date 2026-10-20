@@ -18,18 +18,23 @@ jobs:
       run:
         working-directory: android
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Gradle ラッパー（gradle-wrapper.jar）が公式のものか確かめる
+      - uses: gradle/actions/wrapper-validation@v6
+      # JDK 21 と Gradle のキャッシュ。キャッシュは setup-java の機能を使う
+      # （gradle/actions v6 の setup-gradle のキャッシュは、別の利用規約の部品になったため使わない）
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
-      # Gradle のキャッシュと、ラッパー（gradle-wrapper.jar）の検証
-      - uses: gradle/actions/setup-gradle@v4
+          cache: gradle
       - name: Unit tests, lint and debug build
         run: ./gradlew --console=plain testDebugUnitTest lintDebug assembleDebug
       - name: Upload test and lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports
           path: |
