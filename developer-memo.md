@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10 用） v0.10.0
+# テザリング専用化（Android 10・11 用） v0.10.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -8,7 +8,8 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 | パス | 内容 |
 |---|---|
-| `TetheringDedicated-v0.10.0.apk` | インストール用（署名済み・約 690 KB・Android 10 以上。日本語・英語・フランス語）。GitHub の Releases にも置く |
+| `TetheringDedicated-v0.10.0_android10.apk` | Android 10 用のインストール用（署名済み・約 690 KB・targetSdk 29。日本語・英語・フランス語）。GitHub の Releases にも置く |
+| `TetheringDedicated-v0.10.0_android11.apk` | Android 11 用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 30。Android 10 には入らない）。→「Android 11 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
@@ -21,7 +22,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 **スマホだけで導入できます（v0.8.0 から。PC は任意）。**
 
-1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、APK をダウンロードします。
+1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`）をダウンロードします。
 2. ダウンロードしたファイルを開いてインストールします（「提供元不明のアプリ」の許可を求められたら許可。Google Play プロテクトの警告が出たら、そのままインストール）。
 3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
 4. 以後は、端末の再起動後・アプリ更新後に自動で監視を再開します。
@@ -33,8 +34,9 @@ APK だけでも、機能は減りません。PC の ADB が必須なのは、�
 1. スマホで「USB デバッグ」を有効にして PC に接続します。
 2. PC で次を実行します（インストール → ADB 事前設定 → アプリ起動）。
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.10.0.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
+   （Android 11 の端末には `_android11.apk`。逆の組み合わせはスクリプトが知らせます）
    ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
 3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。PC から入れた場合も、メイン画面の「はじめの設定」で残りを確かめられます。
 
@@ -198,6 +200,21 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
   - 使う部品は Node.js 24 で動く版（checkout v7・setup-java v6・upload-artifact v7）。Gradle のキャッシュは setup-java の機能で行い、Gradle ラッパーの検証は `gradle/actions/wrapper-validation` で行います。`gradle/actions` v6 の `setup-gradle` は、キャッシュ機能が Gradle 社の独自ライセンスの部品になり、使うと同社の利用規約に同意したことになるため使っていません（v4 は Node.js 20 向けで古い）。
 - **不具合の報告のひな形**（`.github/ISSUE_TEMPLATE/bug_report.yml`）：英語・日本語の入力フォームで、何が起きたか・アプリのバージョン・端末と Android のバージョン・導入の方法（APK だけ／PC のスクリプト）・診断情報・ログを書いてもらいます。電話番号・IMEI・SSID・パスワード・MAC アドレスは貼らないよう注意書きを出します（診断情報にはこれらを含めていない）。
 
+### Android 11 用の版（v0.10.0）
+
+利用者の依頼で、それまでの APK を `TetheringDedicated-v0.10.0_android10.apk` に改名し（中身は Releases の v0.10.0 と同じ。SHA-256 が一致）、Android 11 用の `TetheringDedicated-v0.10.0_android11.apk` を作りました。
+
+- **作り分け**（`android/app/build.gradle.kts`）：product flavor の `android10`（minSdk・targetSdk 29。これまでどおり）と `android11`（minSdk・targetSdk 30）。アプリ ID と署名鍵は同じなので、Android 11 の端末では上書きで入れ替えられます（設定・ログを引き継ぐ）。コードは共通で、Android 11 での違いは OS のバージョン（`Build.VERSION.SDK_INT`）と targetSdk で分けます。Android 11 用の版だけの内容は `src/android11/AndroidManifest.xml`。
+- **Android 11 のエミュレーターで調べた結果**（これまでの版＝targetSdk 29 と、targetSdk 30 の版を比べた）：
+  - テザリングの切り替え（`ConnectivityManager.startTethering` などのリフレクション＋「システム設定の変更」）・アクセスポイントの状態の放送・起動時の ON（ロック解除前）・タイル・ローカル管理画面・バッテリーセーバーの切り替え（`global low_power`）は、どちらでも Android 10 と同じく動いた（非公開 API の警告も出ない）。
+  - **targetSdk 30 だと `ip neigh` が使えない**（netlink ソケットの bind が SELinux で拒否される。b/155595000）。`/proc/net/arp` も読めないので、接続端末が数えられなくなる → **`Netlink.kt` を追加**：bind せずに NETLINK_ROUTE のソケットへ RTM_GETNEIGH を送り（送ったときにカーネルが自動で番号を割り当てる）、近隣テーブルを読む。読むこと（nlmsg_read）は禁止されていない。結果は `ip neigh show` と同じ形の行にして、既存の数え方・一覧（`Parsers`）をそのまま使う。`ip neigh show` と同じく NOARP・PERMANENT（マルチキャストなど）は除く。Android 11 用の版では最初からこの方法を使い（`Clients.netlinkFirst`）、Android 10 用の版では、ほかの方法で読めなかったときの最後の手段にする。表示は「netlink で推定」。
+  - **他のアプリが見えない**（パッケージの公開範囲）→ Android 11 用の版だけ `QUERY_ALL_PACKAGES` を付けた（アプリの整理・アプリ別の通信量のアプリ名。Play では配布しないので可）。付けると全アプリ（エミュレーターで 164 個、`pm list packages` と同数）が見えた。
+  - **使わないアプリの権限の自動削除**（Android 11 から。targetSdk 30 だと既定で ON。数か月開かないと「電話」の権限が外れる）→「はじめの設定」の 1 に、Android 11 以降だけ説明と「外れないようにする」ボタン（`Intent.ACTION_AUTO_REVOKE_PERMISSIONS`。AOSP の Android 11 ではアプリ情報が開き、その「権限」の画面にスイッチがある）を追加。状態は `PackageManager.isAutoRevokeWhitelisted` で読む。診断情報にも出す。
+  - **アクセスポイントの自動 OFF**：Android 11 は `soft_ap_timeout_enabled` を使わず（null のまま）、アクセスポイントの設定（SoftApConfiguration）に移った。通常のアプリからも ADB の settings からも読めない → Android 11 以降では「アプリからは読めません（アクセスポイントの設定で確認）」と出し、⚠ にしない（`TetherProbe.autoOffReadable`）。AOSP の既定では ON で、接続 0 台が 10 分続くと止まる（SoftApManager の timeout 600000）。
+  - 電波の SINR（RSSNR）の単位が Android 11 で dB に変わる点は、以前から対応済み（`Parsers.lteSinrDb`）。
+- **PC のスクリプト**（`tools/adb-setup.ps1`）：Android 11（API 30）では、自動 OFF の項目を扱わない（以前から）。`-Apply` で「使わないときの権限の削除」を OFF（`cmd appops set --uid <アプリ> AUTO_REVOKE_PERMISSIONS_IF_UNUSED ignore`。端末の画面のスイッチは UID 単位の値を変え、こちらが優先されるので `--uid`）、`-Restore` で元に戻す。帯域は Android 11 の形式（`mApConfig.SoftApConfiguration.mBand`。ビットの組み合わせ 1 = 2.4GHz・2 = 5GHz・4 = 6GHz）も読む。`-Install` で APK と端末の Android のバージョンが合わないと知らせる（`_android11.apk` を Android 10 に入れようとすると止める）。Android 11 の端末に Android 10 用の APK が入っていたら、入れ替えを勧める。位置情報（`location_mode`）と画面ロックの判定は Android 11 でもそのまま使えることを確かめた。
+- **診断情報**の 1 行目に版（android10／android11）と targetSdk を出す（不具合の報告で分かるように）。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -315,6 +332,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | （追加） | 接続端末の一覧と名前 | ✅ v0.9.0（初期値 OFF。画面を開いている間だけ読む。名前は端末内だけ） |
 | （追加） | クイック設定のタイル | ✅ v0.10.0（状態と接続台数を表示し、タップで ON・OFF。ロック中は解除を求める。「システム設定の変更」の許可が必要） |
 | （追加） | GitHub の自動テストと不具合の報告のひな形 | ✅ v0.10.0（push・pull request ごとに単体テスト・lint・debug ビルド。署名鍵は使わない） |
+| （追加） | Android 11 用の APK | ✅ v0.10.0（targetSdk 30。接続端末は netlink で数える。権限の自動削除の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 
 ## 実機での確認結果（UMIDIGI A9 Pro・Android 10・SoftBank、2026-10-16）
 
@@ -543,6 +561,28 @@ Android 10 エミュレーター（日本語。タイルは `cmd statusbar add-t
 
 単体テストは 136 件（`HotspotTileTest` を追加）。lint のエラー・警告なし（SDK の新版案内を除く）。GitHub Actions と同じ条件に近づけるため、時刻帯 UTC・英語の設定でも単体テストを流し、すべて成功しました（文字列は単体テストでは日本語に固定）。
 
+### v0.10.0 Android 11 用の版の確認（2026-10-20）
+
+Android 11 エミュレーター（API 30・日本語。PIN ありの試験を含む）。**Android 11 の実機では、まだ確かめていません**。
+
+| 項目 | 結果 |
+|---|---|
+| これまでの版（targetSdk 29）を Android 11 で | ✓ テザリングの確認・開始・状態の読み取り・`ip neigh` での台数がすべて動いた（非公開 API の警告なし） |
+| Android 11 用の版（targetSdk 30）：テザリング | ✓ 確認・開始・停止が動いた |
+| 〃：接続端末 | `ip neigh` は「Cannot bind netlink socket: Permission denied」・`/proc/net/arp` も拒否 → netlink に変えて ✓ テザリング側は「0台（netlink で推定）」。上流側（radio0）を数えさせると 3 台・一覧も取れ、`ip neigh` の出力と同じ 3 件だった（はじめはマルチキャストなど NOARP の行まで数えて 3 台になっていたので、`ip neigh show` と同じく除くように直した） |
+| 〃：他のアプリ | ✓ `QUERY_ALL_PACKAGES` で 164 個（`pm list packages` と同数）が見えた |
+| 〃：はじめの設定 | ✓ 1 は「許可済み（使わないと自動で外れる設定です）⚠」→「外れないようにする」→ アプリ情報 →「権限」の「アプリが使用されていない場合に権限を削除」を OFF → 戻ると「✓ 済み」（OS の値は UID 単位で ignore）。4 は「アプリからは確認できません（Android 11 以降）…」（⚠ にしない）、開く画面は「Wi-Fi アクセス ポイント」（詳細設定に「アクセス ポイントを自動的にオフにする」） |
+| 〃：メイン画面・診断情報 | ✓「正常」・接続端末「0台（netlinkで推定）」・自動 OFF「アプリからは読めません（Android 11 以降。アクセスポイントの設定で確認）」・SINR 3.0 dB。診断情報「アプリ: 0.10.0 android11（11, targetSdk 30）」「使わないときの権限の削除: OFF（外れない）」 |
+| 〃：タイル | ✓「ON・端末0台」、タップで OFF・ON（ログに記録） |
+| 〃：起動時の ON（PIN あり） | ✓ 再起動の約 10 秒後、ロック解除前（ユーザーの状態 RUNNING_LOCKED・ロック画面表示中）にテザリングが ON。解除後のログ「テザリングを ON にした（起動66秒後・ロック解除前）」と起動後チェック |
+| 〃：ローカル管理画面 | ✓ `/status.json` が応答 |
+| 〃：テザリングの停止の検知 | ✓ 起動後に OS がアクセスポイントを止めたとき（エミュレーターは Wi-Fi のスキャンとアクセスポイントを同時に使えない）、「停止中 → 1分後に再確認 → 通知」 |
+| 〃：バッテリーセーバー | ✓ `global low_power` の書き換えで ON・OFF（自動切り替えの仕組みがそのまま使える） |
+| 〃：リリース版（署名・難読化済み） | ✓ はじめの設定（3 の「切り替えられます」＝リフレクションも動く）・タイルで ON・メイン画面「0台（netlinkで推定）」、クラッシュなし |
+| PC のスクリプト（Android 11 のエミュレーター） | ✓ 確認・`-Apply`・`-Restore`。自動 OFF の項目なし、「使わないときの権限の削除」OFF → 元に戻る、帯域「2.4GHz」（Android 11 の形式） |
+
+単体テストは各版 139 件（`NetlinkTest` 3 件を追加：依頼の電文、`ip neigh` と同じ行への変換と NOARP の除外、エラーと途中で切れた電文）。lint のエラー・警告なし（Gradle・AGP の新版案内を除く。Android 11 用の版で出る「不要な SDK_INT の判定」は、Android 10 用の版と共通のコードのため対象外にした）。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -614,7 +654,16 @@ Android 10 エミュレーター（日本語。タイルは `cmd statusbar add-t
 - [x] タイルで OFF にしたときだけ停止を異常としない。ON になったら元に戻り、そのあとの停止はこれまでどおり知らせる — エミュレーター
 - [x] push と pull request のたびに、署名鍵を使わずに単体テスト・lint・debug ビルドが GitHub 上で行われる — GitHub Actions
 
+### Android 11 用の版（v0.10.0。この README で決めた確認項目）
+
+- [x] Android 11 で、テザリングの切り替え・起動時の ON（ロック解除前）・タイル・状態の読み取りが Android 10 と同じく動く — エミュレーター
+- [x] targetSdk 30 の制限（netlink の bind・パッケージの公開範囲）があっても、接続端末を数えられ、アプリの一覧が読める — エミュレーター・単体テスト
+- [x] 読めなくなった設定（アクセスポイントの自動 OFF）を「未設定」と誤って出さず、権限の自動削除を止める方法を案内する — エミュレーター
+- [ ] Android 11 の実機での確認（まだ）
+
 ## 既知の制約
+
+- **Android 11 用の版は、エミュレーターでしか確かめていません**（Android 11 の実機がないため）。メーカーの改変で、テザリングの切り替えや netlink での読み取りが違う動きをすることがあります。Android 11 ではアクセスポイントの自動 OFF をアプリから読めないので、端末の画面で OFF にしてください（AOSP の既定は ON で、接続 0 台が 10 分続くと止まる）。
 
 - 月の通信量の上限は、「使用状況へのアクセス」がないと通信量を読めません。チェックのたびに読むので、知らせが届くのは上限に達してから最大でチェック間隔 1 回分あとです。数え方は端末の記録なので、キャリアの数え方と少し違うことがあります。
 
@@ -650,8 +699,8 @@ Android 10 エミュレーター（日本語。タイルは `cmd statusbar add-t
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。単体テストは `gradlew testDebugUnitTest`。GitHub に push すると、GitHub Actions が単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。
-  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 2 つあり、`app/build/outputs/apk/android10/release/` と `…/android11/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`・`_android11.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest testAndroid11DebugUnitTest`、lint は `gradlew lintAndroid10Debug lintAndroid11Debug`。GitHub に push すると、GitHub Actions が両方の版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。
+  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）と、見えるアプリの数を出す `pkgs` を足しました。
 
 ## この端末で行った ADB 事前設定（2026-10-16）
 
@@ -665,5 +714,5 @@ Android 10 エミュレーター（日本語。タイルは `cmd statusbar add-t
 - 2026-10-19（v0.7.0）：`adb install -r` で v0.7.0 に更新しました（監視は自動で再開、「システム設定の変更」の許可は残っている、テザリングは ON のまま・接続 2 台）。利用者の依頼で、アプリの設定「起動時に Wi-Fiテザリングを ON にする」を ON にし（利用者がロックを解除した状態で adb から画面を操作）、`adb reboot` で再起動して、ロック解除前にテザリングが ON になることを確かめました（上の「v0.7.0 の確認」）。この設定は ON のままです。OS の設定値は変えていません（`low_power_sticky=1` も利用者の判断でそのまま）。
 - 2026-10-20（v0.8.0）：`adb install -r` で v0.8.0 に更新しました（監視は自動で再開、テザリングは ON のまま）。月の通信量の上限は初期値の OFF のままです（使うときは、設定の「月の通信量の上限」で料金プランの上限と数え始める日を入れて ON）。
 - 2026-10-20（v0.9.0）：v0.9.0 に更新しました。接続端末の一覧は、試験で ON にして名前を付けたあと、名前を消して OFF に戻しています（初期値のまま）。
-- 2026-10-20（v0.10.0）：`adb install -r` で v0.10.0 に更新しました（監視は自動で再開、テザリングは ON のまま）。クイック設定のタイルは追加していません（使うときは、クイック設定の編集（鉛筆）で「テザリング専用化」を追加）。
+- 2026-10-20（v0.10.0）：`adb install -r` で v0.10.0 に更新しました（監視は自動で再開、テザリングは ON のまま）。クイック設定のタイルは追加していません（使うときは、クイック設定の編集（鉛筆）で「テザリング専用化」を追加）。入れた APK は、のちに改名した `TetheringDedicated-v0.10.0_android10.apk` と同じものです（この端末は Android 10 なので、Android 11 用の版は入れていません）。
 - 変更前の値は `tools/backup/adb-setup-backup-<シリアル番号>.json` に保存しています（`-Restore` で戻せます）。

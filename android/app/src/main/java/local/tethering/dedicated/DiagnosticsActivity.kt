@@ -111,7 +111,13 @@ object Diagnostics {
         return buildString {
             appendLine(tr("# テザリング専用化 診断情報", "# Tethering Dedicated diagnostics", "# Diagnostic de Tethering Dedicated"))
             appendLine(kv(tr("作成", "Created", "Créé"), Fmt.dateTime(System.currentTimeMillis())))
-            appendLine(kv(tr("アプリ", "App", "Application"), BuildConfig.VERSION_NAME + Fmt.paren("${BuildConfig.VERSION_CODE}")))
+            // どちらの APK（Android 10 用・Android 11 用）かも分かるように
+            appendLine(
+                kv(
+                    tr("アプリ", "App", "Application"),
+                    "${BuildConfig.VERSION_NAME} ${BuildConfig.FLAVOR}" + Fmt.paren("${BuildConfig.VERSION_CODE}, targetSdk ${ctx.applicationInfo.targetSdkVersion}"),
+                ),
+            )
             appendLine(
                 kv(
                     tr("端末", "Phone", "Téléphone"),
@@ -122,6 +128,14 @@ object Diagnostics {
             appendLine()
             appendLine(tr("## 権限・許可", "## Permissions", "## Autorisations"))
             appendLine(kv(tr("電話の状態", "Phone state", "État du téléphone"), granted(ctx, Manifest.permission.READ_PHONE_STATE)))
+            if (AutoRevoke.applies) {
+                appendLine(
+                    kv(
+                        tr("使わないときの権限の削除", "Remove permissions if unused", "Suppression des autorisations si inutilisée"),
+                        if (AutoRevoke.exempt(ctx)) tr("OFF（外れない）", "off (kept)", "désactivée (conservées)") else tr("ON（しばらく開かないと外れる）", "on (removed if not opened for a while)", "activée (retirées sans ouverture pendant un moment)"),
+                    ),
+                )
+            }
             appendLine(
                 kv(
                     tr("電池の最適化", "Battery optimization", "Optimisation de la batterie"),
@@ -175,8 +189,9 @@ object Diagnostics {
             )
             appendLine(
                 kv(
-                    tr("アクセスポイント自動OFF", "Hotspot auto-off", "Arrêt automatique du point d'accès") + Fmt.paren(TetherProbe.KEY_SOFT_AP_TIMEOUT),
-                    Os.global(ctx, TetherProbe.KEY_SOFT_AP_TIMEOUT) ?: notSet(),
+                    tr("アクセスポイント自動OFF", "Hotspot auto-off", "Arrêt automatique du point d'accès") +
+                        if (TetherProbe.autoOffReadable) Fmt.paren(TetherProbe.KEY_SOFT_AP_TIMEOUT) else "",
+                    if (TetherProbe.autoOffReadable) Os.global(ctx, TetherProbe.KEY_SOFT_AP_TIMEOUT) ?: notSet() else TetherProbe.autoOffUnreadable(),
                 ),
             )
             val lvl = Fmt.pct(p.levelPct)

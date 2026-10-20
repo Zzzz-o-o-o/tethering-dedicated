@@ -30,9 +30,13 @@
     端末にオフロードの HAL（tetheroffload）がないときは効果がないので変更しない
   - アクセスポイントの帯域（2.4GHz／5GHz）とオフロードの対応を表示する（アプリからは読めないため。表示だけ）
 
+  Android 11（API 30）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android11.apk を使う）:
+  - 「アクセスポイントの自動OFF」は OS の設定値ではなくなり、ADB では変えられないので扱わない（端末の画面で OFF にする）
+  - このアプリの「使わないときの権限の削除」を OFF にする（しばらく開かないと「電話」の権限が外れないように）… -Apply に含む
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11 の端末には _android11.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
@@ -201,6 +205,22 @@ function Get-WriteSettingsMode {
     return $null
 }
 
+# 「使わないときの権限の削除」（Android 11 から。ignore = OFF＝権限が外れない）。未設定なら $null。
+# 端末の画面のスイッチは UID 単位の値を変え、UID 単位の値がアプリ単位より優先されるので、変えるときは --uid を使う
+# （appops get は UID 単位の値があればそれを先に出す）
+function Get-AutoRevokeMode {
+    $r = Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'get', $Package, 'AUTO_REVOKE_PERMISSIONS_IF_UNUSED') -AllowFail
+    if ($r -match 'AUTO_REVOKE_PERMISSIONS_IF_UNUSED:\s*(\w+)') { return $Matches[1] }
+    return $null
+}
+
+# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用の APK）
+function Get-AppTargetSdk {
+    $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
+    if ($d -match 'targetSdk=(\d+)') { return [int]$Matches[1] }
+    return $null
+}
+
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
 # HAL は VINTF マニフェストで宣言されるので、それを読む（lshal は機種によって数分かかることがあるため使わない）
 function Test-OffloadHal {
@@ -209,9 +229,21 @@ function Test-OffloadHal {
     return ($r -match '(?m)^\s*[1-9]\d*\s*$')
 }
 
-# アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）
+# アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）。
+# Android 11 からは SoftApConfiguration の mBand（ビットの組み合わせ: 1 = 2.4GHz、2 = 5GHz、4 = 6GHz）
 function Get-ApBand {
     $r = Invoke-Adb -Arguments @('shell', 'dumpsys', 'wifi') -AllowFail
+    if ($r -match 'mApConfig\.SoftApConfiguration\.mBand:\s*(\d+)') {
+        $v = [int]$Matches[1]
+        $names = @()
+        if ($v -band 1) { $names += (T "2.4GHz" "2.4 GHz" "2,4 GHz") }
+        if ($v -band 2) { $names += (T "5GHz" "5 GHz" "5 GHz") }
+        if ($v -band 4) { $names += (T "6GHz" "6 GHz" "6 GHz") }
+        if ($names.Count -eq 0) { return (T "不明（$v）" "unknown ($v)" "inconnu ($v)") }
+        if ($names.Count -eq 1) { return $names[0] }
+        $j = $names -join '／'
+        return (T "自動（$j）" "auto ($($names -join '/'))" "auto ($($names -join '/'))")
+    }
     if ($r -match 'mApConfig\.apBand:\s*(-?\d+)') {
         $v = $Matches[1]
         switch ($v) {
@@ -276,12 +308,20 @@ $sdk = [int](Invoke-Adb -Arguments @('shell', 'getprop', 'ro.build.version.sdk')
 $sn = $script:DeviceSerial
 Write-Host (T "端末: $model（$sn） / Android API $sdk" "Phone: $model ($sn) / Android API $sdk" "Téléphone : $model ($sn) / Android API $sdk")
 Write-Host "adb : $($script:AdbPath)"
-if ($sdk -ne 29) {
-    Write-Warning (T "このアプリと設定は Android 10（API 29）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 (API 29). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 (API 29). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
+if ($sdk -lt 29 -or $sdk -gt 30) {
+    Write-Warning (T "このアプリと設定は Android 10・11（API 29・30）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 and 11 (API 29 and 30). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 et 11 (API 29 et 30). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
 }
 
 if ($Install) {
     if (-not (Test-Path $Install)) { throw (T "APK が見つかりません: $Install" "APK not found: $Install" "APK introuvable : $Install") }
+    # APK は Android のバージョンごとに分かれている（_android10 / _android11）
+    $leaf = Split-Path $Install -Leaf
+    if ($sdk -lt 30 -and $leaf -match '_android11') {
+        throw (T "$leaf は Android 11 以降用です。この端末（API $sdk）には _android10.apk を使ってください。" "$leaf is for Android 11 and later. Use the _android10.apk on this phone (API $sdk)." "$leaf est prévu pour Android 11 et ultérieur. Utilisez le fichier _android10.apk sur ce téléphone (API $sdk).")
+    }
+    if ($sdk -ge 30 -and $leaf -match '_android10') {
+        Write-Warning (T "この端末は Android 11 以降です。_android11.apk を使ってください（_android10.apk でも動きますが、Android 10 用です）。" "This phone runs Android 11 or later. Use the _android11.apk (the _android10.apk works, but it's made for Android 10)." "Ce téléphone utilise Android 11 ou ultérieur. Utilisez le fichier _android11.apk (le fichier _android10.apk fonctionne, mais il est prévu pour Android 10).")
+    }
     $apk = (Resolve-Path $Install).Path
     Write-Host (T "インストール: $apk" "Installing: $apk" "Installation : $apk")
     Write-Host (Invoke-Adb -Arguments @('install', '-r', $apk))
@@ -381,6 +421,11 @@ if ($Restore) {
         Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'WRITE_SETTINGS', $mode) -AllowFail | Out-Null
         Write-Host (T "戻しました: システム設定の変更（$mode）。起動時のテザリング ON と時間帯スケジュールは使えなくなります（アプリの設定で OFF にしてください）" "Restored: Modify system settings ($mode). Turning the hotspot on at startup and the quiet-hours schedule no longer work (turn them off in the app's settings)" "Rétabli : Modifier les paramètres système ($mode). L'activation au démarrage et la planification ne fonctionnent plus (désactivez-les dans les paramètres de l'application)")
     }
+    if ($installed -and $sdk -ge 30 -and $b.PSObject.Properties.Name -contains 'autoRevokeMode' -and $b.autoRevokeMode -ne 'ignore' -and (Get-AutoRevokeMode) -eq 'ignore') {
+        $mode = if ($b.autoRevokeMode) { $b.autoRevokeMode } else { 'default' }
+        Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', '--uid', $Package, 'AUTO_REVOKE_PERMISSIONS_IF_UNUSED', $mode) -AllowFail | Out-Null
+        Write-Host (T "戻しました: 使わないときの権限の削除（$mode）" "Restored: remove permissions if unused ($mode)" "Rétabli : suppression des autorisations si inutilisée ($mode)")
+    }
     # アプリが「Doze を早める」設定を戻さないまま止まった（削除された）場合の後始末
     if ((Get-Setting 'global' 'device_idle_constants') -eq $DozeEarly) {
         Set-Setting 'global' 'device_idle_constants' $null
@@ -421,6 +466,8 @@ if ($Apply) {
     $ss = if ($old -and $old.PSObject.Properties.Name -contains 'secureSettingsGranted' -and $null -ne $old.secureSettingsGranted) { $old.secureSettingsGranted } elseif ($installed) { Test-SecureSettingsGranted } else { $null }
     # 第 4 段階。保存データにないときだけ今の状態を保存する
     $ws = if ($old -and $old.PSObject.Properties.Name -contains 'writeSettingsMode') { $old.writeSettingsMode } elseif ($installed) { Get-WriteSettingsMode } else { $null }
+    # Android 11 から。保存データにないときだけ今の状態を保存する
+    $ar = if ($old -and $old.PSObject.Properties.Name -contains 'autoRevokeMode') { $old.autoRevokeMode } elseif ($installed -and $sdk -ge 30) { Get-AutoRevokeMode } else { $null }
     $backup = [ordered]@{
         createdAt             = if ($old) { $old.createdAt } else { (Get-Date).ToString('s') }
         serial                = $script:DeviceSerial
@@ -433,6 +480,7 @@ if ($Apply) {
         usageStatsMode        = $us
         secureSettingsGranted = $ss
         writeSettingsMode     = $ws
+        autoRevokeMode        = $ar
     }
     New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
     $backup | ConvertTo-Json -Depth 5 | Set-Content -Path $backupPath -Encoding UTF8
@@ -452,6 +500,10 @@ if ($Apply) {
         Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.READ_PHONE_STATE') -AllowFail | Out-Null
         # アプリ別の通信量を読むため（読むだけ。ほかのアプリには何もしない）
         Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'GET_USAGE_STATS', 'allow') -AllowFail | Out-Null
+        if ($sdk -ge 30) {
+            # Android 11 から。しばらくアプリを開かなくても「電話」の権限が外れないようにする
+            Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', '--uid', $Package, 'AUTO_REVOKE_PERMISSIONS_IF_UNUSED', 'ignore') -AllowFail | Out-Null
+        }
         if ($AllowAutoSwitch) {
             # 自動切り替え（バッテリーセーバー・Doze）。アプリは global low_power と device_idle_constants だけを変える
             $g = Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.WRITE_SECURE_SETTINGS') -AllowFail
@@ -499,6 +551,17 @@ if ($installed) {
     $rows = @($rows) + [pscustomobject]@{
         Name = (T "使用状況へのアクセス（本アプリ）" "Usage access (this app)" "Accès aux données d'utilisation (cette appli)")
         Current = $(if ($um -eq 'allow') { $allowed } else { $notAllowed }); Want = $allowed; Status = $(if ($um -eq 'allow') { $ok } else { $change })
+    }
+    if ($sdk -ge 30) {
+        $arNow = Get-AutoRevokeMode
+        $rows = @($rows) + [pscustomobject]@{
+            Name = (T "使わないときの権限の削除（本アプリ・Android 11）" "Remove permissions if unused (this app, Android 11)" "Suppression des autorisations si inutilisée (cette appli, Android 11)")
+            Current = $(if ($arNow -eq 'ignore') { 'OFF' } else { 'ON' }); Want = 'OFF'; Status = $(if ($arNow -eq 'ignore') { $ok } else { $change })
+        }
+        $tsdk = Get-AppTargetSdk
+        if ($tsdk -eq 29) {
+            Write-Warning (T "インストールされているのは Android 10 用の APK（targetSdk 29）です。Android 11 用の _android11.apk に入れ替えるのがおすすめです（設定とログは引き継がれます）。" "The installed APK is the Android 10 one (targetSdk 29). Replacing it with the _android11.apk is recommended (settings and logs are kept)." "L'APK installé est celui pour Android 10 (targetSdk 29). Il est conseillé de le remplacer par le fichier _android11.apk (paramètres et journaux conservés).")
+        }
     }
     $sg = Test-SecureSettingsGranted
     $rows = @($rows) + [pscustomobject]@{

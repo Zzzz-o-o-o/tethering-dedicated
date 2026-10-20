@@ -62,11 +62,27 @@ class SetupActivity : Activity() {
                 "回線の種類（LTE など）と電波を読むために使います。OS の画面には「電話の発信と管理」と出ますが、発信・通話・SMS はしません。",
                 "Used to read the network type (LTE etc.) and the signal. The system screen says “make and manage phone calls”, but the app never makes calls or sends SMS.",
                 "Sert à lire le type de réseau (LTE, etc.) et le signal. L'écran du système indique « passer et gérer des appels », mais l'application ne passe jamais d'appel et n'envoie pas de SMS.",
-            ),
-            { c ->
-                if (c.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) done() else notYet()
+            ) + if (AutoRevoke.applies) {
+                "\n" + tr(
+                    "Android 11 以降は、しばらくアプリを開かないと OS がこの権限を外します。「外れないようにする」で開く画面の「権限」で、「アプリが使用されていない場合に権限を削除」を OFF にしてください。",
+                    "On Android 11 and later, the system removes this permission when the app isn't opened for a while. Tap “Keep it”, open “Permissions” and turn off “Remove permissions if app isn't used”.",
+                    "Sur Android 11 et ultérieur, le système retire cette autorisation si l'application n'est pas ouverte pendant un moment. Touchez « La conserver », ouvrez « Autorisations » et désactivez « Supprimer les autorisations si l'application n'est pas utilisée ».",
+                )
+            } else {
+                ""
             },
-            listOf(allow() to { requestPhone() }),
+            { c ->
+                when {
+                    c.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED -> notYet()
+                    !AutoRevoke.exempt(c) -> tr(
+                        "許可済み（使わないと自動で外れる設定です）", "Allowed (but removed automatically if the app isn't used)",
+                        "Autorisée (mais retirée automatiquement si l'application n'est pas utilisée)",
+                    ) to Level.TODO
+                    else -> done()
+                }
+            },
+            listOf(allow() to { requestPhone() }) +
+                if (AutoRevoke.applies) listOf(tr("外れないようにする", "Keep it", "La conserver") to { SystemScreens.autoRevoke(this) }) else emptyList(),
         )
         step(
             page, 2, tr("電池の最適化の対象外にする", "Exclude from battery optimization", "Exclure de l'optimisation de la batterie"),
@@ -109,10 +125,19 @@ class SetupActivity : Activity() {
                 "Désactive le réglage qui arrête le point d'accès sans appareil connecté pendant un moment. Sur l'écran qui s'ouvre, désactivez « Désactiver automatiquement le point d'accès » (le nom varie selon le téléphone). Le nom et le mot de passe du point d'accès se trouvent sur le même écran.",
             ),
             { c ->
-                when (Os.global(c, TetherProbe.KEY_SOFT_AP_TIMEOUT)) {
-                    "0" -> "OFF" to Level.OK
-                    null -> tr("未設定（多くの端末では ON）", "Not set (ON on most phones)", "Non défini (ON sur la plupart des téléphones)") to Level.TODO
-                    else -> "ON" to Level.TODO
+                // Android 11 からはアプリから読めないので、開いた画面で確かめてもらう
+                if (!TetherProbe.autoOffReadable) {
+                    tr(
+                        "アプリからは確認できません（Android 11 以降）。開いた画面で OFF になっているか確かめてください",
+                        "Apps can't check it (Android 11+). Make sure it's off on the screen that opens",
+                        "Les applications ne peuvent pas le vérifier (Android 11+). Assurez-vous qu'il est désactivé sur l'écran qui s'ouvre",
+                    ) to Level.OPTIONAL
+                } else {
+                    when (Os.global(c, TetherProbe.KEY_SOFT_AP_TIMEOUT)) {
+                        "0" -> "OFF" to Level.OK
+                        null -> tr("未設定（多くの端末では ON）", "Not set (ON on most phones)", "Non défini (ON sur la plupart des téléphones)") to Level.TODO
+                        else -> "ON" to Level.TODO
+                    }
                 }
             },
             listOf(tr("アクセスポイントの設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès") to { SystemScreens.hotspot(this) }),

@@ -75,6 +75,26 @@ class DebugReceiver : BroadcastReceiver() {
             }
             // ファイルに書き出す設定（通知先の URL などが含まれないことの確認）
             "export_json" -> out(Prefs(ctx).toJson().toString())
+            // 見えるアプリの数（Android 11 の「パッケージの公開範囲」の確認用。QUERY_ALL_PACKAGES がないと少なくなる）
+            "pkgs" -> out("installed=${ctx.packageManager.getInstalledApplications(0).size} target=${ctx.applicationInfo.targetSdkVersion}")
+            // 接続端末の読み取り方を確かめる（ip neigh の生の結果と、数え方・一覧。Android 11 の制限の確認用）
+            "clients" -> {
+                Thread {
+                    val t = TetherProbe.read(ctx, countClients = false)
+                    // --es iface <名前> で、数えるインターフェースを変えられる（エミュレーターでは接続端末を用意できないため）
+                    val iface = intent.getStringExtra("iface") ?: t.apIface ?: t.tethered?.firstOrNull { Ifaces.isWifi(it) }
+                    val raw = runCatching {
+                        val p = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
+                        p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                        "exit=${p.exitValue()} out=" + p.inputStream.bufferedReader().readText().replace("\n", " | ").take(600)
+                    }.getOrElse { "error=${it.javaClass.simpleName}: ${it.message}" }
+                    out("iface=$iface sdk=${android.os.Build.VERSION.SDK_INT} target=${ctx.applicationInfo.targetSdkVersion} ip neigh: $raw")
+                    out("netlink=" + (Netlink.neighbors()?.replace("\n", " | ")?.take(600) ?: "null"))
+                    out("count=${Clients.count(iface)} list=${Clients.list(iface)?.map { it.ip + "/" + it.state }}")
+                    pr.finish()
+                }.start()
+                return
+            }
             else -> out("unknown")
         }
         pr.finish()

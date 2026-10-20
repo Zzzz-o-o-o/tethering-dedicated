@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 
@@ -80,6 +81,12 @@ object SystemScreens {
     fun appDetails(pkg: String): Intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
 
     fun usageAccess(ctx: Context) = open(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), Intent(Settings.ACTION_SECURITY_SETTINGS))
+
+    /** 「アプリが使用されていない場合に権限を削除」の画面（Android 11 から。なければアプリ情報） */
+    fun autoRevoke(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return open(ctx, appDetails(ctx.packageName))
+        return open(ctx, Intent(Intent.ACTION_AUTO_REVOKE_PERMISSIONS, Uri.fromParts("package", ctx.packageName, null)), appDetails(ctx.packageName))
+    }
 
     /** 「システム設定の変更」の許可（起動時のテザリング ON と、時間帯スケジュール F-37 でテザリングを切り替えるため） */
     fun writeSettings(ctx: Context) = open(

@@ -1,8 +1,8 @@
-# Tethering Dedicated for Android 10
+# Tethering Dedicated for Android 10 and 11
 
 [![CI](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml)
 
-Turn a spare Android 10 phone into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
+Turn a spare Android 10 or 11 phone into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
 The app keeps an eye on the hotspot, the mobile line, the internet connection, the battery and the temperature,
 alerts you when something goes wrong, keeps a log, and helps you reduce power consumption.
 
@@ -18,14 +18,15 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | | |
 |---|---|
-| Phone | Android 10, with a SIM/plan that allows tethering. **That's all you need** |
+| Phone | Android 10 or 11, with a SIM/plan that allows tethering. **That's all you need** |
 | PC (optional) | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)) and a USB cable — only for the extra setup from a PC (see below) |
 
 ## Files
 
 | File | Contents |
 |---|---|
-| `TetheringDedicated-v0.10.0.apk` | The app (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
+| `TetheringDedicated-v0.10.0_android10.apk` | The app for **Android 10** (also on the [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) page) |
+| `TetheringDedicated-v0.10.0_android11.apk` | The app for **Android 11** (see [Android 11](#android-11)) |
 | `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
@@ -36,13 +37,13 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 ## Quick start (phone only)
 
-1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap `TetheringDedicated-v0.10.0.apk`.
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap the APK for your Android version — `TetheringDedicated-v0.10.0_android10.apk` for Android 10, `TetheringDedicated-v0.10.0_android11.apk` for Android 11 (Settings → About phone → Android version). The Android 11 one doesn't install on Android 10.
 2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
 3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
-   1. **Phone** permission — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS.
+   1. **Phone** permission — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS. On Android 11, also tap **Keep it** and turn off "Remove permissions if app isn't used" under *Permissions* — otherwise Android removes the permission when the app isn't opened for a few months.
    2. **Battery optimization** — exclude the app so that checks are not delayed while the screen is off.
    3. **Modify system settings** — lets the app turn the hotspot on and off (at startup, quiet-hours schedule, data cap).
-   4. **Hotspot auto turn-off** — turn it off so the hotspot doesn't stop when nobody is connected. The hotspot name and password are on the same screen.
+   4. **Hotspot auto turn-off** — turn it off so the hotspot doesn't stop when nobody is connected. The hotspot name and password are on the same screen. On Android 11 the app can't check this setting: make sure "Turn off hotspot automatically" (under *Advanced*) is off.
    5. **Turn on the Wi-Fi hotspot at startup** — turns it back on automatically after every reboot.
    6. **Turn on the Wi-Fi hotspot** — turns it on now.
    7. *(optional)* **Usage access** — for the monthly data cap and the data use per app.
@@ -60,8 +61,9 @@ The PC script applies the recommended system settings in one go, can undo them, 
 1. **Enable USB debugging** on the phone: Settings → About phone → tap *Build number* seven times, then Settings → System → Advanced → Developer options → *USB debugging*. Connect the phone to the PC and allow the "Allow USB debugging?" prompt on the phone.
 2. From the project folder on the PC:
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.10.0.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
+   (on an Android 11 phone, use `TetheringDedicated-v0.10.0_android11.apk`)
    This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
 ---
@@ -147,7 +149,7 @@ The page shows status, battery, time left, today's traffic, today's log and the 
 
 ### Turn on the hotspot at startup
 
-Android always starts with the hotspot off after a reboot. With this option, the app turns the Wi-Fi hotspot on right after the phone starts — even before a PIN, pattern or password lock is unlocked (Android 10 "Direct Boot").
+Android always starts with the hotspot off after a reboot. With this option, the app turns the Wi-Fi hotspot on right after the phone starts — even before a PIN, pattern or password lock is unlocked ("Direct Boot").
 
 Settings → **Tethering**:
 
@@ -273,6 +275,7 @@ Run it from the project folder with the phone connected by USB.
 
 `-Apply` changes only settings that save power and keep the hotspot running: hotspot auto turn-off, Wi-Fi/Bluetooth background scanning, "stay awake while charging", screen timeout (30 s, only on phones without a screen lock), screen wake-ups (ambient display, lift/tap to wake), Location, "mobile data always active", and the app's own permissions (battery optimization exemption, Phone, usage access). It never touches carrier tethering settings, airplane mode, Data Saver or system apps.
 The script also shows the hotspot band (2.4/5 GHz) and whether the phone supports tethering hardware acceleration — the app itself cannot read these.
+On Android 11, the script leaves the hotspot auto turn-off alone (it can't be changed with ADB any more; turn it off on the phone), and `-Apply` also turns off "Remove permissions if app isn't used" for this app (`-Restore` turns it back on). With `-Install`, it warns if the APK doesn't match the phone's Android version.
 
 ---
 
@@ -296,10 +299,27 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 
 ---
 
+## Android 11
+
+On Android 11, use `TetheringDedicated-v0.10.0_android11.apk`. It is built for Android 11 (target API 30), and everything works as on Android 10, with these differences:
+
+| | On Android 11 |
+|---|---|
+| Hotspot auto turn-off | Apps (and the PC script) can no longer read or change it. The app shows "Apps can't read it". Turn off **Turn off hotspot automatically** yourself: Settings → Network & internet → Hotspot & tethering → Wi-Fi hotspot → *Advanced*. If it stays on, Android stops the hotspot after 10 minutes without devices |
+| "Remove permissions if app isn't used" | Android 11 removes the Phone permission from apps that aren't opened for a few months. Turn it off for this app: Initial setup step 1 → **Keep it** (or the PC script's `-Apply`) |
+| Connected devices | Counted with a method that works on Android 11 (shown as "netlink" instead of "ip neigh") |
+| Installed apps | The app is allowed to see the list of installed apps (Android 11 hides it otherwise). It is used only for the **App list** and the data use per app, and stays on the phone |
+
+- The `_android10.apk` also installs on Android 11, but it is made for Android 10. To switch, install the `_android11.apk` over it: settings, permissions and logs are kept.
+- Android 11 support has been tested on the Android 11 emulator, not yet on a real Android 11 phone.
+
+---
+
 ## Privacy
 
 - The log stays on the phone (30 days, 10 MB). It contains no SSID, no information that identifies connected devices (only how many), no phone number and no IP address.
 - The optional connected-device list is shown only on the phone's screen, and the names you give are stored only on the phone.
+- On Android 11, the app reads the list of installed apps only to show the **App list** and the data use per app on the phone.
 - The app's own network use: one small reachability request per check (`connectivitycheck.gstatic.com/generate_204`, about 1 KB). Optionally, notifications to the service you chose and commands to your smart plug.
 - Settings backup files don't include the notification URL or the smart plug address/URLs.
 - The local web page has no password; anyone connected to your hotspot can view it. Turn it off in Settings if you don't need it.
@@ -308,7 +328,8 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 
 ## Limitations
 
-- Made for **Android 10**.
+- Made for **Android 10 and 11** (one APK for each). Android 11 has been tested on the emulator only.
+- On Android 11, the app can't read the hotspot auto turn-off setting (see [Android 11](#android-11)).
 - Without the optional **Turn on the hotspot at startup**, the hotspot stays off after a reboot until you turn it on; the after-reboot check reminds you.
 - Power consumption and time left are available **only on battery**.
 - The number of connected devices is an estimate and may stay for a few minutes after a device disconnects.
@@ -334,6 +355,7 @@ On the tested phone (UMIDIGI A9 Pro), the hotspot kept working with Battery Save
 | "Can't start/stop charging with the smart plug" | Check the plug's power and Wi-Fi, its address, and the charging cable |
 | The test notification fails | Check the URL. "HTTP 4xx" usually means a wrong URL or token |
 | The quick settings tile shows "Permission needed" | Allow "Modify system settings" (Initial setup step 3) |
+| The hotspot stops after about 10 minutes with no devices | Turn off "Turn off hotspot automatically" in the hotspot settings (on Android 11 the app can't check it) |
 | The quick settings tile is grayed out and does nothing | After a restart, unlock the phone once |
 | Something else | Open **Diagnostics**, then copy or share it (see below) |
 
@@ -346,7 +368,7 @@ Don't paste phone numbers, IMEI, SSIDs, passwords or MAC addresses. Diagnostics 
 
 ## Update and uninstall
 
-- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z.apk`, or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
+- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z_android10.apk` — `_android11` on Android 11 — or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
 - **Uninstall:**
   1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup.
   2. `adb uninstall local.tethering.dedicated`

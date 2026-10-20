@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 用の版（targetSdk 30）だけに加える内容。共通の内容は src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Android 11 から、targetSdk 30 のアプリには他のアプリの一覧が見えない（パッケージの公開範囲）。
+      設定ガイドの「アプリの整理」（利用者が入れたアプリの一覧）と、アプリ別の通信量（F-35）のアプリ名に使う（読むだけ）。
+      Play ストアでは配布しないので、Play のポリシーの対象外
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+</manifest>

@@ -18,15 +18,15 @@ body:
     id: version
     attributes:
       label: App version / アプリのバージョン
-      description: Shown on the first lines of Diagnostics. / 「診断情報」の最初の行にあります
-      placeholder: "0.10.0"
+      description: Shown on the first lines of Diagnostics, with the APK (android10 or android11). / 「診断情報」の最初の行にあります（APK の種類 android10・android11 も）
+      placeholder: "0.10.0 android11"
     validations:
       required: true
   - type: input
     id: phone
     attributes:
       label: Phone and Android version / 端末と Android のバージョン
-      placeholder: "e.g. UMIDIGI A9 Pro, Android 10"
+      placeholder: "e.g. UMIDIGI A9 Pro, Android 10 / Pixel 3a, Android 11"
     validations:
       required: true
   - type: dropdown

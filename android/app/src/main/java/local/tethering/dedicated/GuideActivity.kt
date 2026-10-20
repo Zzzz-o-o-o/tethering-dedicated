@@ -204,12 +204,17 @@ class GuideActivity : Activity() {
     private fun sections(): List<Pair<String, List<Item>>> = listOf(
         tr("テザリングを止めないために（重要）", "Keeping the hotspot running (important)", "Garder le point d'accès actif (important)") to listOf(
             Item(
-                tr("アクセスポイントの自動OFF", "Hotspot auto turn-off", "Arrêt automatique du point d'accès"), tags(manual(), adbSetup()),
+                tr("アクセスポイントの自動OFF", "Hotspot auto turn-off", "Arrêt automatique du point d'accès"),
+                if (TetherProbe.autoOffReadable) tags(manual(), adbSetup()) else tags(manual()),
                 { c ->
-                    when (Os.global(c, TetherProbe.KEY_SOFT_AP_TIMEOUT)) {
-                        null -> tr("未設定（AOSPの既定はON）", "Not set (AOSP default: ON)", "Non défini (AOSP par défaut : ON)") to Level.WARN
-                        "0" -> "OFF" to Level.OK
-                        else -> tr("ON（接続がないと自動で停止）", "ON (stops automatically when nothing is connected)", "ON (s'arrête automatiquement sans appareil connecté)") to Level.WARN
+                    when {
+                        // Android 11 からはアプリから読めない（ADB の settings でも変えられない）
+                        !TetherProbe.autoOffReadable -> TetherProbe.autoOffUnreadable() to Level.INFO
+                        else -> when (Os.global(c, TetherProbe.KEY_SOFT_AP_TIMEOUT)) {
+                            null -> tr("未設定（AOSPの既定はON）", "Not set (AOSP default: ON)", "Non défini (AOSP par défaut : ON)") to Level.WARN
+                            "0" -> "OFF" to Level.OK
+                            else -> tr("ON（接続がないと自動で停止）", "ON (stops automatically when nothing is connected)", "ON (s'arrête automatiquement sans appareil connecté)") to Level.WARN
+                        }
                     }
                 },
                 "OFF",
@@ -219,8 +224,12 @@ class GuideActivity : Activity() {
                     "Ce réglage arrête automatiquement le point d'accès quand aucun appareil n'est connecté pendant un moment. Désactivez-le pour utiliser le téléphone comme routeur. Point d'accès et partage de connexion → Point d'accès Wi-Fi → « Désactiver automatiquement le point d'accès ».",
                 ),
                 listOf(tr("アクセスポイントの設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès") to { a -> SystemScreens.hotspot(a) }),
-                "adb shell settings put global ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 0\n" +
-                    tr("（戻す: … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1）", "(undo: … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1)", "(annuler : … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1)"),
+                if (TetherProbe.autoOffReadable) {
+                    "adb shell settings put global ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 0\n" +
+                        tr("（戻す: … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1）", "(undo: … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1)", "(annuler : … ${TetherProbe.KEY_SOFT_AP_TIMEOUT} 1)")
+                } else {
+                    null
+                },
             ),
             Item(
                 tr("起動時のテザリング ON", "Hotspot on at startup", "Point d'accès activé au démarrage"), tags(apk(), verify()),

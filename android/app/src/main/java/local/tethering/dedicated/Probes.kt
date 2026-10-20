@@ -105,6 +105,19 @@ object TetherProbe {
     /** Android 10 の「接続がないときにアクセスポイントを自動でOFF」（Settings.Global、非公開キー） */
     const val KEY_SOFT_AP_TIMEOUT = "soft_ap_timeout_enabled"
 
+    /**
+     * 自動 OFF の設定をアプリから読めるか。Android 11 からはアクセスポイントの設定（SoftApConfiguration）の中に移り、
+     * 通常のアプリからも ADB の settings からも読めない（上のキーは使われない）
+     */
+    val autoOffReadable: Boolean get() = Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q
+
+    /** 自動 OFF の設定を読めない（Android 11 以降）ときの表示 */
+    fun autoOffUnreadable(): String = tr(
+        "アプリからは読めません（Android 11 以降。アクセスポイントの設定で確認）",
+        "Apps can't read it (Android 11+; check in the hotspot settings)",
+        "Illisible par les applications (Android 11+ ; vérifiez dans les paramètres du point d'accès)",
+    )
+
     /** [exclude] は接続端末として数えない IP アドレス（このテザリングにつないだスマートプラグなど。仕様 F-45） */
     fun read(ctx: Context, countClients: Boolean, ap: Intent? = null, tether: Intent? = null, exclude: Set<String> = emptySet()): TetherInfo {
         val apLookup = ap?.let { Result.success(it) } ?: sticky(ctx, ACTION_AP)
@@ -115,7 +128,7 @@ object TetherProbe {
         val tetherLookup = tether?.let { Result.success(it) } ?: sticky(ctx, ACTION_TETHER)
         // 放送が一度もない＝起動してから共有を始めていない
         val active = tetherLookup.getOrNull()?.getStringArrayListExtra(EXTRA_ACTIVE)?.toList() ?: if (tetherLookup.isSuccess) emptyList() else null
-        val autoOff = Os.global(ctx, KEY_SOFT_AP_TIMEOUT)?.toIntOrNull()?.let { it != 0 }
+        val autoOff = if (autoOffReadable) Os.global(ctx, KEY_SOFT_AP_TIMEOUT)?.toIntOrNull()?.let { it != 0 } else null
         val wifiIface = apIface ?: active?.firstOrNull { Ifaces.isWifi(it) }
         val running = apState == TetherInfo.AP_ENABLED || active?.any { Ifaces.isWifi(it) } == true
         val (clients, method) = when {
@@ -145,8 +158,16 @@ object TetherProbe {
 
 /** 接続端末数の推定。台数だけを数え、MAC アドレス・IP アドレスは保存しない */
 object Clients {
+    /**
+     * netlink で直接読む方法（[Netlink]）を最初に使うか。targetSdk 30 以上（Android 11 用の版）では /proc/net/arp も
+     * ip neigh も OS に拒否されるので最初から使う。それ以外では、ほかの方法で読めなかったときだけ使う。アプリの起動時に決める
+     */
+    @Volatile
+    var netlinkFirst = false
+
     fun count(iface: String?, exclude: Set<String> = emptySet()): Pair<Int?, String> {
         val note = if (exclude.isEmpty()) "" else tr("・プラグを除く", ", plug excluded", ", prise exclue")
+        if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.countNeigh(it, iface, exclude) to "netlink$note" }
         try {
             return Parsers.countArp(File("/proc/net/arp").readLines(), iface, exclude) to "ARP$note"
         } catch (_: Exception) {
@@ -162,11 +183,13 @@ object Clients {
             if (p.exitValue() == 0) return Parsers.countNeigh(out, iface, exclude) to "ip neigh$note"
         } catch (_: Exception) {
         }
+        if (!netlinkFirst) Netlink.neighbors()?.let { return Parsers.countNeigh(it, iface, exclude) to "netlink$note" }
         return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
     }
 
     /** 接続端末の一覧（v0.9.0。テザリングの詳細の画面で、開いている間だけ読む。記録しない）。読めなければ null。UI スレッド以外で呼ぶ */
     fun list(iface: String?): List<Parsers.Neighbor>? {
+        if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.neighbors(it, iface) }
         try {
             return Parsers.arpNeighbors(File("/proc/net/arp").readLines(), iface)
         } catch (_: Exception) {
@@ -182,8 +205,21 @@ object Clients {
             if (p.exitValue() == 0) return Parsers.neighbors(out, iface)
         } catch (_: Exception) {
         }
+        if (!netlinkFirst) Netlink.neighbors()?.let { return Parsers.neighbors(it, iface) }
         return null
     }
+}
+
+/**
+ * Android 11 からの「アプリが使用されていない場合に権限を削除」。しばらくアプリを開かないと、OS が実行時の権限（このアプリでは
+ * 「電話」）を外す。targetSdk 30 のアプリ（Android 11 用の版）は既定で対象になる
+ */
+object AutoRevoke {
+    /** この仕組みがある OS か */
+    val applies: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+    /** 権限が外されない（利用者が対象外にした、または仕組みがない）か */
+    fun exempt(ctx: Context): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || ctx.packageManager.isAutoRevokeWhitelisted
 }
 
 /** OS の設定値を読む（読むだけ。書き込みは ADB 事前設定スクリプトで行う） */

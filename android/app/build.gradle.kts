@@ -16,12 +16,27 @@ android {
 
     defaultConfig {
         applicationId = "local.tethering.dedicated"
-        // 対象は Android 10。Play ストアでは配布せず ADB で導入するため targetSdk も 29 に固定し、
-        // Android 11 以降で厳しくなった制限（設定値の読み取り・パッケージ一覧など）の影響を受けないようにする
-        minSdk = 29
-        targetSdk = 29
         versionCode = 11
         versionName = "0.10.0"
+    }
+
+    // 対象の Android のバージョンごとに APK を分ける（TetheringDedicated-<版>_android10.apk / _android11.apk）。
+    // どちらも同じアプリ ID・同じ署名鍵なので、上書きで入れ替えられる（設定・ログは引き継ぐ）
+    flavorDimensions += "os"
+    productFlavors {
+        // Android 10 用。Play ストアでは配布せず ADB・APK で導入するため targetSdk も 29 に固定し、
+        // Android 11 以降で厳しくなった制限（設定値の読み取り・パッケージ一覧など）の影響を受けないようにする
+        create("android10") {
+            dimension = "os"
+            minSdk = 29
+            targetSdk = 29
+        }
+        // Android 11 用（v0.10.0 から）。Android 11 の仕様（targetSdk 30）に合わせ、Android 10 には入らない
+        create("android11") {
+            dimension = "os"
+            minSdk = 30
+            targetSdk = 30
+        }
     }
 
     signingConfigs {
@@ -57,7 +72,8 @@ android {
         // ADB 導入専用（Play 配布しない）ため、Play のポリシー由来の指摘は対象外にする:
         // targetSdk 29 は意図的（上記）、電池の最適化からの除外依頼は監視アプリとして必要
         // 画面の文言は文字列リソースではなく I18n.kt の tr()（日本語・英語・フランス語）で切り替えるので、SetTextI18n も対象外
-        disable += listOf("ExpiredTargetSdkVersion", "OldTargetApi", "BatteryLife", "SetTextI18n")
+        // Android 10 用と Android 11 用（minSdk 30）で同じコードを使うので、Android 11 用の版では不要に見える SDK_INT の判定がある（ObsoleteSdkInt）
+        disable += listOf("ExpiredTargetSdkVersion", "OldTargetApi", "BatteryLife", "SetTextI18n", "ObsoleteSdkInt")
     }
 
     testOptions {

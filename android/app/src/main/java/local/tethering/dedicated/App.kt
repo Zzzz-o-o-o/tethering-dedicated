@@ -2,6 +2,7 @@ package local.tethering.dedicated
 
 import android.app.Application
 import android.content.res.Configuration
+import android.os.Build
 
 /** アプリ全体の初期化 */
 class App : Application() {
@@ -10,6 +11,8 @@ class App : Application() {
         // 表示の言語は端末の言語に合わせる（最初に行う。ほかの処理が文字列を作る前に）
         I18n.sync(resources)
         Notifier.createChannels(this)
+        // Android 11 用の版（targetSdk 30）では、接続端末を netlink で直接読む（ip neigh が使えないため）
+        Clients.netlinkFirst = applicationInfo.targetSdkVersion >= Build.VERSION_CODES.R
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

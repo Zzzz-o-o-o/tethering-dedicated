@@ -184,7 +184,7 @@ class TetherDetailsActivity : Activity() {
         vAutoOff.text = when (t.autoOff) {
             false -> "OFF ✓"
             true -> tr("ON（接続がないと停止）⚠", "ON (stops when nothing is connected) ⚠", "ON (s'arrête sans appareil connecté) ⚠")
-            null -> tr("未設定（AOSPの既定はON）", "Not set (AOSP default: ON)", "Non défini (AOSP par défaut : ON)")
+            null -> if (TetherProbe.autoOffReadable) tr("未設定（AOSPの既定はON）", "Not set (AOSP default: ON)", "Non défini (AOSP par défaut : ON)") else TetherProbe.autoOffUnreadable()
         }
         val s = StateStore.state
         vWeb.text = when {
