@@ -2,7 +2,9 @@ package local.tethering.dedicated
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -187,7 +189,7 @@ object Clients {
         /** Android 11・12 用の版（targetSdk 30〜32）：/proc/net/arp も ip neigh も拒否されるので、netlink（[Netlink]）を最初に使う */
         NETLINK_FIRST,
 
-        /** Android 13 用の版（targetSdk 33）：近隣テーブルをどれも読めないので、小さな確認（[ProbeScan]）で数える */
+        /** Android 13・14 用の版（targetSdk 33 以上）：近隣テーブルをどれも読めないので、小さな確認（[ProbeScan]）で数える */
         PROBE,
     }
 
@@ -266,7 +268,7 @@ object AutoRevoke {
 
 /**
  * Android 13 からの通知の許可（POST_NOTIFICATIONS）。許可がないと、テザリングの停止などの異常を通知で知らせられない。
- * targetSdk 33 以上のアプリ（Android 13 用の版）は自分で許可を求める（それより前の版を Android 13 で使うと、OS が尋ねる）
+ * targetSdk 33 以上のアプリ（Android 13・14 用の版）は自分で許可を求める（それより前の版を Android 13 で使うと、OS が尋ねる）
  */
 object NotifyPermission {
     /** Manifest.permission.POST_NOTIFICATIONS（Android 13 から） */
@@ -277,6 +279,28 @@ object NotifyPermission {
 
     /** 通知を出せるか（許可と、アプリの通知の設定） */
     fun enabled(ctx: Context): Boolean = ctx.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() != false
+}
+
+/**
+ * Android 12 からの正確な時刻のアラーム。Android 14 では、新しく入れたアプリには既定で許可されない（電池の最適化の対象外の
+ * アプリは、許可がなくても使える）。使えないときは正確でないアラームにする（定期チェックなどが数分遅れることがある）
+ */
+object ExactAlarms {
+    fun usable(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ctx.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true
+}
+
+/** OS が送る放送の受信先の登録 */
+object SystemBroadcasts {
+    /**
+     * Android 13 から、受信先をほかのアプリにも公開するかを指定できる。Android 14 用の版（targetSdk 34）では、OS だけが送れる放送
+     * だけを受けるとき以外は指定が必須で、ないと例外になる。テザリングの放送は OS の一部（ネットワークのモジュール）が送るので、
+     * これまでと同じく公開にする（非公開にすると届かない）。Android 12L までは指定のしかたがない（公開が既定）ので、lint の指摘は対象外にする
+     */
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    fun register(ctx: Context, r: BroadcastReceiver, f: IntentFilter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) ctx.registerReceiver(r, f, Context.RECEIVER_EXPORTED) else ctx.registerReceiver(r, f)
+    }
 }
 
 /** OS の設定値を読む（読むだけ。書き込みは ADB 事前設定スクリプトで行う） */

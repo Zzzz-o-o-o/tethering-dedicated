@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 14 用の版（targetSdk 34）だけに加える内容。共通の内容は src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Android 11 から、targetSdk 30 以上のアプリには他のアプリの一覧が見えない（パッケージの公開範囲）。
+      設定ガイドの「アプリの整理」と、アプリ別の通信量（F-35）のアプリ名に使う（読むだけ。Android 11〜13 用の版と同じ）
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <!--
+      正確な時刻のアラーム（定期チェック）。Android 14 では、新しく入れたアプリには既定で許可されない。
+      電池の最適化の対象外（はじめの設定の 2）にすれば、この許可がなくても正確なアラームを使える
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 通知を出すための実行時の許可（Android 13 用の版と同じ。はじめの設定の 1 とメイン画面で求める） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Android 14 から、targetSdk 34 のアプリは常駐サービスの種類を宣言し、その種類の権限を持つ必要がある（ないと常駐できない）。
+      テザリング専用機の監視はどの種類にも当てはまらないので「特別な用途」（specialUse）にし、用途を書いておく
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- ログ・設定・接続端末の名前は、クラウドのバックアップにも、機種変更時の端末間の転送にも含めない（Android 12・13 用の版と同じ） -->
+    <application android:dataExtractionRules="@xml/data_extraction_rules">
+        <service
+            android:name=".MonitorService"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps monitoring the Wi-Fi hotspot, the mobile line and the battery of a phone used as a dedicated hotspot" />
+        </service>
+    </application>
+</manifest>

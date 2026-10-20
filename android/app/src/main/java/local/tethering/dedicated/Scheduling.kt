@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 
@@ -44,10 +43,10 @@ object Scheduler {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return 0L
         val at = SystemClock.elapsedRealtime() + d
         val pi = pending(ctx)
-        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
-        } else {
+        if (ExactAlarms.usable(ctx)) {
             am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
+        } else {
+            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
         }
         val wall = System.currentTimeMillis() + d
         Prefs(ctx).nextCheckAt = wall

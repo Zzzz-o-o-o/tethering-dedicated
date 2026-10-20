@@ -18,7 +18,7 @@ body:
     id: version
     attributes:
       label: App version / アプリのバージョン
-      description: Shown on the first lines of Diagnostics, with the APK (android10, android11, android12 or android13). / 「診断情報」の最初の行にあります（APK の種類 android10・android11・android12・android13 も）
+      description: Shown on the first lines of Diagnostics, with the APK (android10 to android14). / 「診断情報」の最初の行にあります（APK の種類 android10〜android14 も）
       placeholder: "0.10.0 android11"
     validations:
       required: true

@@ -98,6 +98,12 @@ class DebugReceiver : BroadcastReceiver() {
                     out("$ns $k = " + r.fold({ it ?: "(null)" }, { "DENIED ${it.javaClass.simpleName}" }))
                 }
             }
+            // アクセスポイントの状態を OS に直接尋ねられるか（Android 13 から放送が残らないため。非公開 API が使えるかの確認用）
+            "ap_state" -> {
+                val wm = ctx.getSystemService(android.net.wifi.WifiManager::class.java)
+                val r = runCatching { android.net.wifi.WifiManager::class.java.getMethod("getWifiApState").invoke(wm) }
+                out("getWifiApState=" + r.fold({ "$it" }, { "${it.javaClass.simpleName}: ${it.message}" }) + " apState=${TetherProbe.apState(ctx)}")
+            }
             // 通知を出せるかの読み取り（Android 13 の通知の許可の確認用）
             "notify_state" -> {
                 val nm = ctx.getSystemService(android.app.NotificationManager::class.java)

@@ -111,7 +111,7 @@ object Diagnostics {
         return buildString {
             appendLine(tr("# テザリング専用化 診断情報", "# Tethering Dedicated diagnostics", "# Diagnostic de Tethering Dedicated"))
             appendLine(kv(tr("作成", "Created", "Créé"), Fmt.dateTime(System.currentTimeMillis())))
-            // どちらの APK（Android 10 用・Android 11 用）かも分かるように
+            // どの APK（Android 10〜14 用）かも分かるように
             appendLine(
                 kv(
                     tr("アプリ", "App", "Application"),
@@ -142,6 +142,19 @@ object Diagnostics {
                     Fmt.onOff(pm?.isIgnoringBatteryOptimizations(ctx.packageName), tr("除外済み", "excluded", "exclue"), tr("対象", "optimized", "optimisée")),
                 ),
             )
+            // Android 14 では、新しく入れたアプリに正確なアラームが既定で許可されない（電池の最適化の対象外なら使える）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                appendLine(
+                    kv(
+                        tr("正確なアラーム", "Exact alarms", "Alarmes exactes"),
+                        if (ExactAlarms.usable(ctx)) {
+                            tr("使える", "available", "disponibles")
+                        } else {
+                            tr("使えない（定期チェックが数分遅れることがある）", "not available (scheduled checks may run a few minutes late)", "indisponibles (les vérifications planifiées peuvent avoir quelques minutes de retard)")
+                        },
+                    ),
+                )
+            }
             appendLine(
                 kv(
                     tr("通知", "Notifications", "Notifications"),

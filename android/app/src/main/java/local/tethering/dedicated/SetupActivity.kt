@@ -57,7 +57,7 @@ class SetupActivity : Activity() {
             )
         }
 
-        // Android 13 用の版は、通知の許可も自分で求める（番号を変えないよう、1 にまとめる）
+        // Android 13・14 用の版は、通知の許可も自分で求める（番号を変えないよう、1 にまとめる）
         val askNotify = NotifyPermission.requestable(this)
         step(
             page, 1,
@@ -74,8 +74,8 @@ class SetupActivity : Activity() {
                 if (askNotify) {
                     "\n" + tr(
                         "通知は、テザリングの停止などの異常を知らせるために使います（Android 13 から許可が必要です）。",
-                        "Notifications are used to tell you about problems such as the hotspot stopping (Android 13 asks for your permission).",
-                        "Les notifications servent à vous prévenir des problèmes, comme l'arrêt du point d'accès (Android 13 demande votre autorisation).",
+                        "Notifications are used to tell you about problems such as the hotspot stopping (since Android 13, they need your permission).",
+                        "Les notifications servent à vous prévenir des problèmes, comme l'arrêt du point d'accès (depuis Android 13, elles nécessitent votre autorisation).",
                     )
                 } else {
                     ""
@@ -126,7 +126,16 @@ class SetupActivity : Activity() {
                 "画面が消えていても、チェックが遅れないようにします。常時の電力消費は増えません。",
                 "Keeps checks on time while the screen is off. It doesn't increase power use.",
                 "Les vérifications restent à l'heure écran éteint. La consommation n'augmente pas.",
-            ),
+            ) + if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14 からは正確なアラームが既定で許可されないが、電池の最適化の対象外なら使える
+                "\n" + tr(
+                    "Android 14 以降では、決まった時刻にチェックするための「正確なアラーム」も、この除外で使えるようになります。",
+                    "On Android 14 and later, this also lets the app use exact alarms, so that checks run at the planned time.",
+                    "Sur Android 14 et ultérieur, cela permet aussi d'utiliser les alarmes exactes, pour que les vérifications aient lieu à l'heure prévue.",
+                )
+            } else {
+                ""
+            },
             { c ->
                 if (c.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(c.packageName) == true) done() else notYet()
             },
@@ -302,7 +311,7 @@ class SetupActivity : Activity() {
         }
     }
 
-    /** 「電話」と（Android 13 用の版では）「通知」のうち、まだのものを求める */
+    /** 「電話」と（Android 13・14 用の版では）「通知」のうち、まだのものを求める */
     private fun requestPhone() {
         val wanted = buildList {
             if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.READ_PHONE_STATE)

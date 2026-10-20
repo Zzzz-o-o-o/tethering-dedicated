@@ -368,7 +368,16 @@ object BootTether {
     /** [ms] ミリ秒後にもう一度 [run] する（ロック解除前でも届く受信先へ。予約は 1 つだけで、新しい予約が前のものを置き換える） */
     private fun schedule(ctx: Context, ms: Long) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
-        runCatching { am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + ms, retryIntent(ctx)) }
+        val at = SystemClock.elapsedRealtime() + ms
+        runCatching {
+            // 正確なアラームが使えない（Android 14 で許可がなく、電池の最適化の対象のまま）なら、正確でないアラームにする
+            // （正確なアラームは、使えないときに予約すると例外になり、やり直しが行われなくなる）
+            if (ExactAlarms.usable(ctx)) {
+                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, retryIntent(ctx))
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, retryIntent(ctx))
+            }
+        }
     }
 
     private fun cancel(ctx: Context) {

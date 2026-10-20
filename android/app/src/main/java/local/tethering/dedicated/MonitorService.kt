@@ -219,7 +219,7 @@ class MonitorService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
         }
         runCatching {
-            registerReceiver(receiver, f)
+            SystemBroadcasts.register(this, receiver, f)
             receiverRegistered = true
         }
 

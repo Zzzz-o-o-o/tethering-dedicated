@@ -49,6 +49,12 @@ android {
             minSdk = 33
             targetSdk = 33
         }
+        // Android 14 用（v0.10.0 から）。Android 14 の仕様（targetSdk 34）に合わせ、Android 13 以前には入らない
+        create("android14") {
+            dimension = "os"
+            minSdk = 34
+            targetSdk = 34
+        }
     }
 
     signingConfigs {

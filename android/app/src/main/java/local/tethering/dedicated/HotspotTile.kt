@@ -1,10 +1,12 @@
 package local.tethering.dedicated
 
 import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
@@ -52,7 +54,7 @@ class HotspotTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         // パネルを開いている間は、アクセスポイントの状態が変わるたびに表示を直す
-        if (!registered) registered = runCatching { registerReceiver(receiver, IntentFilter(TetherProbe.ACTION_AP)) }.isSuccess
+        if (!registered) registered = runCatching { SystemBroadcasts.register(this, receiver, IntentFilter(TetherProbe.ACTION_AP)) }.isSuccess
         StateStore.unlisten(listener) // 続けて呼ばれても二重に登録しない
         StateStore.listen(listener)
         shown = null
@@ -76,12 +78,9 @@ class HotspotTileService : TileService() {
         if (isLocked) unlockAndRun { toggle() } else toggle()
     }
 
-    // PendingIntent を渡す形は Android 14 から。Android 10 では Intent を渡す形しかない
-    @SuppressLint("StartActivityAndCollapseDeprecated")
-    @Suppress("DEPRECATION")
     private fun toggle() {
         if (!TetherControl.permitted(this)) {
-            startActivityAndCollapse(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            openSetup()
             return
         }
         val prefs = Prefs(this)
@@ -104,6 +103,21 @@ class HotspotTileService : TileService() {
             }
         }
         refresh()
+    }
+
+    /**
+     * パネルを閉じて「はじめの設定」を開く。PendingIntent を渡す形は Android 14 から（Android 14 用の版（targetSdk 34）で Intent を
+     * 渡す形を使うと例外になる）。Android 13 までは Intent を渡す形しかない
+     */
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun openSetup() {
+        val i = Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startActivityAndCollapse(PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE))
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(i)
+        }
     }
 
     private fun refresh() {

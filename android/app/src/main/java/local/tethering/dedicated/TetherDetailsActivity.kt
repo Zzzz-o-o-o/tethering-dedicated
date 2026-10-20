@@ -238,11 +238,11 @@ class TetherDetailsActivity : Activity() {
                 Ui.small(
                     listBox,
                     if (devices.any { it.mac.isEmpty() }) {
-                        // Android 13 用の版は、小さな確認で端末を見つけるので MAC アドレスが分からない
+                        // Android 13・14 用の版は、小さな確認で端末を見つけるので MAC アドレスが分からない
                         tr(
-                            "Android 13 では MAC アドレスを読めないため、名前は IP アドレスで覚えます（端末の IP アドレスが変わると、名前は付け直しになります）。一覧は、テザリングの範囲へ小さな確認を送って作ります。名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面には出しません。",
-                            "Android 13 doesn't let apps read MAC addresses, so names are remembered by IP address (if a device's IP address changes, name it again). The list is built by sending a small probe across the hotspot's address range. Names stay on this phone and never appear in logs, CSV files, external notifications or the web page.",
-                            "Android 13 ne permet pas de lire les adresses MAC : les noms sont mémorisés par adresse IP (si l'adresse IP d'un appareil change, nommez-le à nouveau). La liste est établie en envoyant un petit sondage sur la plage d'adresses du point d'accès. Les noms restent sur ce téléphone et n'apparaissent jamais dans les journaux, les CSV, les notifications externes ou la page web.",
+                            "Android 13 以降では MAC アドレスを読めないため、名前は IP アドレスで覚えます（端末の IP アドレスが変わると、名前は付け直しになります）。一覧は、テザリングの範囲へ小さな確認を送って作ります。名前はこの端末の中だけに保存し、ログ・CSV・外部への通知・管理画面には出しません。",
+                            "Android 13 and later don't let apps read MAC addresses, so names are remembered by IP address (if a device's IP address changes, name it again). The list is built by sending a small probe across the hotspot's address range. Names stay on this phone and never appear in logs, CSV files, external notifications or the web page.",
+                            "Android 13 et ultérieur ne permettent pas de lire les adresses MAC : les noms sont mémorisés par adresse IP (si l'adresse IP d'un appareil change, nommez-le à nouveau). La liste est établie en envoyant un petit sondage sur la plage d'adresses du point d'accès. Les noms restent sur ce téléphone et n'apparaissent jamais dans les journaux, les CSV, les notifications externes ou la page web.",
                         )
                     } else {
                         tr(
@@ -295,7 +295,7 @@ object DeviceNames {
     const val MAX_LENGTH = 30
     private const val FILE = "device_names"
 
-    /** 名前を覚える鍵。ふつうは MAC アドレス。MAC アドレスが分からない（Android 13 用の版）ときは IP アドレス */
+    /** 名前を覚える鍵。ふつうは MAC アドレス。MAC アドレスが分からない（Android 13・14 用の版）ときは IP アドレス */
     fun key(n: Parsers.Neighbor): String = n.mac.ifEmpty { "ip:" + n.ip }
 
     fun all(ctx: Context): Map<String, String> =
