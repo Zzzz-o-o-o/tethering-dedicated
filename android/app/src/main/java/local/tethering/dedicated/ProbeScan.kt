@@ -13,7 +13,7 @@ import java.net.NetworkInterface
 import java.nio.ByteBuffer
 
 /**
- * 接続端末を、テザリングの範囲の各アドレスへ小さな UDP を 1 回ずつ送って数える（v0.10.0 の Android 13・14 用の版。利用者の選択）。
+ * 接続端末を、テザリングの範囲の各アドレスへ小さな UDP を 1 回ずつ送って数える（v0.10.0 の Android 13 以降用の版。利用者の選択）。
  * Android 13 以降で targetSdk 33 以上のアプリは、近隣テーブル（/proc/net/arp・ip neigh・netlink の RTM_GETNEIGH）をどれも読めない。
  * 送った先に端末がいなければ、カーネルは近隣の解決（ARP）に失敗し（ふつう約 3 秒）、自分あてに「到達できない」（ICMP）を出す。
  * これはソケットに IP_RECVERR を付けたときだけ受け取れる（付けないと捨てられ、どのアドレスにも端末がいるように見える。エミュレーターで確認）。

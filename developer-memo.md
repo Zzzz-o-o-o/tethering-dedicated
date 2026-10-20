@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10〜14 用） v0.10.0
+# テザリング専用化（Android 10〜15 用） v0.10.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -13,6 +13,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 | `TetheringDedicated-v0.10.0_android12.apk` | Android 12（12L も）用のインストール用（署名済み・約 690 KB・minSdk／targetSdk 31。Android 11 以前には入らない）。→「Android 12 用の版」 |
 | `TetheringDedicated-v0.10.0_android13.apk` | Android 13 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 33。Android 12L 以前には入らない）。→「Android 13 用の版」 |
 | `TetheringDedicated-v0.10.0_android14.apk` | Android 14 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 34。Android 13 以前には入らない）。→「Android 14 用の版」 |
+| `TetheringDedicated-v0.10.0_android15.apk` | Android 15 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 35。Android 14 以前には入らない）。→「Android 15 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
@@ -25,7 +26,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 **スマホだけで導入できます（v0.8.0 から。PC は任意）。**
 
-1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`、Android 13 は `_android13.apk`、Android 14 は `_android14.apk`）をダウンロードします。
+1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`、Android 13 は `_android13.apk`、Android 14 は `_android14.apk`、Android 15 は `_android15.apk`）をダウンロードします。
 2. ダウンロードしたファイルを開いてインストールします（「提供元不明のアプリ」の許可を求められたら許可。Google Play プロテクトの警告が出たら、そのままインストール）。
 3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限（Android 13 以降は「通知」も）・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
 4. 以後は、端末の再起動後・アプリ更新後に自動で監視を再開します。
@@ -39,7 +40,7 @@ APK だけでも、機能は減りません。PC の ADB が必須なのは、�
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`、Android 14 には `_android14.apk`。合わない組み合わせはスクリプトが知らせます）
+   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`、Android 14 には `_android14.apk`、Android 15 には `_android15.apk`。合わない組み合わせはスクリプトが知らせます）
    ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
 3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。PC から入れた場合も、メイン画面の「はじめの設定」で残りを確かめられます。
 
@@ -263,6 +264,18 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
   - Android 13 用の APK（targetSdk 33）も Android 14 で動いた（常駐・タイル・状態の読み取り・小さな確認）。その上に Android 14 用の APK を入れると、監視は自動で再開した（設定・権限・ログを引き継ぐ）。
 - **PC のスクリプト**：Android 14（API 34）も対象に（範囲外の警告は API 29〜34 以外。APK の名前の判定・入れ替えの勧めも Android 14 まで）。帯域の形式は Android 13 と同じ（`Channels = {…}`）。`-Apply` の電池の最適化からの除外で、正確なアラームも使えるようになる（追加の設定はない）。
 
+### Android 15 用の版（v0.10.0）
+
+利用者の依頼で、Android 15 用の `TetheringDedicated-v0.10.0_android15.apk` を作りました（Android 10〜14 用の APK はそのまま）。product flavor `android15`（minSdk・targetSdk 35）。Android 15 用の版だけの内容は `src/android15/`（マニフェストと `res/xml/data_extraction_rules.xml`。内容は Android 14 用の版と同じで、常駐サービスの種類 specialUse も同じく宣言する）。
+
+- **Android 15 のエミュレーター（API 35）で調べた結果**：
+  - テザリングの切り替え（リフレクション）・`getWifiApState()`・起動時の ON（ロック解除前。解除後の起動直後に specialUse の常駐を始めるのも、Android 15 で禁じられた種類ではないので可）・他のアプリの一覧（180 個＝`pm list packages` と同数）・小さな確認での接続端末の数え方・通知の許可・正確なアラーム（電池の最適化の対象外で `allow-listed`）・バッテリーセーバーの切り替え・タイル（許可がないときに「はじめの設定」を開くのも）・通知をタップしてアプリを開くのは、Android 14 と同じく動いた（非公開 API の警告なし。裏からの画面の起動の制限にもかからない）。
+  - **画面の端から端までの表示**：targetSdk 35 のアプリは、画面がステータスバー・ナビゲーションバーの下まで描かれる（edge-to-edge の強制）。この版で確かめると、ステータスバーとアクションバーは正しく描かれる（アクションバーの色がステータスバーの下まで伸びる）が、画面の中身がアクションバーの裏から始まり、いちばん上のカードの上半分が隠れ、下の項目はナビゲーションバーと重なった。中身に届く重なり（WindowInsets）は上 210・下 126 ピクセル（上はステータスバーとアクションバーの合計）だった → すべての画面が使う `Ui.page` で、届いた重なりの分だけ外側（マージン）を空けるようにした（`Ui.fitBars`。Android 15 以降だけ。それより前の版・OS では重なりが 0 で届くので変わらない）。キーボードの重なり（IME）も同じく空けるので、キーボードが出ると画面が縮み、下の方の入力欄も隠れない（設定画面で確認）。設定の `windowOptOutEdgeToEdgeEnforcement` で強制を断る方法もあるが、Android 16（targetSdk 36）では使えなくなるので、使っていない。
+  - **使わないアプリの扱い**：Android 15 のスイッチは「使用していないアプリの設定」の「使用していないアプリを管理する」（英語 Manage app if unused・フランス語 Gérer l'appli si inutilisée）。説明に「アプリをアーカイブします」（データを残してアプリを取り除く）が加わった。「はじめの設定」の 1 の説明を Android 15 以降はこの名前で出す（Android 13・14 の説明は「Android 13・14 では」に変えた）。仕組み（`AUTO_REVOKE_PERMISSIONS_IF_UNUSED`）は同じで、スイッチを OFF にすると「✓ 済み」になった。
+  - **OS の設定値**：アプリが読む 25 個のうち `device_idle_constants` だけ、targetSdk 35 では読めない（SecurityException）。使うのは「Doze を早める」（Android 12 から使わない）と診断情報だけなので、診断情報に「読めない（OS の制限）」と出すようにした（これまでは「未設定」と出ていた）。
+  - Android 14 用の APK（targetSdk 34）も Android 15 で動いた（端から端までの表示は targetSdk 35 から）。その上に Android 15 用の APK を入れると、監視は自動で再開した。
+- **PC のスクリプト**：Android 15（API 35）も対象に（範囲外の警告は API 29〜35 以外。APK の名前の判定・入れ替えの勧めも Android 15 まで）。扱いは Android 14 と同じ。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -384,6 +397,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | （追加） | Android 12 用の APK | ✅ v0.10.0（targetSdk 31。正確なアラームの許可、裏からの開始の制限への対応、Doze を早めるは使えない、休止状態の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 | （追加） | Android 13 用の APK | ✅ v0.10.0（targetSdk 33。通知の許可、アクセスポイントの状態を OS に尋ねる、接続端末は小さな確認で数える（名前は IP アドレスで覚える）。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 | （追加） | Android 14 用の APK | ✅ v0.10.0（targetSdk 34。常駐サービスの種類（特別な用途）、放送の受信先の指定、タイルから画面を開く形、正確なアラームが使えないときの代わり。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
+| （追加） | Android 15 用の APK | ✅ v0.10.0（targetSdk 35。画面の端から端までの表示でもバー・キーボードに隠れない、名前の変わった「使用していないアプリを管理する」の案内。エミュレーターで確認、実機は未確認。利用者の依頼で追加） |
 
 ## 実機での確認結果（UMIDIGI A9 Pro・Android 10・SoftBank、2026-10-16）
 
@@ -704,6 +718,29 @@ Android 14 エミュレーター（API 34・英語と日本語。PIN ありの�
 
 単体テストは各版 142 件。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く。受信先の指定の指摘は、指定のしかたがない Android 12L 以前の分岐だけなので対象外にした）。
 
+### v0.10.0 Android 15 用の版の確認（2026-10-20）
+
+Android 15 エミュレーター（API 35・英語・日本語・フランス語。PIN ありの試験を含む）。**Android 15 の実機では、まだ確かめていません**。
+
+| 項目 | 結果 |
+|---|---|
+| 常駐サービス | ✓ 種類 specialUse（`types=0x40000000`）で常駐。起動直後・更新の後も同じ |
+| 画面の表示 | 修正前：いちばん上のカードがアクションバーの裏、下の項目がナビゲーションバーの裏。修正後 ✓ どちらにも重ならない（画面写真で確認）。キーボードを出すと、下の方の入力欄がキーボードのすぐ上に見えた |
+| テザリング | ✓ 確認・開始・停止（非公開 API の警告なし）。`getWifiApState()` も読めた（13＝ON） |
+| 接続端末 | ✓ 小さな確認で、仮の端末 2 つを 2台・一覧に 2 つ（約 5 秒）。常駐通知も「2 device(s)」 |
+| OS の設定値・他のアプリ | 25 個のうち `device_idle_constants` だけ読めない（診断情報の表示を直した）・180 個（`pm list packages` と同数） |
+| 正確なアラーム | ✓ 電池の最適化の対象外で `exactAllowReason=allow-listed` |
+| はじめの設定 | ✓ 1 は Android 15 の説明（「使用していないアプリを管理する」。英語・日本語・フランス語の名前を設定アプリで確認）。スイッチを OFF →「✓ 済み」 |
+| タイル・通知 | ✓ パネルを開いた状態で ON・OFF。許可がないとタップで「はじめの設定」が開いた。常駐通知をタップするとメイン画面が開いた |
+| 起動時の ON（PIN あり） | ✓ ロック解除前（RUNNING_LOCKED・ロック画面表示中）に ON。記録「Hotspot turned on (66 s after startup, before unlock)」。解除後、監視が specialUse で常駐 |
+| バッテリーセーバー・ローカル管理画面 | ✓ バッテリー駆動で ON・給電で OFF（テザリングは ON のまま）。管理画面は HTTP 200・「Wi-Fi hotspot ON」 |
+| 診断情報 | ✓「Alarmes exactes : disponibles」「device_idle_constants = illisible (restriction du système)」（フランス語で確認） |
+| これまでの版 | Android 14 用の APK は Android 15 で動いた（これまでどおりの表示・常駐）。その上に Android 15 用のリリース版を入れると、監視が自動で再開 |
+| リリース版（署名・難読化済み） | ✓ メイン画面（フランス語。端から端までの表示の修正も効く）・タイルで ON・OFF・許可がないときの「はじめの設定」、クラッシュなし。マニフェストに `foregroundServiceType=specialUse`・`FOREGROUND_SERVICE_SPECIAL_USE`・`POST_NOTIFICATIONS`・`SCHEDULE_EXACT_ALARM`・`QUERY_ALL_PACKAGES`・`dataExtractionRules`。署名はほかの版と同じ鍵 |
+| PC のスクリプト | ✓ 確認・`-Apply`・`-Restore`（日本語・英語・フランス語）、帯域「2.4GHz」、範囲外の警告なし |
+
+単体テストは各版 142 件。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く）。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -803,8 +840,15 @@ Android 14 エミュレーター（API 34・英語と日本語。PIN ありの�
 - [x] 正確なアラームが使えないときも、定期チェックと起動時の ON のやり直しが止まらない（正確でないアラームにする）。使えるかどうかを診断情報で確かめられる — エミュレーター
 - [ ] Android 14 の実機での確認（まだ）
 
+### Android 15 用の版（v0.10.0。この README で決めた確認項目）
+
+- [x] 画面の端から端までの表示（targetSdk 35）でも、どの画面の中身もバー・キーボードに隠れない — エミュレーター（画面写真）
+- [x] Android 15 で、常駐・テザリングの切り替え・起動時の ON（ロック解除前）・タイル・接続端末が動き、名前の変わった設定（使用していないアプリを管理する）を案内する — エミュレーター
+- [ ] Android 15 の実機での確認（まだ）
+
 ## 既知の制約
 
+- **Android 15 用の版も、エミュレーターでしか確かめていません**（Android 15 の実機がないため）。Android 15 では、使わないアプリをアーカイブする仕組みも加わったので、「使用していないアプリを管理する」を OFF にしてください（「はじめの設定」の 1）。画面の端から端までの表示への対処は、すべての画面で共通の部品（`Ui.page`）で行っています（メーカーの改変でバーの形が違う端末は未確認）。
 - **Android 14 用の版も、エミュレーターでしか確かめていません**（Android 14 の実機がないため）。Android 14 では、電池の最適化の対象外にしないと正確なアラームが使えず、定期チェックや起動時の ON のやり直しが数分遅れることがあります（「はじめの設定」の 2、または PC の `-Apply` で対象外にすれば使える）。常駐の通知は利用者が消せます（監視は続く）。
 - **Android 13 用の版も、エミュレーターでしか確かめていません**（Android 13 の実機がないため）。Android 13 では、接続端末をテザリングの範囲への小さな確認で数えます（約 5 秒。テザリングの範囲は /24 までで、それより広いと「取得不可」）。MAC アドレスが読めないので、接続端末の名前は IP アドレスで覚えます（IP アドレスが変わると付け直し）。Android 10〜12 用の APK を Android 13 で使うと、テザリングが ON でも OFF と出て、停止として知らせてしまいます（Android 13 用の版を使ってください）。
 - **Android 12 用の版も、エミュレーターでしか確かめていません**（Android 12 の実機がないため）。Android 12 では「Doze を早める」は使えません（Doze の設定がアプリから変えられない場所に移ったため。バッテリーセーバーの自動切り替えは使える）。電池の最適化の対象外にしていないと、止まった監視を裏から始め直せないことがあります（正確なアラーム・起動直後は始められる）。
@@ -844,7 +888,7 @@ Android 14 エミュレーター（API 34・英語と日本語。PIN ありの�
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 5 つあり、`app/build/outputs/apk/android10/release/`〜`…/android14/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android14.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid14DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid14Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58 の時点で作ったものです（Android 12〜14 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する））。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 6 つあり、`app/build/outputs/apk/android10/release/`〜`…/android15/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android15.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid15DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid15Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用・14 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58・626077c の時点で作ったものです（Android 12〜15 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する）。Android 15 用の版で足した画面の重なりへの対処・案内・診断情報の表示は、Android 15 以降でだけ働く）。
   - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。Android 13 用の版で、`clients` に `--ei prefix <長さ>`（範囲の長さを変えて小さな確認を試す。エミュレーターの eth0 は /8 で広すぎるため）と、通知を出せるかを読む `notify_state` を足しました。Android 14 用の版で、アクセスポイントの状態を OS に直接尋ねる `ap_state` を足しました。
 
 ## この端末で行った ADB 事前設定（2026-10-16）

@@ -57,7 +57,7 @@ class SetupActivity : Activity() {
             )
         }
 
-        // Android 13・14 用の版は、通知の許可も自分で求める（番号を変えないよう、1 にまとめる）
+        // Android 13 以降用の版は、通知の許可も自分で求める（番号を変えないよう、1 にまとめる）
         val askNotify = NotifyPermission.requestable(this)
         step(
             page, 1,
@@ -81,11 +81,17 @@ class SetupActivity : Activity() {
                     ""
                 }
                 ) + when {
+                // Android 15 からは名前が「使用していないアプリを管理する」になり、アプリのアーカイブ（データを残して取り除く）も加わった
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM -> "\n" + tr(
+                    "Android 15 以降は、しばらくアプリを開かないと OS がアプリを一時停止し、アーカイブ（データを残してアプリを取り除く）することもあります（権限が外れ、通知と監視も止まります）。「外れないようにする」で開く画面の「使用していないアプリの設定」で、「使用していないアプリを管理する」を OFF にしてください。",
+                    "On Android 15 and later, the system pauses the app when it isn't opened for a while, and may even archive it (permissions are removed, and notifications and monitoring stop). Tap “Keep it” and turn off “Manage app if unused” under “Unused app settings”.",
+                    "Sur Android 15 et ultérieur, le système suspend l'application si elle n'est pas ouverte pendant un moment, et peut même l'archiver (les autorisations sont retirées, les notifications et la surveillance s'arrêtent). Touchez « La conserver » et désactivez « Gérer l'appli si inutilisée » sous « Paramètres de l'appli si inutilisée ».",
+                )
                 // Android 13 からは名前が「使用していないアプリを一時停止する」になり、通知も止まる
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> "\n" + tr(
-                    "Android 13 以降は、しばらくアプリを開かないと OS がアプリを一時停止します（権限が外れ、通知と監視も止まります）。「外れないようにする」で開く画面の「使用していないアプリの設定」で、「使用していないアプリを一時停止する」を OFF にしてください。",
-                    "On Android 13 and later, the system pauses the app when it isn't opened for a while (permissions are removed, and notifications and monitoring stop). Tap “Keep it” and turn off “Pause app activity if unused” under “Unused app settings”.",
-                    "Sur Android 13 et ultérieur, le système suspend l'application si elle n'est pas ouverte pendant un moment (les autorisations sont retirées, les notifications et la surveillance s'arrêtent). Touchez « La conserver » et désactivez « Suspendre activité appli si inutilisée » sous « Paramètres des applis inutilisées ».",
+                    "Android 13・14 では、しばらくアプリを開かないと OS がアプリを一時停止します（権限が外れ、通知と監視も止まります）。「外れないようにする」で開く画面の「使用していないアプリの設定」で、「使用していないアプリを一時停止する」を OFF にしてください。",
+                    "On Android 13 and 14, the system pauses the app when it isn't opened for a while (permissions are removed, and notifications and monitoring stop). Tap “Keep it” and turn off “Pause app activity if unused” under “Unused app settings”.",
+                    "Sur Android 13 et 14, le système suspend l'application si elle n'est pas ouverte pendant un moment (les autorisations sont retirées, les notifications et la surveillance s'arrêtent). Touchez « La conserver » et désactivez « Suspendre activité appli si inutilisée » sous « Paramètres des applis inutilisées ».",
                 )
                 // Android 12 からは権限を外すだけでなく、アプリを休止状態にする（裏での動作・アラームも止まる）。スイッチはアプリ情報の画面に直接ある
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> "\n" + tr(
@@ -311,7 +317,7 @@ class SetupActivity : Activity() {
         }
     }
 
-    /** 「電話」と（Android 13・14 用の版では）「通知」のうち、まだのものを求める */
+    /** 「電話」と（Android 13 以降用の版では）「通知」のうち、まだのものを求める */
     private fun requestPhone() {
         val wanted = buildList {
             if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.READ_PHONE_STATE)

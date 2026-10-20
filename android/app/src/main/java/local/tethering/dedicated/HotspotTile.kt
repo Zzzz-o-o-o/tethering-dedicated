@@ -106,7 +106,7 @@ class HotspotTileService : TileService() {
     }
 
     /**
-     * パネルを閉じて「はじめの設定」を開く。PendingIntent を渡す形は Android 14 から（Android 14 用の版（targetSdk 34）で Intent を
+     * パネルを閉じて「はじめの設定」を開く。PendingIntent を渡す形は Android 14 から（Android 14 以降用の版（targetSdk 34 以上）で Intent を
      * 渡す形を使うと例外になる）。Android 13 までは Intent を渡す形しかない
      */
     @SuppressLint("StartActivityAndCollapseDeprecated")

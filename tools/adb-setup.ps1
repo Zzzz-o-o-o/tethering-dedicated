@@ -40,9 +40,12 @@
   Android 14（API 34）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android14.apk を使う）:
   - 新しく入れたアプリには正確な時刻のアラームが既定で許可されないが、-Apply の「電池の最適化から除外」で使えるようになる（追加の設定はない）
 
+  Android 15（API 35）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android15.apk を使う）:
+  - スクリプトの扱いは Android 14 と同じ（追加の項目はない）
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11〜14 の端末には _android11.apk〜_android14.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11〜15 の端末には _android11.apk〜_android15.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
@@ -226,7 +229,7 @@ function Get-AutoRevokeMode {
     return $null
 }
 
-# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用、33 = Android 13 用、34 = Android 14 用）
+# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用、33 = Android 13 用、34 = Android 14 用、35 = Android 15 用）
 function Get-AppTargetSdk {
     $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
     if ($d -match 'targetSdk=(\d+)') { return [int]$Matches[1] }
@@ -240,9 +243,9 @@ function Get-AndroidMajor([int]$Sdk) {
     return $Sdk - 20
 }
 
-# この端末に合う APK の Android のバージョン（APK は Android 10〜14 用がある。15 以降には 14 用）
+# この端末に合う APK の Android のバージョン（APK は Android 10〜15 用がある。16 以降には 15 用）
 function Get-BestApkMajor([int]$Sdk) {
-    return [Math]::Max(10, [Math]::Min(14, (Get-AndroidMajor $Sdk)))
+    return [Math]::Max(10, [Math]::Min(15, (Get-AndroidMajor $Sdk)))
 }
 
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
@@ -256,7 +259,7 @@ function Test-OffloadHal {
 # アクセスポイントの帯域。アクセスポイントが ON のときだけ dumpsys wifi に出る（0 = 2.4GHz、1 = 5GHz、-1 = 自動）。
 # Android 11 からは SoftApConfiguration の mBand（ビットの組み合わせ: 1 = 2.4GHz、2 = 5GHz、4 = 6GHz）。
 # 行の名前は Android 11 が mApConfig.SoftApConfiguration.mBand、Android 12 が mCurrentSoftApConfiguration.mBand。
-# Android 13・14 は設定をまとめて出し、帯域は「Channels = {帯域=チャンネル, …}」（帯域が 2 つなら、2 つを同時に使う）
+# Android 13 以降は設定をまとめて出し、帯域は「Channels = {帯域=チャンネル, …}」（帯域が 2 つなら、2 つを同時に使う）
 function Get-BandNames([int]$v) {
     $names = @()
     if ($v -band 1) { $names += (T "2.4GHz" "2.4 GHz" "2,4 GHz") }
@@ -349,15 +352,15 @@ $sdk = [int](Invoke-Adb -Arguments @('shell', 'getprop', 'ro.build.version.sdk')
 $sn = $script:DeviceSerial
 Write-Host (T "端末: $model（$sn） / Android API $sdk" "Phone: $model ($sn) / Android API $sdk" "Téléphone : $model ($sn) / Android API $sdk")
 Write-Host "adb : $($script:AdbPath)"
-if ($sdk -lt 29 -or $sdk -gt 34) {
-    Write-Warning (T "このアプリと設定は Android 10〜14（API 29〜34）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 to 14 (API 29 to 34). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 à 14 (API 29 à 34). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
+if ($sdk -lt 29 -or $sdk -gt 35) {
+    Write-Warning (T "このアプリと設定は Android 10〜15（API 29〜35）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 to 15 (API 29 to 35). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 à 15 (API 29 à 35). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
 }
 $phoneMajor = Get-AndroidMajor $sdk
 $bestMajor = Get-BestApkMajor $sdk
 
 if ($Install) {
     if (-not (Test-Path $Install)) { throw (T "APK が見つかりません: $Install" "APK not found: $Install" "APK introuvable : $Install") }
-    # APK は Android のバージョンごとに分かれている（_android10 〜 _android14。それより古い端末には入らない）
+    # APK は Android のバージョンごとに分かれている（_android10 〜 _android15。それより古い端末には入らない）
     $leaf = Split-Path $Install -Leaf
     if ($leaf -match '_android(\d+)') {
         $apkMajor = [int]$Matches[1]
@@ -622,7 +625,7 @@ if ($installed) {
                 Current = $(if ($ntNow) { $allowed } else { $notAllowed }); Want = $allowed; Status = $(if ($ntNow) { $ok } else { $change })
             }
         }
-        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用、33 = 13 用、34 = 14 用）が入っているか
+        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用、33 = 13 用、34 = 14 用、35 = 15 用）が入っているか
         $tsdk = Get-AppTargetSdk
         if ($null -ne $tsdk -and $tsdk -ge 29) {
             $appMajor = Get-AndroidMajor $tsdk

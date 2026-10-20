@@ -111,7 +111,7 @@ object Diagnostics {
         return buildString {
             appendLine(tr("# テザリング専用化 診断情報", "# Tethering Dedicated diagnostics", "# Diagnostic de Tethering Dedicated"))
             appendLine(kv(tr("作成", "Created", "Créé"), Fmt.dateTime(System.currentTimeMillis())))
-            // どの APK（Android 10〜14 用）かも分かるように
+            // どの APK（Android 10〜15 用）かも分かるように
             appendLine(
                 kv(
                     tr("アプリ", "App", "Application"),
@@ -344,8 +344,11 @@ object Diagnostics {
                         "Doze ${Fmt.onOff(prefs.autoDozeApplied)}",
                 ),
             )
+            // device_idle_constants は、Android 15 用の版（targetSdk 35）では読めない（SecurityException。Doze を早めるは Android 12 から使わない）
+            val doze = runCatching { Settings.Global.getString(ctx.contentResolver, AutoSwitch.KEY_DOZE) }
+                .fold({ it?.trim()?.takeIf { v -> v.isNotEmpty() } ?: notSet() }, { tr("読めない（OS の制限）", "unreadable (system restriction)", "illisible (restriction du système)") })
             appendLine(
-                "global low_power = ${Os.global(ctx, AutoSwitch.KEY_SAVER) ?: notSet()} / device_idle_constants = ${Os.global(ctx, AutoSwitch.KEY_DOZE) ?: notSet()}",
+                "global low_power = ${Os.global(ctx, AutoSwitch.KEY_SAVER) ?: notSet()} / device_idle_constants = $doze",
             )
             val idle = s.idleReason ?: tr("していない", "no", "non")
             val idleSet = "${minutes(prefs.int(Defs.IDLE_INTERVAL))}" + tr("・残量 ", ", battery ", ", batterie ") + Fmt.pct(prefs.int(Defs.IDLE_BATT))

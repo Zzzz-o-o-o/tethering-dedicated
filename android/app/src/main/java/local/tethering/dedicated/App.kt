@@ -11,7 +11,7 @@ class App : Application() {
         // 表示の言語は端末の言語に合わせる（最初に行う。ほかの処理が文字列を作る前に）
         I18n.sync(resources)
         Notifier.createChannels(this)
-        // 接続端末の読み方。Android 11・12 用の版は netlink で直接読み（ip neigh が使えないため）、Android 13・14 用の版は近隣テーブルを
+        // 接続端末の読み方。Android 11・12 用の版は netlink で直接読み（ip neigh が使えないため）、Android 13 以降用の版は近隣テーブルを
         // どれも読めないので、小さな確認で数える
         val target = applicationInfo.targetSdkVersion
         Clients.way = when {

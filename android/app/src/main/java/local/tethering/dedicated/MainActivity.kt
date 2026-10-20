@@ -892,7 +892,7 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 通知の許可を求める（Android 13・14 用の版）。ダイアログを出せないとき（Android 12 以前・「今後表示しない」の後・
+     * 通知の許可を求める（Android 13 以降用の版）。ダイアログを出せないとき（Android 12 以前・「今後表示しない」の後・
      * アプリの通知の設定で OFF にしたとき）は、アプリの通知の設定を開く
      */
     private fun requestNotifications() {

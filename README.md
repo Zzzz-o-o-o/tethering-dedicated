@@ -1,8 +1,8 @@
-# Tethering Dedicated for Android 10 to 14
+# Tethering Dedicated for Android 10 to 15
 
 [![CI](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml)
 
-Turn a spare phone running Android 10 to 14 into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
+Turn a spare phone running Android 10 to 15 into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
 The app keeps an eye on the hotspot, the mobile line, the internet connection, the battery and the temperature,
 alerts you when something goes wrong, keeps a log, and helps you reduce power consumption.
 
@@ -18,7 +18,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | | |
 |---|---|
-| Phone | Android 10, 11, 12 (12L included), 13 or 14, with a SIM/plan that allows tethering. **That's all you need** |
+| Phone | Android 10, 11, 12 (12L included), 13, 14 or 15, with a SIM/plan that allows tethering. **That's all you need** |
 | PC (optional) | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)) and a USB cable — only for the extra setup from a PC (see below) |
 
 ## Files
@@ -30,6 +30,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 | `TetheringDedicated-v0.10.0_android12.apk` | The app for **Android 12** and 12L (see [Android 12](#android-12)) |
 | `TetheringDedicated-v0.10.0_android13.apk` | The app for **Android 13** (see [Android 13](#android-13)) |
 | `TetheringDedicated-v0.10.0_android14.apk` | The app for **Android 14** (see [Android 14](#android-14)) |
+| `TetheringDedicated-v0.10.0_android15.apk` | The app for **Android 15** (see [Android 15](#android-15)) |
 | `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
@@ -40,10 +41,10 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 ## Quick start (phone only)
 
-1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap the APK for your Android version — `TetheringDedicated-v0.10.0_android10.apk` for Android 10, `TetheringDedicated-v0.10.0_android11.apk` for Android 11, `TetheringDedicated-v0.10.0_android12.apk` for Android 12, `TetheringDedicated-v0.10.0_android13.apk` for Android 13, `TetheringDedicated-v0.10.0_android14.apk` for Android 14 (Settings → About phone → Android version). An APK for a newer Android doesn't install on an older one.
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap the APK for your Android version — `TetheringDedicated-v0.10.0_android10.apk` for Android 10, `TetheringDedicated-v0.10.0_android11.apk` for Android 11, `TetheringDedicated-v0.10.0_android12.apk` for Android 12, `TetheringDedicated-v0.10.0_android13.apk` for Android 13, `TetheringDedicated-v0.10.0_android14.apk` for Android 14, `TetheringDedicated-v0.10.0_android15.apk` for Android 15 (Settings → About phone → Android version). An APK for a newer Android doesn't install on an older one.
 2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
 3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
-   1. **Phone** permission (on Android 13 and later, **Phone** and **Notifications**) — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS. Notifications are how the app alerts you. On Android 11, also tap **Keep it** and turn off "Remove permissions if app isn't used" under *Permissions* — otherwise Android removes the permission when the app isn't opened for a few months. On Android 12, the switch is "Remove permissions and free up space" under *Unused apps* (on Android 13 and later, "Pause app activity if unused" under *Unused app settings*); it also stops Android from putting the app to sleep.
+   1. **Phone** permission (on Android 13 and later, **Phone** and **Notifications**) — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS. Notifications are how the app alerts you. On Android 11, also tap **Keep it** and turn off "Remove permissions if app isn't used" under *Permissions* — otherwise Android removes the permission when the app isn't opened for a few months. On Android 12, the switch is "Remove permissions and free up space" under *Unused apps* (on Android 13 and 14, "Pause app activity if unused" under *Unused app settings*; on Android 15, "Manage app if unused"); it also stops Android from putting the app to sleep.
    2. **Battery optimization** — exclude the app so that checks are not delayed while the screen is off (on Android 14 and later, this also lets the app use exact alarms).
    3. **Modify system settings** — lets the app turn the hotspot on and off (at startup, quiet-hours schedule, data cap).
    4. **Hotspot auto turn-off** — turn it off so the hotspot doesn't stop when nobody is connected. The hotspot name and password are on the same screen. On Android 11 and later the app can't check this setting: make sure "Turn off hotspot automatically" (under *Advanced*) is off.
@@ -66,7 +67,7 @@ The PC script applies the recommended system settings in one go, can undo them, 
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   (on an Android 11 phone, use `TetheringDedicated-v0.10.0_android11.apk`; on Android 12, `TetheringDedicated-v0.10.0_android12.apk`; on Android 13, `TetheringDedicated-v0.10.0_android13.apk`; on Android 14, `TetheringDedicated-v0.10.0_android14.apk`)
+   (on an Android 11 phone, use `TetheringDedicated-v0.10.0_android11.apk`; on Android 12, `TetheringDedicated-v0.10.0_android12.apk`; on Android 13, `TetheringDedicated-v0.10.0_android13.apk`; on Android 14, `TetheringDedicated-v0.10.0_android14.apk`; on Android 15, `TetheringDedicated-v0.10.0_android15.apk`)
    This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
 ---
@@ -356,6 +357,18 @@ On Android 14, use `TetheringDedicated-v0.10.0_android14.apk` (built for target 
 - The `_android13.apk` also works on Android 14, but the `_android14.apk` is made for it: install it over the old one (settings, permissions and logs are kept). The `_android10.apk` to `_android12.apk` see the hotspot as off on Android 14, as on Android 13.
 - Android 14 support has been tested on the Android 14 emulator, not yet on a real Android 14 phone.
 
+## Android 15
+
+On Android 15, use `TetheringDedicated-v0.10.0_android15.apk` (built for target API 35). Everything in [Android 14](#android-14) applies too, with these additions:
+
+| | On Android 15 |
+|---|---|
+| "Manage app if unused" | The Android 13 switch has a new name: *Unused app settings* → **Manage app if unused**. If it stays on, Android can even archive the app (remove it but keep its data) when it isn't opened for a while. Turn it off: Initial setup step 1 → **Keep it** (or the PC script's `-Apply`) |
+| Screen layout | Android 15 lets apps draw behind the status bar and the navigation bar. The app keeps its screens clear of both bars and of the on-screen keyboard, so they look as before |
+
+- The `_android14.apk` also works on Android 15, but the `_android15.apk` is made for it: install it over the old one (settings, permissions and logs are kept).
+- Android 15 support has been tested on the Android 15 emulator, not yet on a real Android 15 phone.
+
 ---
 
 ## Privacy
@@ -372,7 +385,7 @@ On Android 14, use `TetheringDedicated-v0.10.0_android14.apk` (built for target 
 
 ## Limitations
 
-- Made for **Android 10 to 14** (one APK for each). Android 11 to 14 have been tested on the emulator only.
+- Made for **Android 10 to 15** (one APK for each). Android 11 to 15 have been tested on the emulator only.
 - On Android 11 and later, the app can't read the hotspot auto turn-off setting (see [Android 11](#android-11)). On Android 12 and later, "Enter Doze sooner on battery" isn't available (see [Android 12](#android-12)). On Android 13 and later, connected devices are found with a probe and can be named only by IP address (see [Android 13](#android-13)). On Android 14 and later, scheduled checks may run a few minutes late unless the app is excluded from battery optimization (see [Android 14](#android-14)).
 - Without the optional **Turn on the hotspot at startup**, the hotspot stays off after a reboot until you turn it on; the after-reboot check reminds you.
 - Power consumption and time left are available **only on battery**.
@@ -401,7 +414,7 @@ On Android 14, use `TetheringDedicated-v0.10.0_android14.apk` (built for target 
 | The quick settings tile shows "Permission needed" | Allow "Modify system settings" (Initial setup step 3) |
 | The hotspot stops after about 10 minutes with no devices | Turn off "Turn off hotspot automatically" in the hotspot settings (on Android 11 and later the app can't check it) |
 | No alerts on Android 13 or later | Allow notifications: the **Allow** button on the main screen, or Initial setup step 1 |
-| False "hotspot stopped" alerts on Android 13 or later | Install the APK for your Android version (`_android13.apk` or `_android14.apk`, see [Android 13](#android-13)) |
+| False "hotspot stopped" alerts on Android 13 or later | Install the APK for your Android version (`_android13.apk`, `_android14.apk` or `_android15.apk`, see [Android 13](#android-13)) |
 | The quick settings tile is grayed out and does nothing | After a restart, unlock the phone once |
 | Something else | Open **Diagnostics**, then copy or share it (see below) |
 
@@ -414,7 +427,7 @@ Don't paste phone numbers, IMEI, SSIDs, passwords or MAC addresses. Diagnostics 
 
 ## Update and uninstall
 
-- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z_android10.apk` — `_android11` on Android 11, `_android12` on Android 12, `_android13` on Android 13, `_android14` on Android 14 — or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
+- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z_android10.apk` — `_android11` on Android 11, `_android12` on Android 12, `_android13` on Android 13, `_android14` on Android 14, `_android15` on Android 15 — or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
 - **Uninstall:**
   1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup.
   2. `adb uninstall local.tethering.dedicated`

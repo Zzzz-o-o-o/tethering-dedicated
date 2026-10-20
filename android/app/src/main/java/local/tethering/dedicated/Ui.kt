@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -32,7 +34,29 @@ object Ui {
         }
         scroll.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         a.setContentView(scroll)
+        fitBars(scroll)
         return col
+    }
+
+    /**
+     * Android 15 用の版（targetSdk 35）では、画面がステータスバー・ナビゲーションバーの下まで描かれ（端から端まで）、
+     * いちばん上がアクションバーの裏に、いちばん下がナビゲーションバーの裏に隠れる。届いた重なりの分（アクションバーの高さも含む）だけ
+     * 外側を空け、これまでと同じ見え方にする。キーボードが出たらその分も空ける（画面が縮み、入力欄が隠れない）。
+     * それより前の版・OS では重なりが 0 で届くので、何も変わらない（Android 14 までは使わない）
+     */
+    private fun fitBars(v: View) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return
+        v.setOnApplyWindowInsetsListener { view, insets ->
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            val bottom = maxOf(bars.bottom, insets.getInsets(WindowInsets.Type.ime()).bottom)
+            (view.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                if (lp.leftMargin != bars.left || lp.topMargin != bars.top || lp.rightMargin != bars.right || lp.bottomMargin != bottom) {
+                    lp.setMargins(bars.left, bars.top, bars.right, bottom)
+                    view.layoutParams = lp
+                }
+            }
+            WindowInsets.CONSUMED
+        }
     }
 
     fun card(parent: LinearLayout): LinearLayout {

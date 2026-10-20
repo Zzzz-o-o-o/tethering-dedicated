@@ -55,6 +55,12 @@ android {
             minSdk = 34
             targetSdk = 34
         }
+        // Android 15 用（v0.10.0 から）。Android 15 の仕様（targetSdk 35）に合わせ、Android 14 以前には入らない
+        create("android15") {
+            dimension = "os"
+            minSdk = 35
+            targetSdk = 35
+        }
     }
 
     signingConfigs {
