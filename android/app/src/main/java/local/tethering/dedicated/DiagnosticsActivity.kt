@@ -111,7 +111,7 @@ object Diagnostics {
         return buildString {
             appendLine(tr("# テザリング専用化 診断情報", "# Tethering Dedicated diagnostics", "# Diagnostic de Tethering Dedicated"))
             appendLine(kv(tr("作成", "Created", "Créé"), Fmt.dateTime(System.currentTimeMillis())))
-            // どの APK（Android 10〜15 用）かも分かるように
+            // どの APK（Android 10〜16 用）かも分かるように
             appendLine(
                 kv(
                     tr("アプリ", "App", "Application"),
@@ -344,7 +344,7 @@ object Diagnostics {
                         "Doze ${Fmt.onOff(prefs.autoDozeApplied)}",
                 ),
             )
-            // device_idle_constants は、Android 15 用の版（targetSdk 35）では読めない（SecurityException。Doze を早めるは Android 12 から使わない）
+            // device_idle_constants は、Android 15 以降用の版（targetSdk 35 以上）では読めない（SecurityException。Doze を早めるは Android 12 から使わない）
             val doze = runCatching { Settings.Global.getString(ctx.contentResolver, AutoSwitch.KEY_DOZE) }
                 .fold({ it?.trim()?.takeIf { v -> v.isNotEmpty() } ?: notSet() }, { tr("読めない（OS の制限）", "unreadable (system restriction)", "illisible (restriction du système)") })
             appendLine(
@@ -366,12 +366,19 @@ object Diagnostics {
             )
             appendLine()
             appendLine(tr("## 第 4 段階", "## Phase 4", "## Phase 4"))
-            // テザリングは止めずに、切り替えられるかだけを確かめる
+            // テザリングは止めずに、切り替えられるかだけを確かめる。Android 16 は、端末の管理アプリと、アクセスポイントの名前とパスワード（値は出さない）
+            val switching = if (DeviceOwner.required) {
+                tr("端末の管理アプリ", "device owner", "propriétaire de l'appareil") + " " +
+                    Fmt.onOff(DeviceOwner.isOwner(ctx), tr("はい", "yes", "oui"), tr("いいえ", "no", "non")) + tr("・", ", ", ", ") +
+                    tr("名前とパスワード", "name and password", "nom et mot de passe") + " " +
+                    (if (HotspotConfig.load(ctx).valid) tr("設定済み", "set", "définis") else tr("未設定", "not set", "non définis"))
+            } else {
+                tr("システム設定の変更", "Modify system settings", "Modifier les paramètres système") + " " + allowed(TetherControl.permitted(ctx))
+            }
             appendLine(
                 kv(
                     tr("テザリングの切り替え", "Hotspot switching", "Bascule du point d'accès"),
-                    tr("システム設定の変更", "Modify system settings", "Modifier les paramètres système") + " " + allowed(TetherControl.permitted(ctx)) +
-                        " / " + tr("確認", "check", "test") + " " + TetherControl.probe(ctx).text,
+                    switching + " / " + tr("確認", "check", "test") + " " + TetherControl.probe(ctx).text,
                 ),
             )
             // 起動時に読むのは、ロック解除前でも読める写しのほう

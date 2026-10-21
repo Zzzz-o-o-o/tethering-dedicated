@@ -61,6 +61,12 @@ android {
             minSdk = 35
             targetSdk = 35
         }
+        // Android 16 用（v0.10.0 から）。Android 16 の仕様（targetSdk 36）に合わせ、Android 15 以前には入らない
+        create("android16") {
+            dimension = "os"
+            minSdk = 36
+            targetSdk = 36
+        }
     }
 
     signingConfigs {

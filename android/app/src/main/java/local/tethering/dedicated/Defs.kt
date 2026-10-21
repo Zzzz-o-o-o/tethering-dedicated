@@ -320,13 +320,36 @@ object Defs {
         ),
     )
 
+    /**
+     * テザリングを切り替える項目の説明に、切り替えに要るものを付ける（Android 16 は端末の管理アプリの設定。v0.10.0）。
+     * [stops] は、テザリングを止める項目か（Android 16 で止められるのは、このアプリが ON にしたテザリングだけ）
+     */
+    private fun needSwitch(ja: String, en: String, fr: String, stops: Boolean = true): Tx =
+        if (DeviceOwner.required) {
+            val also = if (stops) {
+                Tx(
+                    "。止められるのは、このアプリが ON にしたテザリングだけです", ". The app can only turn off a hotspot it turned on itself",
+                    ". L'application ne peut arrêter qu'un point d'accès qu'elle a activé elle-même",
+                )
+            } else {
+                Tx("", "", "")
+            }
+            Tx(
+                "${ja}端末の管理アプリの設定（Android 16。はじめの設定の 3）が必要です${also.ja}",
+                "$en Requires the device owner setup (Android 16, Initial setup step 3)${also.en}",
+                "$fr Nécessite la configuration du propriétaire de l'appareil (Android 16, étape 3 de la configuration initiale)${also.fr}",
+            )
+        } else {
+            Tx("${ja}「システム設定の変更」の許可が必要です", "$en Requires the “Modify system settings” permission", "$fr Nécessite l'autorisation « Modifier les paramètres système »")
+        }
+
     val TETHER_SCHEDULE = BoolDef(
         "tether_schedule",
         Tx("使わない時間帯はテザリングを止める", "Turn off the hotspot during quiet hours", "Arrêter le point d'accès pendant les heures d'inactivité"), false,
-        Tx(
-            "上の時間帯に入ったら、接続 0 台が 10 分続いたときにテザリングを止め、時間帯の終わりに再開します（このアプリが止めたときだけ）。「システム設定の変更」の許可が必要です",
-            "During the quiet hours above, turns the hotspot off after 10 minutes with no devices and back on when they end (only if this app turned it off). Requires the “Modify system settings” permission",
-            "Pendant les heures d'inactivité ci-dessus, arrête le point d'accès après 10 minutes sans appareil et le redémarre à la fin (seulement si cette application l'a arrêté). Nécessite l'autorisation « Modifier les paramètres système »",
+        needSwitch(
+            "上の時間帯に入ったら、接続 0 台が 10 分続いたときにテザリングを止め、時間帯の終わりに再開します（このアプリが止めたときだけ）。",
+            "During the quiet hours above, turns the hotspot off after 10 minutes with no devices and back on when they end (only if this app turned it off).",
+            "Pendant les heures d'inactivité ci-dessus, arrête le point d'accès après 10 minutes sans appareil et le redémarre à la fin (seulement si cette application l'a arrêté).",
         ),
     )
     val EXT_NOTIFY = BoolDef(
@@ -421,13 +444,10 @@ object Defs {
     val DATA_CAP_STOP = BoolDef(
         "data_cap_stop",
         Tx("上限を超えたらテザリングを止める", "Turn off the hotspot when the cap is exceeded", "Arrêter le point d'accès quand le plafond est dépassé"), false,
-        Tx(
-            "次の期間の始まりに再開します（このアプリが止めたときだけ）。止めている間に手で ON にしたら、その期間はもう止めません。再起動しても、その期間は ON にしません。" +
-                "「システム設定の変更」の許可が必要です",
-            "It's turned back on when the next period starts (only if this app turned it off). If you turn it on by hand while it's off, it isn't turned off again in that period. It stays off after a reboot until the period ends. " +
-                "Requires the “Modify system settings” permission",
-            "Il est réactivé au début de la période suivante (seulement si cette application l'a arrêté). Si vous l'activez à la main pendant l'arrêt, il n'est plus arrêté durant cette période. Il reste arrêté après un redémarrage jusqu'à la fin de la période. " +
-                "Nécessite l'autorisation « Modifier les paramètres système »",
+        needSwitch(
+            "次の期間の始まりに再開します（このアプリが止めたときだけ）。止めている間に手で ON にしたら、その期間はもう止めません。再起動しても、その期間は ON にしません。",
+            "It's turned back on when the next period starts (only if this app turned it off). If you turn it on by hand while it's off, it isn't turned off again in that period. It stays off after a reboot until the period ends.",
+            "Il est réactivé au début de la période suivante (seulement si cette application l'a arrêté). Si vous l'activez à la main pendant l'arrêt, il n'est plus arrêté durant cette période. Il reste arrêté après un redémarrage jusqu'à la fin de la période.",
         ),
     )
 
@@ -435,13 +455,14 @@ object Defs {
     val TETHER_ON_BOOT = BoolDef(
         "tether_on_boot",
         Tx("起動時に Wi-Fiテザリングを ON にする", "Turn on the Wi-Fi hotspot at startup", "Activer le point d'accès Wi-Fi au démarrage"), false,
-        Tx(
+        needSwitch(
             "端末の起動直後に Wi-Fiテザリングを ON にします。PIN などの画面ロックがあっても、ロック解除の前に ON にします（ON にならなければ、約 10 分のあいだ数回やり直します）。" +
-                "そのあと手で OFF にしたら、次の起動まではそのままです。監視を止めていても動きます。「システム設定の変更」の許可が必要です",
+                "そのあと手で OFF にしたら、次の起動まではそのままです。監視を止めていても動きます。",
             "Turns the Wi-Fi hotspot on right after the phone starts, even before a PIN or other screen lock is unlocked (if it doesn't come on, it retries a few times over about 10 minutes). " +
-                "If you then turn it off by hand, it stays off until the next startup. Works even while monitoring is stopped. Requires the “Modify system settings” permission",
+                "If you then turn it off by hand, it stays off until the next startup. Works even while monitoring is stopped.",
             "Active le point d'accès Wi-Fi juste après le démarrage du téléphone, même avant le déverrouillage d'un code PIN ou d'un autre verrouillage de l'écran (s'il ne s'active pas, quelques nouveaux essais ont lieu pendant environ 10 minutes). " +
-                "Si vous l'arrêtez ensuite à la main, il reste arrêté jusqu'au prochain démarrage. Fonctionne même si la surveillance est arrêtée. Nécessite l'autorisation « Modifier les paramètres système »",
+                "Si vous l'arrêtez ensuite à la main, il reste arrêté jusqu'au prochain démarrage. Fonctionne même si la surveillance est arrêtée.",
+            stops = false,
         ),
     )
     val NOTIFY_ALERT = BoolDef("notify_alert", Tx("異常・警告を通知する", "Notify about errors and alerts", "Notifier les erreurs et alertes"), true)
@@ -516,6 +537,26 @@ object Defs {
         null, PlugUrls::checkSpec, secret = true,
     )
 
+    /** 管理アプリとしてテザリングを ON にするときのアクセスポイントの名前とパスワード（v0.10.0 の Android 16 用の版。HotspotConfig） */
+    val AP_SSID = TextDef(
+        "ap_ssid", Tx("アクセスポイントの名前（Android 16）", "Hotspot name (Android 16)", "Nom du point d'accès (Android 16)"), "",
+        Tx(
+            "このアプリがテザリングを ON にするときの名前。OS のアクセスポイントの設定と同じにすると、接続端末はそのままつながります。設定のファイル保存には含めません",
+            "The name used when this app turns the hotspot on. Use the same one as in the system's hotspot settings so that devices keep connecting. Not included in saved settings files",
+            "Le nom utilisé quand l'application active le point d'accès. Mettez le même que dans les paramètres du point d'accès du système pour que les appareils se reconnectent. Non inclus dans les fichiers de paramètres enregistrés",
+        ),
+        { s -> if (s.isEmpty()) null else HotspotConfig.checkSsid(s) }, secret = true,
+    )
+    val AP_PASS = TextDef(
+        "ap_pass", Tx("アクセスポイントのパスワード（Android 16）", "Hotspot password (Android 16)", "Mot de passe du point d'accès (Android 16)"), "",
+        Tx(
+            "8〜63 文字（WPA2）。OS のアクセスポイントの設定と同じにします。設定のファイル保存には含めません",
+            "8 to 63 characters (WPA2). Use the same one as in the system's hotspot settings. Not included in saved settings files",
+            "8 à 63 caractères (WPA2). Mettez le même que dans les paramètres du point d'accès du système. Non inclus dans les fichiers de paramètres enregistrés",
+        ),
+        { s -> if (s.isEmpty()) null else HotspotConfig.checkPass(s) }, secret = true,
+    )
+
     val ints = listOf(
         INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
@@ -527,7 +568,7 @@ object Defs {
         HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE,
         TETHER_SCHEDULE, EXT_NOTIFY, EXT_RECOVERY, EXT_ALERT, PLUG, TETHER_ON_BOOT, DATA_CAP, DATA_CAP_STOP, DEVICE_LIST,
     )
-    val texts = listOf(URL, RECHECK, QUIET_HOURS, EXT_URL, PLUG_KIND, PLUG_HOST, PLUG_ON_URL, PLUG_OFF_URL)
+    val texts = listOf(URL, RECHECK, QUIET_HOURS, EXT_URL, PLUG_KIND, PLUG_HOST, PLUG_ON_URL, PLUG_OFF_URL, AP_SSID, AP_PASS)
 
     /** 設定のファイル保存・診断情報に含めない項目のキー */
     val secretKeys: Set<String> get() = texts.filter { it.secret }.map { it.key }.toSet()

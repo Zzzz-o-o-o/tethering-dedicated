@@ -233,8 +233,14 @@ class Prefs(context: Context) {
         syncBootTether()
     }
 
-    /** 起動時のテザリング ON は、ロック解除前でも読める写しを使う（BootTether）。設定を変えたらすぐ写す */
-    private fun syncBootTether() = BootTether.sync(app, bool(Defs.TETHER_ON_BOOT))
+    /**
+     * 起動時のテザリング ON は、ロック解除前でも読める写しを使う（BootTether）。設定を変えたらすぐ写す。
+     * Android 16 用の版でテザリングを ON にするときのアクセスポイントの名前とパスワードも同じく写す（HotspotConfig）
+     */
+    private fun syncBootTether() {
+        BootTether.sync(app, bool(Defs.TETHER_ON_BOOT))
+        HotspotConfig.sync(app, this)
+    }
 
     /** [includeSecrets] は端末内の巻き戻し用だけ true（ファイルに書き出す設定には、通知先の URL などを含めない） */
     fun toJson(includeSecrets: Boolean = false): JSONObject {

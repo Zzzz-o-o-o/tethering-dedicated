@@ -2,6 +2,8 @@ package local.tethering.dedicated
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -48,11 +50,20 @@ class SetupActivity : Activity() {
         Ui.card(page).also { c ->
             Ui.text(
                 c,
-                tr(
-                    "PC は要りません。上から順にボタンを押し、OS の画面で許可したら「戻る」でこの画面に戻ってください。あとからメイン画面の「はじめの設定」でも開けます。",
-                    "No PC is needed. Tap the buttons from the top; when a system screen opens, allow it there and press Back to return here. You can open this screen again from “Initial setup” on the main screen.",
-                    "Aucun PC n'est nécessaire. Touchez les boutons dans l'ordre ; quand un écran du système s'ouvre, autorisez-y l'accès puis appuyez sur Retour pour revenir ici. Vous pouvez rouvrir cet écran avec « Configuration initiale » sur l'écran principal.",
-                ),
+                // Android 16 は、テザリングを切り替える機能に PC からの設定（3）が要る
+                if (DeviceOwner.required) {
+                    tr(
+                        "PC が要るのは、テザリングを切り替える機能を使うときの 3（端末の管理アプリにする。Android 16）だけです。上から順にボタンを押し、OS の画面で許可したら「戻る」でこの画面に戻ってください。あとからメイン画面の「はじめの設定」でも開けます。",
+                        "A PC is needed only for step 3 (device owner, Android 16), if you use the features that switch the hotspot. Tap the buttons from the top; when a system screen opens, allow it there and press Back to return here. You can open this screen again from “Initial setup” on the main screen.",
+                        "Un PC n'est nécessaire que pour l'étape 3 (propriétaire de l'appareil, Android 16), si vous utilisez les fonctions qui commandent le point d'accès. Touchez les boutons dans l'ordre ; quand un écran du système s'ouvre, autorisez-y l'accès puis appuyez sur Retour pour revenir ici. Vous pouvez rouvrir cet écran avec « Configuration initiale » sur l'écran principal.",
+                    )
+                } else {
+                    tr(
+                        "PC は要りません。上から順にボタンを押し、OS の画面で許可したら「戻る」でこの画面に戻ってください。あとからメイン画面の「はじめの設定」でも開けます。",
+                        "No PC is needed. Tap the buttons from the top; when a system screen opens, allow it there and press Back to return here. You can open this screen again from “Initial setup” on the main screen.",
+                        "Aucun PC n'est nécessaire. Touchez les boutons dans l'ordre ; quand un écran du système s'ouvre, autorisez-y l'accès puis appuyez sur Retour pour revenir ici. Vous pouvez rouvrir cet écran avec « Configuration initiale » sur l'écran principal.",
+                    )
+                },
                 13.5f,
             )
         }
@@ -147,7 +158,7 @@ class SetupActivity : Activity() {
             },
             listOf(tr("除外を依頼する", "Request exclusion", "Demander l'exclusion") to { SystemScreens.requestIgnoreBatteryOptimizations(this) }),
         )
-        step(
+        if (DeviceOwner.required) ownerStep(page) else step(
             page, 3, tr("「システム設定の変更」を許可する", "Allow “Modify system settings”", "Autoriser « Modifier les paramètres système »"),
             tr(
                 "このアプリがテザリングを ON・OFF するときに使います（起動時の ON・時間帯スケジュール・通信量の上限）。開いた画面で「システム設定の変更を許可」を ON にしてください。",
@@ -246,16 +257,82 @@ class SetupActivity : Activity() {
             Ui.text(c, tr("PC から行う追加の設定（任意）", "Extra setup from a PC (optional)", "Configuration supplémentaire depuis un PC (facultatif)"), 15.5f, bold = true)
             Ui.small(
                 c,
-                tr(
-                    "PC の ADB が必要なのは、バッテリー駆動中にバッテリーセーバー・Doze を自動で切り替える機能だけです。省電力のための OS の設定は「設定ガイド」から 1 つずつ変えられます（PC の tools\\adb-setup.bat を使うと、まとめて変えて元に戻せます）。",
-                    "A PC with ADB is needed only for switching Battery Saver and Doze automatically on battery. The power-saving system settings can be changed one by one from the “Setup guide” (with tools\\adb-setup.bat on a PC, they can be changed and undone all at once).",
-                    "Un PC avec ADB n'est nécessaire que pour la bascule automatique de l'économiseur de batterie et de Doze sur batterie. Les réglages d'économie d'énergie du système peuvent être modifiés un par un depuis le « Guide de configuration » (avec tools\\adb-setup.bat sur un PC, ils peuvent être modifiés et annulés en une fois).",
+                // Android 16 は、3（端末の管理アプリにする）にも PC が要る
+                (
+                    if (DeviceOwner.required) {
+                        tr(
+                            "PC の ADB が必要なのは、3（端末の管理アプリにする）と、バッテリー駆動中にバッテリーセーバー・Doze を自動で切り替える機能だけです。",
+                            "A PC with ADB is needed only for step 3 (device owner) and for switching Battery Saver and Doze automatically on battery.",
+                            "Un PC avec ADB n'est nécessaire que pour l'étape 3 (propriétaire de l'appareil) et pour la bascule automatique de l'économiseur de batterie et de Doze sur batterie.",
+                        )
+                    } else {
+                        tr(
+                            "PC の ADB が必要なのは、バッテリー駆動中にバッテリーセーバー・Doze を自動で切り替える機能だけです。",
+                            "A PC with ADB is needed only for switching Battery Saver and Doze automatically on battery.",
+                            "Un PC avec ADB n'est nécessaire que pour la bascule automatique de l'économiseur de batterie et de Doze sur batterie.",
+                        )
+                    }
+                ) + tr(
+                    "省電力のための OS の設定は「設定ガイド」から 1 つずつ変えられます（PC の tools\\adb-setup.bat を使うと、まとめて変えて元に戻せます）。",
+                    " The power-saving system settings can be changed one by one from the “Setup guide” (with tools\\adb-setup.bat on a PC, they can be changed and undone all at once).",
+                    " Les réglages d'économie d'énergie du système peuvent être modifiés un par un depuis le « Guide de configuration » (avec tools\\adb-setup.bat sur un PC, ils peuvent être modifiés et annulés en une fois).",
                 ),
             )
             Ui.button(c, tr("設定ガイドを開く", "Open Setup guide", "Ouvrir le guide de configuration")) { startActivity(Intent(this, GuideActivity::class.java)) }
         }
         Ui.button(page, tr("完了（メイン画面へ）", "Done (to the main screen)", "Terminé (vers l'écran principal)")) { finish() }
         Ui.spacer(page, 10)
+    }
+
+    /**
+     * Android 16 の 3：端末の管理アプリにする（Android 16 からは、管理アプリでないとテザリングを切り替えられない）。
+     * 管理アプリにするのは PC から。アクセスポイントの名前とパスワードは設定画面で入れる
+     */
+    private fun ownerStep(page: LinearLayout) {
+        step(
+            page, 3,
+            tr("端末の管理アプリにする（Android 16・PC から）", "Make this app the device owner (Android 16, from a PC)", "Faire de l'application le propriétaire de l'appareil (Android 16, depuis un PC)"),
+            tr(
+                "Android 16 からは、テザリングを ON・OFF できるのは端末の管理アプリだけです（「システム設定の変更」の許可では切り替えられません）。起動時の ON・時間帯スケジュール・通信量の上限で止める・タイルの切り替えに使います。" +
+                    "PC から次の命令で管理アプリにします（そのときスマホにアカウントがあると失敗します。あとで追加し直せます）。\n${DeviceOwner.command(this)}\n" +
+                    "あわせて、設定の「テザリング」でアクセスポイントの名前とパスワードを OS の設定と同じに入れてください（OS の設定はアプリから読めないため）。" +
+                    "このアプリが止められるのは、自分で ON にしたテザリングだけです。管理アプリのままではアンインストールできないので、消す前に設定の「管理アプリをやめる」を押してください。",
+                "From Android 16, only the device owner app can turn the hotspot on and off (“Modify system settings” is no longer enough). It's used for turning it on at startup, the quiet-hours schedule, the data cap and the tile. " +
+                    "Make this app the device owner from a PC with the command below (it fails if the phone has an account at that moment; you can add it back afterwards).\n${DeviceOwner.command(this)}\n" +
+                    "Also enter the hotspot name and password under “Tethering” in Settings, the same as in the system settings (apps can't read those). " +
+                    "The app can only turn off a hotspot it turned on itself. A device owner app can't be uninstalled: before removing it, tap “Stop being the device owner” in Settings.",
+                "Depuis Android 16, seule l'application propriétaire de l'appareil peut activer et arrêter le point d'accès (« Modifier les paramètres système » ne suffit plus). C'est utilisé pour l'activation au démarrage, la planification, le plafond de données et la vignette. " +
+                    "Faites de l'application le propriétaire de l'appareil depuis un PC avec la commande ci-dessous (elle échoue si le téléphone a un compte à ce moment-là ; vous pourrez le rajouter ensuite).\n${DeviceOwner.command(this)}\n" +
+                    "Saisissez aussi le nom et le mot de passe du point d'accès dans « Partage de connexion » des paramètres, les mêmes que dans les paramètres du système (les applications ne peuvent pas les lire). " +
+                    "L'application ne peut arrêter qu'un point d'accès qu'elle a activé elle-même. Une application propriétaire de l'appareil ne peut pas être désinstallée : avant de la supprimer, touchez « Ne plus être propriétaire de l'appareil » dans les paramètres.",
+            ),
+            { c ->
+                when (TetherControl.missing(c)) {
+                    TetherControl.Reason.WRONG_APK -> TetherControl.Reason.WRONG_APK.label to Level.TODO
+                    TetherControl.Reason.NOT_OWNER -> notYet()
+                    TetherControl.Reason.NO_CONFIG -> tr(
+                        "管理アプリ済み・アクセスポイントの名前とパスワードがまだ", "Device owner set, hotspot name and password not yet",
+                        "Propriétaire défini, nom et mot de passe du point d'accès pas encore",
+                    ) to Level.TODO
+                    else -> TetherControl.probe(c).let { r ->
+                        if (r.ok) {
+                            tr("済み（このアプリから切り替えられます）", "Done (this app can switch the hotspot)", "Fait (l'application peut commander le point d'accès)") to Level.OK
+                        } else {
+                            tr("管理アプリ済みですが、切り替えられません（${r.text}）", "Device owner set, but switching isn't possible (${r.text})", "Propriétaire défini, mais bascule impossible (${r.text})") to Level.TODO
+                        }
+                    }
+                }
+            },
+            listOf(
+                tr("命令をコピーする", "Copy the command", "Copier la commande") to {
+                    getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("adb", DeviceOwner.command(this)))
+                    toast(tr("コピーしました", "Copied", "Copié"))
+                },
+                tr("名前とパスワードを入れる（設定）", "Enter the name and password (Settings)", "Saisir le nom et le mot de passe (paramètres)") to {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                },
+            ),
+        )
     }
 
     override fun onResume() {
@@ -357,6 +434,15 @@ class SetupActivity : Activity() {
 
     private fun setBootOn(on: Boolean) {
         if (on && !TetherControl.permitted(this)) {
+            if (DeviceOwner.required) {
+                toast(
+                    tr(
+                        "先に 3 を済ませてください（管理アプリと、アクセスポイントの名前とパスワード）", "Finish step 3 first (device owner, hotspot name and password)",
+                        "Terminez d'abord l'étape 3 (propriétaire de l'appareil, nom et mot de passe du point d'accès)",
+                    ),
+                )
+                return
+            }
             toast(tr("先に 3 の「システム設定の変更」を許可してください", "Allow “Modify system settings” in step 3 first", "Autorisez d'abord « Modifier les paramètres système » (étape 3)"))
             SystemScreens.writeSettings(this)
             return

@@ -45,8 +45,9 @@ class DebugReceiver : BroadcastReceiver() {
                     else -> sp.remove(key)
                 }
                 sp.commit()
-                // 起動時のテザリング ON は、ロック解除前でも読める写しを使う（設定画面の「保存」と同じく写す）
+                // 起動時のテザリング ON（とアクセスポイントの名前・パスワード）は、ロック解除前でも読める写しを使う（設定画面の「保存」と同じく写す）
                 BootTether.sync(ctx, Prefs(ctx).bool(Defs.TETHER_ON_BOOT))
+                HotspotConfig.sync(ctx, Prefs(ctx))
                 if (Prefs(ctx).monitoring) MonitorService.send(ctx, MonitorService.ACTION_SETTINGS)
                 out("$key を設定")
             }
@@ -98,6 +99,11 @@ class DebugReceiver : BroadcastReceiver() {
                     out("$ns $k = " + r.fold({ it ?: "(null)" }, { "DENIED ${it.javaClass.simpleName}" }))
                 }
             }
+            // 端末の管理アプリ（Android 16 でテザリングの切り替えに要る）か・切り替えに足りないもの
+            "owner" -> out(
+                "required=${DeviceOwner.required} supported=${DeviceOwner.supported(ctx)} owner=${DeviceOwner.isOwner(ctx)} " +
+                    "config=${HotspotConfig.load(ctx).valid} missing=${TetherControl.missing(ctx)}",
+            )
             // アクセスポイントの状態を OS に直接尋ねられるか（Android 13 から放送が残らないため。非公開 API が使えるかの確認用）
             "ap_state" -> {
                 val wm = ctx.getSystemService(android.net.wifi.WifiManager::class.java)

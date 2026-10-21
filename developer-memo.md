@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10〜15 用） v0.10.0
+# テザリング専用化（Android 10〜16 用） v0.10.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -14,6 +14,7 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 | `TetheringDedicated-v0.10.0_android13.apk` | Android 13 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 33。Android 12L 以前には入らない）。→「Android 13 用の版」 |
 | `TetheringDedicated-v0.10.0_android14.apk` | Android 14 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 34。Android 13 以前には入らない）。→「Android 14 用の版」 |
 | `TetheringDedicated-v0.10.0_android15.apk` | Android 15 用のインストール用（署名済み・約 700 KB・minSdk／targetSdk 35。Android 14 以前には入らない）。→「Android 15 用の版」 |
+| `TetheringDedicated-v0.10.0_android16.apk` | Android 16 用のインストール用（署名済み・約 720 KB・minSdk／targetSdk 36。Android 15 以前には入らない）。→「Android 16 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
@@ -26,12 +27,12 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 **スマホだけで導入できます（v0.8.0 から。PC は任意）。**
 
-1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`、Android 13 は `_android13.apk`、Android 14 は `_android14.apk`、Android 15 は `_android15.apk`）をダウンロードします。
+1. スマホのブラウザで https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest を開き、端末の Android のバージョンに合う APK（Android 10 は `_android10.apk`、Android 11 は `_android11.apk`、Android 12 は `_android12.apk`、Android 13 は `_android13.apk`、Android 14 は `_android14.apk`、Android 15 は `_android15.apk`、Android 16 は `_android16.apk`）をダウンロードします。
 2. ダウンロードしたファイルを開いてインストールします（「提供元不明のアプリ」の許可を求められたら許可。Google Play プロテクトの警告が出たら、そのままインストール）。
 3. アプリを開くと「はじめの設定」が開くので、上から順にボタンを押します（「電話」の権限（Android 13 以降は「通知」も）・電池の最適化の除外・「システム設定の変更」・アクセスポイントの自動 OFF の解除・起動時の ON・テザリングの ON・任意で使用状況へのアクセスと月の通信量の上限）。
 4. 以後は、端末の再起動後・アプリ更新後に自動で監視を再開します。
 
-APK だけでも、機能は減りません。PC の ADB が必須なのは、バッテリー駆動中の自動切り替え（F-42。設定変更の権限）だけです。PC の `-Apply` がまとめて変える OS の設定は、設定ガイドから 1 つずつ変えられます。
+APK だけでも、機能は減りません（Android 15 まで）。PC の ADB が必須なのは、バッテリー駆動中の自動切り替え（F-42。設定変更の権限）だけです。Android 16 では、テザリングを切り替える機能に、PC から端末の管理アプリにする設定が 1 回要ります（→「Android 16 用の版」）。PC の `-Apply` がまとめて変える OS の設定は、設定ガイドから 1 つずつ変えられます。
 
 **PC から導入する場合**（推奨の OS の設定をまとめて変えて、`-Restore` で戻したいとき）：
 
@@ -40,8 +41,8 @@ APK だけでも、機能は減りません。PC の ADB が必須なのは、�
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`、Android 14 には `_android14.apk`、Android 15 には `_android15.apk`。合わない組み合わせはスクリプトが知らせます）
-   ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl` を付けます（→「ADB 事前設定」）。
+   （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`、Android 14 には `_android14.apk`、Android 15 には `_android15.apk`、Android 16 には `_android16.apk`。合わない組み合わせはスクリプトが知らせます）
+   ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl`（Android 16 では代わりに `-SetDeviceOwner`）を付けます（→「ADB 事前設定」）。
 3. スマホでアプリを開き、画面上部の「要確認」に従います（「電話」の権限は**回線の状態を読むためだけ**に使います。OS の表示は「電話の発信と管理」ですが、発信・通話・SMS は行いません）。PC から入れた場合も、メイン画面の「はじめの設定」で残りを確かめられます。
 
 ## 画面
@@ -276,6 +277,18 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
   - Android 14 用の APK（targetSdk 34）も Android 15 で動いた（端から端までの表示は targetSdk 35 から）。その上に Android 15 用の APK を入れると、監視は自動で再開した。
 - **PC のスクリプト**：Android 15（API 35）も対象に（範囲外の警告は API 29〜35 以外。APK の名前の判定・入れ替えの勧めも Android 15 まで）。扱いは Android 14 と同じ。
 
+### Android 16 用の版（v0.10.0）
+
+利用者の依頼で、Android 16 用の `TetheringDedicated-v0.10.0_android16.apk` を作りました（Android 10〜15 用の APK はそのまま）。product flavor `android16`（minSdk・targetSdk 36）。Android 16 用の版だけの内容は `src/android16/`（マニフェスト・`res/xml/data_extraction_rules.xml`・`res/xml/device_admin.xml`・`AdminReceiver.kt`）。
+
+- **これまでの方法ではテザリングを切り替えられない（Android 16 の仕様）**：Android 16 のエミュレーター（API 36・BE2A.250530.026.D1）で、「システム設定の変更」を許可しても、テザリングの開始が断られた（`TETHER_ERROR_NO_CHANGE_TETHERING_PERMISSION`＝14。ログは「No TETHER_PRIVILEGED or WRITE_SETTINGS」）。Android 15 用の APK（targetSdk 35）でも同じ。OS のテザリングの部分（モジュール `com.android.networkstack.tethering`、版 36）を逆アセンブル（dexdump）して調べると、権限の確認（`hasTetherChangePermission`）が「アクセスポイントの設定つきの要求に対応した OS（`isTetheringWithSoftApConfigEnabled`。Android 16 以降なら常に真）では `WRITE_SETTINGS` を見ない」に変わっていた。targetSdk に関係なく、Android 16 ではどの版の APK もこの方法では切り替えられない。
+- **残る方法は、端末の管理アプリ（デバイスオーナー）かキャリア権限のアプリ**（`isRequestAllowedForDOOrCarrierApp`）。要求は「Wi-Fi テザリング・アクセスポイントの設定（`SoftApConfiguration`）つき」の形に限られ、止めるときも同じ形の要求を使う（Android 16 の公開 API `TetheringManager.startTethering(TetheringRequest, …)`・`stopTethering(TetheringRequest, …)`。これまでの `stopTethering(int)` は管理アプリでも通らない）。止められるのは自分が始めたテザリングだけ（設定アプリで手で ON にしたものは `TETHER_ERROR_UNKNOWN_REQUEST`＝17。止める要求の照合は種類だけで、設定の中身は見ない）。すでに ON のときの開始は `TETHER_ERROR_DUPLICATE_REQUEST`＝18 で、ON にしたい状態にはなっているので成功と扱う。利用者に「管理アプリ方式を調べる」か「切り替えなしで出す」かを尋ね、調べた結果から利用者の選択で**両方に対応**した：管理アプリなら切り替えを使え、管理アプリでなければ、切り替えの機能が使えないことと設定の方法を画面で説明する（監視・通知・ログなど、ほかの機能はそのまま）。
+- **管理アプリの受け口**：`AdminReceiver`（`DeviceAdminReceiver`。求める権限（policies）はなし）を、Android 16 用の版のマニフェストだけに置く。管理アプリにするのは PC から `adb shell dpm set-device-owner local.tethering.dedicated/.AdminReceiver`（端末にアカウントが 1 つもないときだけ。設定したあとは追加し直せる）。管理アプリはアンインストールできないので、設定の「テザリング」に「管理アプリをやめる（アンインストールの前に）」を置いた（`clearDeviceOwnerApp`。古い API だが、管理アプリが自分をやめる方法はこれだけ）。管理アプリの間は、OS がクイック設定の下などに「This device belongs to your organization」（この端末は組織が所有しています）と出す。
+- **アクセスポイントの設定**：要求に付ける `SoftApConfiguration` の名前・パスワード・自動 OFF を決めるメソッド（`setSsid`・`setPassphrase`・`setAutoShutdownEnabled`）は公開の API ではないが、Android 16 では SDK の扱い（hiddenapi の `SDK`）で、アプリからリフレクションで呼べる。OS のアクセスポイントの設定はアプリから読めないので、設定の「テザリング」に「アクセスポイントの名前（Android 16）」「アクセスポイントのパスワード（Android 16）」を足し、OS の設定と同じに入れてもらう（名前は 1〜32 バイト、パスワードは 8〜63 文字の半角）。起動時の ON はロック解除前に動くので、保存したら端末暗号化の領域（`hotspot_config`）に写す。ログ・設定のファイル保存・診断情報・管理画面には出さない（ログは「アクセスポイントの名前（Android 16）: 変更」だけ）。アプリが ON にしたテザリングは 2.4GHz・WPA2（`SECURITY_TYPE_WPA2_PSK`）で、接続がなくても自動 OFF しない（テザリング専用機のため）。
+- **画面**：「はじめの設定」の 3 を「端末の管理アプリにする（Android 16・PC から）」にし（命令をコピーするボタンと、名前とパスワードを入れる設定への案内つき）、冒頭の「PC は要りません」と「PC から行う追加の設定」の文を Android 16 では 3 にも PC が要る内容に変えた。メイン画面の「要確認」（ボタンは「設定する」で、はじめの設定を開く）・設定の説明と状態・設定ガイド（起動時の ON・時間帯スケジュール・自動 OFF・帯域・PC の命令）・タイル（「OFF・設定が必要」）・診断情報（「端末の管理アプリ はい・名前とパスワード 設定済み」。値は出さない）を Android 16 の内容にした。Android 15 以前用の版を Android 16 に入れたときは、管理アプリになれないので「この APK は Android 16 では切り替えられません（Android 16 用の APK を入れてください）」と出す（`DeviceOwner.supported`。受け口があるかで見る。ロック解除前は受け口が見えないので、管理アプリかどうかを先に見て、探すときは `MATCH_DIRECT_BOOT_UNAWARE` を付ける）。
+- **そのほかの Android 16 の確認**：OS の設定値は 25 個のうち `device_idle_constants` だけ読めない（Android 15 と同じ）・他のアプリの一覧（182 個）・小さな確認での接続端末の数え方・端から端までの表示・常駐サービスの種類 specialUse・使わないアプリの扱い（スイッチの名前は Android 15 と同じ「使用していないアプリを管理する」）は、Android 15 と同じく動いた。
+- **PC のスクリプト**：Android 16（API 36）も対象に（範囲外の警告は API 29〜36 以外。APK の名前の判定・入れ替えの勧めも Android 16 まで）。`-SetDeviceOwner` を足した（Android 16 用の APK が入っていて、アカウントが 0 件のときだけ `dpm set-device-owner` を実行。アカウントがあれば件数を出して止める）。確認の表は、Android 16 では「システム設定の変更」の行の代わりに「端末の管理アプリ」の行を出す。Android 16 で `-AllowTetherControl` を付けても許可せず、`-SetDeviceOwner` を使うよう警告する。`-Restore` では管理アプリを戻さない（やめるのはアプリから）。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -319,7 +332,8 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | `adb-setup.bat -Install <apk>` | インストール（`-Apply` と併用すると、権限を付けてから起動） |
 | `adb-setup.bat -Apply -RestrictApps` | 上に加えて、このアプリ以外のユーザーアプリをバックグラウンド制限（F-40）。`-KeepApps パッケージ名,…` で除外 |
 | `adb-setup.bat -Apply -AllowAutoSwitch` | 上に加えて、このアプリに「設定変更の権限」（WRITE_SECURE_SETTINGS）を付ける（F-42 の自動切り替え用） |
-| `adb-setup.bat -Apply -AllowTetherControl` | 上に加えて、このアプリに「システム設定の変更」（WRITE_SETTINGS）を許可する（起動時のテザリング ON と F-37 の時間帯スケジュール用。端末の設定画面からも許可できます） |
+| `adb-setup.bat -Apply -AllowTetherControl` | 上に加えて、このアプリに「システム設定の変更」（WRITE_SETTINGS）を許可する（起動時のテザリング ON と F-37 の時間帯スケジュール用。端末の設定画面からも許可できます。Android 15 まで） |
+| `adb-setup.bat -SetDeviceOwner` | Android 16：このアプリを端末の管理アプリにする（テザリングの切り替えに要る。アカウントが 0 件のときだけ実行する。やめるのはアプリの設定の「管理アプリをやめる」で、`-Restore` では戻さない） |
 | `adb-setup.bat -Apply -EnableOffload` | 上に加えて、テザリングのハードウェアアクセラレーションを有効に戻す（`tether_offload_disabled=0`。オフロードの HAL がある端末だけ） |
 | `adb-setup.bat -Lang en`（`fr`・`ja`） | 表示の言語を指定する（既定は PC の表示言語。日本語・フランス語以外は英語）。どの組み合わせにも付けられます |
 
@@ -329,7 +343,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 - 無線：Wi-Fi／Bluetooth の常時スキャン（`0`）、**位置情報**（`secure location_mode=0`。`-KeepLocation` で変えない）、**モバイルデータを常に ON**（`global mobile_data_always_on=0`。Wi-Fi に接続しているあいだモバイル回線を待機させる機能。テザリング中は Wi-Fi に接続しないので影響しません）
 - **画面の不意な点灯（F-39）**：通知で点灯（`secure doze_enabled`）・常に表示（`doze_always_on`）・持ち上げて／タップ／ダブルタップで通知を確認（`doze_pulse_on_pick_up`／`doze_tap_gesture`／`doze_pulse_on_double_tap`）・持ち上げて点灯（`wake_gesture_enabled`）・ダブルタップで点灯（`double_tap_to_wake`）をすべて `0`。未設定（機種の既定）の項目も `0` にし、`-Restore` で未設定に戻します。メーカー独自のジェスチャーは設定アプリから手動で OFF にしてください
 - 任意：`-IncludeOta` でシステムの自動更新を止める（`ota_disable_automatic_update=1`）
-- このアプリの権限：電池の最適化からの除外、「電話」の権限、**使用状況へのアクセス**（F-35。アプリ別の通信量を読むだけ）、Android 13 以降では「通知」の権限。`-AllowAutoSwitch` のときだけ**設定変更の権限**（F-42）、`-AllowTetherControl` のときだけ**システム設定の変更**（起動時のテザリング ON・F-37）も付けます。`-Restore` では、付ける前の状態に戻します（アプリが「Doze を早める」設定を戻さないまま削除された場合の後始末もします）
+- このアプリの権限：電池の最適化からの除外、「電話」の権限、**使用状況へのアクセス**（F-35。アプリ別の通信量を読むだけ）、Android 13 以降では「通知」の権限。`-AllowAutoSwitch` のときだけ**設定変更の権限**（F-42）、`-AllowTetherControl` のときだけ**システム設定の変更**（起動時のテザリング ON・F-37）も付けます（Android 16 では効かないので付けずに警告し、`-SetDeviceOwner` を案内します）。`-Restore` では、付ける前の状態に戻します（アプリが「Doze を早める」設定を戻さないまま削除された場合の後始末もします）
 - 表示だけ（第 4 段階）：テザリングのハードウェアアクセラレーションの設定とオフロードの HAL の有無（VINTF マニフェストの宣言）、アクセスポイントの帯域（`dumpsys wifi` の `apBand`。アクセスポイントが ON のときだけ読めます）
 
 **ほかのアプリの制限（F-40、`-RestrictApps` のときだけ）**：このアプリ以外のユーザーアプリ（システムアプリは対象外）を、「バックグラウンドでの動作を制限」（`cmd appops set <pkg> RUN_ANY_IN_BACKGROUND ignore`）と、使用頻度「低い」（`am set-standby-bucket <pkg> rare`）にします。アプリを開けば普通に使えます。変更前の状態は保存し、`-Restore` で戻します。裏で動いてほしいアプリ（VPN・遠隔操作など）は `-KeepApps` で除外してください。確認だけの実行でも、ユーザーアプリの一覧と現在の状態を表示します。
@@ -741,6 +755,29 @@ Android 15 エミュレーター（API 35・英語・日本語・フランス語
 
 単体テストは各版 142 件。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く）。
 
+### v0.10.0 Android 16 用の版の確認（2026-10-21）
+
+Android 16 エミュレーター（API 36・BE2A.250530.026.D1・英語。PIN ありの試験を含む）。**Android 16 の実機では、まだ確かめていません**。
+
+| 項目 | 結果 |
+|---|---|
+| これまでの方法 | ✗「システム設定の変更」を許可しても開始を断られる（error 14）。Android 15 用の APK も同じ → 管理アプリ方式に |
+| 管理アプリにする・やめる | ✓ `dpm set-device-owner …/.AdminReceiver`（アカウント 0 件）と PC の `-SetDeviceOwner` で管理アプリに。設定の「管理アプリをやめる」で外れた（`dumpsys device_policy` の管理アプリ 0 件）。管理アプリの間、クイック設定に「This device belongs to your organization」 |
+| テザリングの開始・停止 | ✓ OFF から開始（入れた名前・WPA2・2.4GHz・自動 OFF なし。`dumpsys wifi` で確認）。ON のときの開始も成功（error 18 を成功と扱う）。アプリが始めたものは止められた。設定アプリで手で ON にしたものは止められず「On Android 16, the app can't turn off a hotspot that was turned on by hand」（error 17）と出て、テザリングは ON のまま |
+| 名前とパスワード | ✓ 設定画面で名前を変えて保存 → 端末暗号化の領域の写しに反映し、次の開始から新しい名前。5 文字のパスワードは「Please check your input」で保存しない。ログは「Hotspot name (Android 16): change」だけで、値は設定と写しのファイルにしかない |
+| 起動時の ON（PIN あり） | ✓ ロック解除前（RUNNING_LOCKED）に、写しの名前で ON。記録「Hotspot turned on (74 s after startup, before unlock)」。解除後、監視が specialUse で常駐 |
+| タイル | ✓ 管理アプリのとき ON・OFF。管理アプリでないと「Setup needed」で、タップで「はじめの設定」が開いた |
+| 管理アプリでないとき | ✓ メイン画面の「要確認」に「… the device owner setup (Android 16) isn't done …」と「Set up」（はじめの設定が開く）。はじめの設定の 3 は「Not yet」、設定は「Device owner: not yet (from a PC, Initial setup step 3)」。監視・通知はそのまま |
+| 画面の文 | ✓ はじめの設定（冒頭・3・PC の案内）・設定の説明・設定ガイド（起動時の ON・時間帯スケジュール・自動 OFF・帯域・PC の命令。「端末の管理アプリにする手順を開く」ではじめの設定が開く）・診断情報「Hotspot switching: device owner yes, name and password set / check OK」 |
+| OS の設定値・他のアプリなど | 25 個のうち `device_idle_constants` だけ読めない・182 個。端から端までの表示・常駐の種類・使わないアプリの扱いの名前は Android 15 と同じ |
+| これまでの版 | 配布中の Android 15 用の APK は、Android 16 で切り替えに失敗する（上の error 14）。今のソースで作った Android 15 用の版を Android 16 に入れると、はじめの設定の 3 と切り替えに「This APK can't switch the hotspot on Android 16 (install the APK for Android 16)」と出た |
+| リリース版（署名・難読化済み） | ✓ はじめの設定の 3（管理アプリにすると「管理アプリ済み・名前とパスワードがまだ」→ 入れて保存すると「済み」）・「切り替えられるか確認する」・「今すぐ ON にする」（入れた名前・WPA2・2.4GHz）・タイルで OFF・ON・起動時の ON（PIN あり。ロック解除前に ON、記録「Hotspot turned on (72 s after startup, before unlock)」。解除後、監視が specialUse で常駐）・「管理アプリをやめる」のあとアンインストールでき、クラッシュなし。日本語の画面も確認。**最初に作ったリリース版では、ロック解除前の起動時の ON が「この APK は Android 16 では切り替えられません」で失敗した**（下の注）→ 直して確かめた。マニフェストに `AdminReceiver`（`BIND_DEVICE_ADMIN`）・`foregroundServiceType=specialUse`・`POST_NOTIFICATIONS` など、`DebugReceiver` なし。署名はほかの版と同じ鍵 |
+| PC のスクリプト | ✓ 確認（「端末の管理アプリ」の行）・`-SetDeviceOwner`（設定。2 回目は「すでに管理アプリ」）・`-Apply -AllowTetherControl`（許可せず警告）・`-Restore`（管理アプリはそのままと表示）。日本語・英語・フランス語、範囲外の警告なし |
+
+単体テストは各版 146 件（アクセスポイントの名前とパスワードの確かめを足した）。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く。`setSoftApConfiguration` に宣言された `TETHER_PRIVILEGED` の指摘は、OS が管理アプリの要求を通すので対象外にした）。
+
+注：ロック解除前は、Direct Boot に対応していない部品（`directBootAware` でない部品。管理アプリの受け口もそう）が `PackageManager` から見えない。受け口があるかの確認（`DeviceOwner.supported`）がロック解除前に「ない」と答え、Android 15 以前用の版と見なしていた（debug 版の試験は、この確認を足す前に行っていた）。→ 管理アプリかどうかを先に見て（管理アプリなら受け口はある）、受け口を探すときは `MATCH_DIRECT_BOOT_UNAWARE` も付けるようにした。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -846,8 +883,18 @@ Android 15 エミュレーター（API 35・英語・日本語・フランス語
 - [x] Android 15 で、常駐・テザリングの切り替え・起動時の ON（ロック解除前）・タイル・接続端末が動き、名前の変わった設定（使用していないアプリを管理する）を案内する — エミュレーター
 - [ ] Android 15 の実機での確認（まだ）
 
+### Android 16 用の版（v0.10.0。この README で決めた確認項目）
+
+- [x] 端末の管理アプリなら、アクセスポイントの設定つきの要求でテザリングを開始・停止できる。止められるのはアプリが始めたものだけで、手で ON にしたものは止めずにそう知らせる — エミュレーター
+- [x] 管理アプリでないときは、切り替えの機能が使えないことと設定の方法を、メイン画面・はじめの設定・設定・タイル・設定ガイドで示し、ほかの機能（監視・通知・ログ）は動く — エミュレーター
+- [x] 起動時の ON（ロック解除前）が、管理アプリとして、端末暗号化の領域の名前とパスワードで動く — エミュレーター
+- [x] アクセスポイントの名前とパスワードを、ログ・設定のファイル保存・診断情報に出さない — エミュレーター・単体テスト
+- [x] 管理アプリをアプリからやめられ、アンインストールできるようになる — エミュレーター
+- [ ] Android 16 の実機での確認（将来の確認事項。2026-10-21 に利用者が決定。POCO X7 Pro を想定。管理アプリにする間だけ端末のアカウントをすべて削除する必要があり、試験の準備の負担が大きいため）
+
 ## 既知の制約
 
+- **Android 16 用の版も、エミュレーターでしか確かめていません**（Android 16 の実機がないため）。Android 16 では、テザリングを切り替える機能（起動時の ON・時間帯スケジュール・上限で止める・タイル・「今すぐ ON にする」）は、このアプリを端末の管理アプリにしないと使えません（PC から 1 回。そのとき端末にアカウントがないことが条件。メーカーによっては、Xiaomi の「USB デバッグ（セキュリティ設定）」のような設定も要ることがあります）。止められるのはアプリが ON にしたテザリングだけで、アプリが ON にするときは、アプリに入れた名前とパスワード・2.4GHz・WPA2 になります（OS の帯域やセキュリティの設定は読めないため）。名前とパスワードは、起動時の ON のために、ロック解除前にも読める端末暗号化の領域にも置きます（アプリの中だけ）。管理アプリは強い役割なので（このアプリが使うのはテザリングの切り替えだけ）、使うかどうかは利用者が決めます。
 - **Android 15 用の版も、エミュレーターでしか確かめていません**（Android 15 の実機がないため）。Android 15 では、使わないアプリをアーカイブする仕組みも加わったので、「使用していないアプリを管理する」を OFF にしてください（「はじめの設定」の 1）。画面の端から端までの表示への対処は、すべての画面で共通の部品（`Ui.page`）で行っています（メーカーの改変でバーの形が違う端末は未確認）。
 - **Android 14 用の版も、エミュレーターでしか確かめていません**（Android 14 の実機がないため）。Android 14 では、電池の最適化の対象外にしないと正確なアラームが使えず、定期チェックや起動時の ON のやり直しが数分遅れることがあります（「はじめの設定」の 2、または PC の `-Apply` で対象外にすれば使える）。常駐の通知は利用者が消せます（監視は続く）。
 - **Android 13 用の版も、エミュレーターでしか確かめていません**（Android 13 の実機がないため）。Android 13 では、接続端末をテザリングの範囲への小さな確認で数えます（約 5 秒。テザリングの範囲は /24 までで、それより広いと「取得不可」）。MAC アドレスが読めないので、接続端末の名前は IP アドレスで覚えます（IP アドレスが変わると付け直し）。Android 10〜12 用の APK を Android 13 で使うと、テザリングが ON でも OFF と出て、停止として知らせてしまいます（Android 13 用の版を使ってください）。
@@ -856,7 +903,7 @@ Android 15 エミュレーター（API 35・英語・日本語・フランス語
 
 - 月の通信量の上限は、「使用状況へのアクセス」がないと通信量を読めません。チェックのたびに読むので、知らせが届くのは上限に達してから最大でチェック間隔 1 回分あとです。数え方は端末の記録なので、キャリアの数え方と少し違うことがあります。
 
-- **テザリングを切り替えるのは、起動時の ON・時間帯スケジュール（F-37）・上限を超えたら止める（v0.8.0）を設定で ON にしたときと、「はじめの設定」の「今すぐ ON にする」・クイック設定のタイル（v0.10.0）を押したときだけ**です。どれも「システム設定の変更」の許可が必要で、キャリアのプロビジョニング（テザリングの利用確認）がある回線・端末では OS に断られて使えません。Android 10 の非公開のシステム API を使うため、メーカーの改変によっては動かないことがあります（設定の「切り替えられるか確認する」で確かめられます。UMIDIGI A9 Pro では時間帯スケジュールの停止・再開と、起動時の ON を確認済み）。
+- **テザリングを切り替えるのは、起動時の ON・時間帯スケジュール（F-37）・上限を超えたら止める（v0.8.0）を設定で ON にしたときと、「はじめの設定」の「今すぐ ON にする」・クイック設定のタイル（v0.10.0）を押したときだけ**です。どれも「システム設定の変更」の許可（Android 16 は端末の管理アプリ。→「Android 16 用の版」）が必要で、キャリアのプロビジョニング（テザリングの利用確認）がある回線・端末では OS に断られて使えません。Android 10 の非公開のシステム API を使うため、メーカーの改変によっては動かないことがあります（設定の「切り替えられるか確認する」で確かめられます。UMIDIGI A9 Pro では時間帯スケジュールの停止・再開と、起動時の ON を確認済み）。
 - クイック設定のタイルは、利用者が一度クイック設定に追加する必要があります（Android 10 ではアプリから追加を依頼できません）。タイルの接続台数は、監視サービスの最後のチェックの値です（パネルを開いた瞬間に数え直すわけではない）。
 - 起動時の ON は、端末の起動 1 回につき最大 5 回（約 10 分）試します。それでも ON にならなければ、ロック解除後の起動後チェックで「手動で ON にしてください」と知らせます。一度 ON になったあとに止まった場合（手で OFF にした・自動 OFF など）は、次の起動まで ON にしません（これまでどおり、テザリング停止として通知します）。
 - 時間帯スケジュールで止めている間は、接続端末からは何も使えません（ローカル管理画面も見られません）。止めるのは接続 0 台が 10 分続いたときだけですが、接続端末数は近隣テーブルからの推定です。
@@ -888,8 +935,8 @@ Android 15 エミュレーター（API 35・英語・日本語・フランス語
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 6 つあり、`app/build/outputs/apk/android10/release/`〜`…/android15/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android15.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid15DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid15Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用・14 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58・626077c の時点で作ったものです（Android 12〜15 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する）。Android 15 用の版で足した画面の重なりへの対処・案内・診断情報の表示は、Android 15 以降でだけ働く）。
-  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。Android 13 用の版で、`clients` に `--ei prefix <長さ>`（範囲の長さを変えて小さな確認を試す。エミュレーターの eth0 は /8 で広すぎるため）と、通知を出せるかを読む `notify_state` を足しました。Android 14 用の版で、アクセスポイントの状態を OS に直接尋ねる `ap_state` を足しました。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 7 つあり、`app/build/outputs/apk/android10/release/`〜`…/android16/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android16.apk` に名前を変えて置く）。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid16DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid16Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用・14 用・15 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58・626077c・d12d264 の時点で作ったものです（Android 12〜15 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する）。Android 15 用の版で足した画面の重なりへの対処・案内・診断情報の表示は、Android 15 以降でだけ働く。Android 16 用の版で足した端末の管理アプリの処理・Android 16 の画面の文・Android 15 以前用の版を Android 16 に入れたときの案内は、Android 16 でだけ働く。ただし Android 10〜15 用の APK は作り直していないので、配布中の Android 15 以前用の APK を Android 16 に入れると、案内は出ず、切り替えは「OS がテザリングの開始を断りました」で失敗する）。
+  - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。Android 13 用の版で、`clients` に `--ei prefix <長さ>`（範囲の長さを変えて小さな確認を試す。エミュレーターの eth0 は /8 で広すぎるため）と、通知を出せるかを読む `notify_state` を足しました。Android 14 用の版で、アクセスポイントの状態を OS に直接尋ねる `ap_state` を足しました。Android 16 用の版で、管理アプリの状態を出す `owner` を足し、`set_pref` ではアクセスポイントの名前とパスワードの写しも作るようにしました。`DebugReceiver` はロック解除前にも呼べます（`directBootAware`）。
 
 ## この端末で行った ADB 事前設定（2026-10-16）
 

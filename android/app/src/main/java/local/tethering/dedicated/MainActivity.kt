@@ -300,6 +300,9 @@ class MainActivity : Activity() {
 
     private fun allow() = tr("許可する", "Allow", "Autoriser")
 
+    /** テザリングの切り替えに足りないものを満たすボタンの名前（Android 16 は端末の管理アプリの設定） */
+    private fun fixLabel() = if (DeviceOwner.required) tr("設定する", "Set up", "Configurer") else allow()
+
     private fun notUsed() = tr("使わない", "Not used", "Désactivé")
 
     /** 月の通信量の上限の表示（例: 12.3 GB / 50.0 GB（24%）） */
@@ -654,25 +657,41 @@ class MainActivity : Activity() {
         if (sched != null && sched.enabled && !sched.permitted) {
             items.add(
                 Triple(
-                    tr(
-                        "時間帯スケジュールが ON ですが、「システム設定の変更」が許可されていないため、テザリングを止められません。",
-                        "The quiet-hours schedule is on, but “Modify system settings” isn't allowed, so the hotspot can't be turned off.",
-                        "La planification est activée, mais « Modifier les paramètres système » n'est pas autorisé : le point d'accès ne peut pas être arrêté.",
-                    ),
-                    allow(),
-                ) { SystemScreens.writeSettings(this) },
+                    if (DeviceOwner.required) {
+                        tr(
+                            "時間帯スケジュールが ON ですが、端末の管理アプリの設定（Android 16）が済んでいないため、テザリングを止められません。",
+                            "The quiet-hours schedule is on, but the device owner setup (Android 16) isn't done, so the hotspot can't be turned off.",
+                            "La planification est activée, mais la configuration du propriétaire de l'appareil (Android 16) n'est pas faite : le point d'accès ne peut pas être arrêté.",
+                        )
+                    } else {
+                        tr(
+                            "時間帯スケジュールが ON ですが、「システム設定の変更」が許可されていないため、テザリングを止められません。",
+                            "The quiet-hours schedule is on, but “Modify system settings” isn't allowed, so the hotspot can't be turned off.",
+                            "La planification est activée, mais « Modifier les paramètres système » n'est pas autorisé : le point d'accès ne peut pas être arrêté.",
+                        )
+                    },
+                    fixLabel(),
+                ) { TetherControl.openFix(this) },
             )
         }
         if (prefs.bool(Defs.TETHER_ON_BOOT) && !TetherControl.permitted(this)) {
             items.add(
                 Triple(
-                    tr(
-                        "「起動時に Wi-Fiテザリングを ON にする」が ON ですが、「システム設定の変更」が許可されていないため、起動時に ON にできません。",
-                        "“Turn on the Wi-Fi hotspot at startup” is on, but “Modify system settings” isn't allowed, so the hotspot can't be turned on at startup.",
-                        "« Activer le point d'accès Wi-Fi au démarrage » est activé, mais « Modifier les paramètres système » n'est pas autorisé : le point d'accès ne peut pas être activé au démarrage.",
-                    ),
-                    allow(),
-                ) { SystemScreens.writeSettings(this) },
+                    if (DeviceOwner.required) {
+                        tr(
+                            "「起動時に Wi-Fiテザリングを ON にする」が ON ですが、端末の管理アプリの設定（Android 16）が済んでいないため、起動時に ON にできません。",
+                            "“Turn on the Wi-Fi hotspot at startup” is on, but the device owner setup (Android 16) isn't done, so the hotspot can't be turned on at startup.",
+                            "« Activer le point d'accès Wi-Fi au démarrage » est activé, mais la configuration du propriétaire de l'appareil (Android 16) n'est pas faite : le point d'accès ne peut pas être activé au démarrage.",
+                        )
+                    } else {
+                        tr(
+                            "「起動時に Wi-Fiテザリングを ON にする」が ON ですが、「システム設定の変更」が許可されていないため、起動時に ON にできません。",
+                            "“Turn on the Wi-Fi hotspot at startup” is on, but “Modify system settings” isn't allowed, so the hotspot can't be turned on at startup.",
+                            "« Activer le point d'accès Wi-Fi au démarrage » est activé, mais « Modifier les paramètres système » n'est pas autorisé : le point d'accès ne peut pas être activé au démarrage.",
+                        )
+                    },
+                    fixLabel(),
+                ) { TetherControl.openFix(this) },
             )
         }
         val cap = StateStore.state.cap
@@ -691,13 +710,21 @@ class MainActivity : Activity() {
         if (prefs.bool(Defs.DATA_CAP) && prefs.bool(Defs.DATA_CAP_STOP) && !TetherControl.permitted(this)) {
             items.add(
                 Triple(
-                    tr(
-                        "「上限を超えたらテザリングを止める」が ON ですが、「システム設定の変更」が許可されていないため止められません。",
-                        "“Turn off the hotspot when the cap is exceeded” is on, but “Modify system settings” isn't allowed, so it can't be turned off.",
-                        "« Arrêter le point d'accès quand le plafond est dépassé » est activé, mais « Modifier les paramètres système » n'est pas autorisé : il ne peut pas être arrêté.",
-                    ),
-                    allow(),
-                ) { SystemScreens.writeSettings(this) },
+                    if (DeviceOwner.required) {
+                        tr(
+                            "「上限を超えたらテザリングを止める」が ON ですが、端末の管理アプリの設定（Android 16）が済んでいないため止められません。",
+                            "“Turn off the hotspot when the cap is exceeded” is on, but the device owner setup (Android 16) isn't done, so it can't be turned off.",
+                            "« Arrêter le point d'accès quand le plafond est dépassé » est activé, mais la configuration du propriétaire de l'appareil (Android 16) n'est pas faite : il ne peut pas être arrêté.",
+                        )
+                    } else {
+                        tr(
+                            "「上限を超えたらテザリングを止める」が ON ですが、「システム設定の変更」が許可されていないため止められません。",
+                            "“Turn off the hotspot when the cap is exceeded” is on, but “Modify system settings” isn't allowed, so it can't be turned off.",
+                            "« Arrêter le point d'accès quand le plafond est dépassé » est activé, mais « Modifier les paramètres système » n'est pas autorisé : il ne peut pas être arrêté.",
+                        )
+                    },
+                    fixLabel(),
+                ) { TetherControl.openFix(this) },
             )
         }
         if (StateStore.state.plug?.stuck == true) {

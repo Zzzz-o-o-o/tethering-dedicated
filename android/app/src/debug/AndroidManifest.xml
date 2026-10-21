@@ -4,8 +4,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application>
+        <!-- ロック解除前（Direct Boot）にも呼べるようにする（起動時のテザリング ON の試験用） -->
         <receiver
             android:name=".DebugReceiver"
+            android:directBootAware="true"
             android:exported="true"
             tools:ignore="ExportedReceiver" />
     </application>

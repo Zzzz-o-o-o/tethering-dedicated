@@ -349,7 +349,8 @@ class ExtNotifyTest {
 class Phase4SettingsTest {
     @Test
     fun secretsAreNotShownOrExported() {
-        assertEquals(setOf("ext_url", "plug_host", "plug_on_url", "plug_off_url"), Defs.secretKeys)
+        // アクセスポイントの名前とパスワード（Android 16 用の版。v0.10.0）も含めない
+        assertEquals(setOf("ext_url", "plug_host", "plug_on_url", "plug_off_url", "ap_ssid", "ap_pass"), Defs.secretKeys)
         val changes = SettingsCodec.describeChanges(
             mapOf(Defs.EXT_URL.key to "https://ntfy.sh/old-secret", Defs.PLUG_KIND.key to PlugUrls.SHELLY2),
             mapOf(Defs.EXT_URL.key to "https://ntfy.sh/new-secret", Defs.PLUG_KIND.key to PlugUrls.TASMOTA),

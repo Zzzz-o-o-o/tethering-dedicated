@@ -156,13 +156,53 @@ class GuideActivity : Activity() {
 
     private fun allowWriteSettings() = tr("「システム設定の変更」を許可する", "Allow “Modify system settings”", "Autoriser « Modifier les paramètres système »")
 
-    /** テザリングの切り替え（起動時の ON・時間帯スケジュール）に要る許可を、PC から付けるコマンド */
-    private fun tetherControlAdb() = "adb shell appops set ${BuildConfig.APPLICATION_ID} WRITE_SETTINGS allow\n" +
+    /** テザリングの切り替えに要るものを満たすボタン（Android 16 は端末の管理アプリの手順、それより前は「システム設定の変更」） */
+    private fun switchFix(): Pair<String, (Activity) -> Unit> =
+        if (DeviceOwner.required) {
+            tr(
+                "端末の管理アプリにする手順を開く", "Open the device owner steps", "Ouvrir les étapes du propriétaire de l'appareil",
+            ) to { a -> TetherControl.openFix(a) }
+        } else {
+            allowWriteSettings() to { a -> SystemScreens.writeSettings(a) }
+        }
+
+    /**
+     * テザリングの切り替え（起動時の ON・時間帯スケジュール）に要る許可を、PC から付けるコマンド。
+     * Android 16 は、端末の管理アプリにするコマンド（やめるのはアプリの設定から）
+     */
+    private fun tetherControlAdb() = if (DeviceOwner.required) {
+        DeviceOwner.command(this) + "\n" +
+            tr(
+                "（PC の tools\\adb-setup.bat -SetDeviceOwner でも設定できます。やめるのは、設定の「管理アプリをやめる」）",
+                "(or tools\\adb-setup.bat -SetDeviceOwner on a PC; to undo, use “Stop being the device owner” in Settings)",
+                "(ou tools\\adb-setup.bat -SetDeviceOwner sur un PC ; pour annuler, « Ne plus être propriétaire de l'appareil » dans les paramètres)",
+            )
+    } else {
+        "adb shell appops set ${BuildConfig.APPLICATION_ID} WRITE_SETTINGS allow\n" +
+            tr(
+                "（まとめて: tools\\adb-setup.bat -Apply -AllowTetherControl　戻す: -Restore）",
+                "(all at once: tools\\adb-setup.bat -Apply -AllowTetherControl; undo: -Restore)",
+                "(en une fois : tools\\adb-setup.bat -Apply -AllowTetherControl ; annuler : -Restore)",
+            )
+    }
+
+    /**
+     * 起動時の ON・時間帯スケジュールの説明の最後の文（テザリングを切り替える仕組み）。
+     * Android 16 は端末の管理アプリの説明、それより前は渡した文（英語・フランス語は前に空白を入れてつなぐ）
+     */
+    private fun switchNote(ja: String, en: String, fr: String) = if (DeviceOwner.required) {
         tr(
-            "（まとめて: tools\\adb-setup.bat -Apply -AllowTetherControl　戻す: -Restore）",
-            "(all at once: tools\\adb-setup.bat -Apply -AllowTetherControl; undo: -Restore)",
-            "(en une fois : tools\\adb-setup.bat -Apply -AllowTetherControl ; annuler : -Restore)",
+            "Android 16 では、このアプリが端末の管理アプリのときだけ使えます（はじめの設定の 3。PC から設定します）。止められるのは、このアプリが ON にしたテザリングだけです。",
+            " On Android 16, it works only while this app is the device owner (Initial setup step 3, set up from a PC). The app can only turn off a hotspot it turned on itself.",
+            " Sur Android 16, cela ne fonctionne que si l'application est propriétaire de l'appareil (étape 3 de la configuration initiale, depuis un PC). " +
+                "L'application ne peut arrêter qu'un point d'accès qu'elle a activé elle-même.",
         )
+    } else {
+        tr(ja, " $en", " $fr")
+    }
+
+    /** Android 16 のときだけ説明に足す文（英語・フランス語は前に空白を入れてつなぐ） */
+    private fun only16(ja: String, en: String, fr: String) = if (DeviceOwner.required) tr(ja, " $en", " $fr") else ""
 
     private fun notSetDefault() = tr("未設定（既定値）", "Not set (default)", "Non défini (par défaut)")
 
@@ -222,6 +262,10 @@ class GuideActivity : Activity() {
                     "接続端末がしばらくないとアクセスポイントが自動で止まる設定です。ルーターとして常時使うならOFFにします。テザリング設定 → Wi-Fiアクセスポイント →「アクセスポイントを自動的にOFFにする」。",
                     "This turns the hotspot off automatically when nothing has been connected for a while. Turn it off to use the phone as a router. Hotspot & tethering → Wi-Fi hotspot → “Turn off hotspot automatically”.",
                     "Ce réglage arrête automatiquement le point d'accès quand aucun appareil n'est connecté pendant un moment. Désactivez-le pour utiliser le téléphone comme routeur. Point d'accès et partage de connexion → Point d'accès Wi-Fi → « Désactiver automatiquement le point d'accès ».",
+                ) + only16(
+                    "Android 16 でこのアプリが ON にしたテザリングは、この設定にかかわらず自動では止まりません。",
+                    "On Android 16, a hotspot turned on by this app doesn't turn off automatically, whatever this setting.",
+                    "Sur Android 16, un point d'accès activé par l'application ne s'arrête pas automatiquement, quel que soit ce réglage.",
                 ),
                 listOf(tr("アクセスポイントの設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès") to { a -> SystemScreens.hotspot(a) }),
                 if (TetherProbe.autoOffReadable) {
@@ -241,10 +285,7 @@ class GuideActivity : Activity() {
                             "OFF（再起動すると、手で ON にするまでテザリングは止まったまま）", "OFF (after a reboot, the hotspot stays off until you turn it on)",
                             "OFF (après un redémarrage, le point d'accès reste arrêté jusqu'à ce que vous l'activiez)",
                         ) to Level.WARN
-                        !TetherControl.permitted(c) -> tr(
-                            "ON だが「システム設定の変更」が未許可", "ON, but “Modify system settings” isn't allowed",
-                            "ON, mais « Modifier les paramètres système » n'est pas autorisé",
-                        ) + last to Level.WARN
+                        !TetherControl.permitted(c) -> notPermittedText() + last to Level.WARN
                         else -> "ON$last" to Level.OK
                     }
                 },
@@ -252,20 +293,21 @@ class GuideActivity : Activity() {
                 tr(
                     "Android は再起動のあとテザリングを OFF で始めます。この設定を ON にすると、端末の起動直後にこのアプリが Wi-Fiテザリングを ON にします。" +
                         "PIN などの画面ロックがあっても、ロック解除の前に ON にします（Android 10 の Direct Boot）。ON にならなければ、約 10 分のあいだ数回やり直します。" +
-                        "ロック解除までは監視（チェック・通知・ログ）は始まりません。結果は、ロック解除のあとログ（「端末起動」）と起動後チェックの通知で確かめられます。" +
-                        "時間帯スケジュールと同じく Android 10 の非公開の仕組みを使うため、端末によっては使えません（設定の「切り替えられるか確認する」で確かめられます）。",
+                        "ロック解除までは監視（チェック・通知・ログ）は始まりません。結果は、ロック解除のあとログ（「端末起動」）と起動後チェックの通知で確かめられます。",
                     "Android starts with the hotspot off after a reboot. With this setting on, the app turns the Wi-Fi hotspot on right after the phone starts, " +
                         "even before a PIN or other screen lock is unlocked (Android 10 Direct Boot). If it doesn't come on, it retries a few times over about 10 minutes. " +
-                        "Monitoring (checks, notifications, logs) doesn't start until you unlock. After unlocking, check the result in the log (“Phone started”) and the after-reboot check notification. " +
-                        "Like the quiet-hours schedule, it uses a non-public Android 10 mechanism, so it doesn't work on every phone (check with “Check that switching works” in Settings).",
+                        "Monitoring (checks, notifications, logs) doesn't start until you unlock. After unlocking, check the result in the log (“Phone started”) and the after-reboot check notification.",
                     "Android démarre avec le point d'accès arrêté après un redémarrage. Avec ce réglage, l'application active le point d'accès Wi-Fi juste après le démarrage du téléphone, " +
                         "même avant le déverrouillage d'un code PIN ou d'un autre verrouillage de l'écran (Direct Boot d'Android 10). S'il ne s'active pas, quelques nouveaux essais ont lieu pendant environ 10 minutes. " +
-                        "La surveillance (vérifications, notifications, journal) ne démarre qu'après le déverrouillage. Ensuite, consultez le résultat dans le journal (« Démarrage du téléphone ») et la notification de vérification après redémarrage. " +
-                        "Comme la planification, cela utilise un mécanisme non public d'Android 10 et ne fonctionne donc pas sur tous les téléphones (vérifiez avec « Vérifier que la bascule fonctionne » dans les paramètres).",
+                        "La surveillance (vérifications, notifications, journal) ne démarre qu'après le déverrouillage. Ensuite, consultez le résultat dans le journal (« Démarrage du téléphone ») et la notification de vérification après redémarrage.",
+                ) + switchNote(
+                    "時間帯スケジュールと同じく Android 10 の非公開の仕組みを使うため、端末によっては使えません（設定の「切り替えられるか確認する」で確かめられます）。",
+                    "Like the quiet-hours schedule, it uses a non-public Android 10 mechanism, so it doesn't work on every phone (check with “Check that switching works” in Settings).",
+                    "Comme la planification, cela utilise un mécanisme non public d'Android 10 et ne fonctionne donc pas sur tous les téléphones (vérifiez avec « Vérifier que la bascule fonctionne » dans les paramètres).",
                 ),
                 listOf(
                     openSettingsApp() to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) },
-                    allowWriteSettings() to { a -> SystemScreens.writeSettings(a) },
+                    switchFix(),
                 ),
                 tetherControlAdb(),
             ),
@@ -642,10 +684,7 @@ class GuideActivity : Activity() {
                     val permitted = TetherControl.permitted(c)
                     when {
                         !prefs.bool(Defs.TETHER_SCHEDULE) -> notUsed() + (if (permitted) Fmt.paren(tr("許可は済み", "permission granted", "autorisation accordée")) else "") to Level.INFO
-                        !permitted -> tr(
-                            "ON だが「システム設定の変更」が未許可", "ON, but “Modify system settings” isn't allowed",
-                            "ON, mais « Modifier les paramètres système » n'est pas autorisé",
-                        ) to Level.WARN
+                        !permitted -> notPermittedText() to Level.WARN
                         q == null -> tr("ON だが時間帯が未設定", "ON, but quiet hours aren't set", "ON, mais les heures d'inactivité ne sont pas définies") to Level.WARN
                         else -> q.label.let {
                             tr("$it は止める（接続 0 台が 10 分続いたら）", "Off during $it (after 10 min with no devices)", "Arrêt pendant $it (après 10 min sans appareil)")
@@ -655,18 +694,19 @@ class GuideActivity : Activity() {
                 tr("毎日使わない時間帯がはっきりしているなら ON", "ON if there are clear unused hours every day", "ON s'il y a chaque jour des heures clairement inutilisées"),
                 tr(
                     "使わない時間帯に入ったら、接続端末が 0 台の状態が 10 分続くのを待ってテザリングを止め、時間帯の終わりに再開します。止めている間は接続 0 台の待機電力がかかりません。" +
-                        "このアプリが止めたときだけ再開し、利用者が手で ON にしたらその時間帯はもう止めません。再開に 3 回失敗したら、テザリング停止の異常として通知します。" +
-                        "Android 10 の非公開の仕組みを使うため、端末によっては使えません（設定の「切り替えられるか確認する」で、止めずに確かめられます）。",
+                        "このアプリが止めたときだけ再開し、利用者が手で ON にしたらその時間帯はもう止めません。再開に 3 回失敗したら、テザリング停止の異常として通知します。",
                     "During quiet hours, the hotspot is turned off once no device has been connected for 10 minutes, and turned back on when they end. While it's off, no standby power is spent. " +
-                        "It's turned back on only if the app turned it off; if you turn it on by hand, it stays on for that period. If turning it back on fails 3 times, you're notified that the hotspot is off. " +
-                        "It uses a non-public Android 10 mechanism, so it doesn't work on every phone (check without turning it off with “Check that switching works” in Settings).",
+                        "It's turned back on only if the app turned it off; if you turn it on by hand, it stays on for that period. If turning it back on fails 3 times, you're notified that the hotspot is off.",
                     "Pendant les heures d'inactivité, le point d'accès est arrêté après 10 minutes sans appareil connecté, et réactivé à la fin. Pendant l'arrêt, aucune énergie de veille n'est dépensée. " +
-                        "Il n'est réactivé que si l'application l'a arrêté ; si vous l'activez à la main, il reste activé pour cette période. Si la réactivation échoue 3 fois, vous êtes averti que le point d'accès est arrêté. " +
-                        "Cela utilise un mécanisme non public d'Android 10 et ne fonctionne donc pas sur tous les téléphones (vérifiez sans l'arrêter avec « Vérifier que la bascule fonctionne » dans les paramètres).",
+                        "Il n'est réactivé que si l'application l'a arrêté ; si vous l'activez à la main, il reste activé pour cette période. Si la réactivation échoue 3 fois, vous êtes averti que le point d'accès est arrêté.",
+                ) + switchNote(
+                    "Android 10 の非公開の仕組みを使うため、端末によっては使えません（設定の「切り替えられるか確認する」で、止めずに確かめられます）。",
+                    "It uses a non-public Android 10 mechanism, so it doesn't work on every phone (check without turning it off with “Check that switching works” in Settings).",
+                    "Cela utilise un mécanisme non public d'Android 10 et ne fonctionne donc pas sur tous les téléphones (vérifiez sans l'arrêter avec « Vérifier que la bascule fonctionne » dans les paramètres).",
                 ),
                 listOf(
                     openSettingsApp() to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) },
-                    allowWriteSettings() to { a -> SystemScreens.writeSettings(a) },
+                    switchFix(),
                 ),
                 tetherControlAdb(),
             ),
@@ -686,6 +726,10 @@ class GuideActivity : Activity() {
                         "Changing the band makes devices reconnect, and devices without 5 GHz support can't connect.",
                     "La bande 5 GHz est plus rapide et moins encombrée mais traverse moins bien les murs ; la bande 2,4 GHz porte plus loin. L'écart de consommation dépend du téléphone : mesurez-le avec le test comparatif « Passer le point d'accès en 5 GHz / 2,4 GHz ». " +
                         "Changer de bande oblige les appareils à se reconnecter, et ceux sans 5 GHz ne peuvent plus se connecter.",
+                ) + only16(
+                    "Android 16 でこのアプリが ON にしたテザリングは、OS の設定にかかわらず 2.4GHz・WPA2 になります（アプリからは OS の設定を読めないため）。",
+                    "On Android 16, a hotspot turned on by this app always uses 2.4 GHz and WPA2, whatever the system setting (apps can't read it).",
+                    "Sur Android 16, un point d'accès activé par l'application utilise toujours 2,4 GHz et WPA2, quel que soit le réglage du système (les applications ne peuvent pas le lire).",
                 ),
                 listOf(
                     tr("アクセスポイントの設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès") to { a -> SystemScreens.hotspot(a) },
@@ -987,4 +1031,18 @@ class GuideActivity : Activity() {
             ),
         ),
     )
+
+    /** 「ON だが切り替えに要るものがない」の文（Android 16 は端末の管理アプリの設定） */
+    private fun notPermittedText(): String =
+        if (DeviceOwner.required) {
+            tr(
+                "ON だが端末の管理アプリの設定がまだ（Android 16）", "ON, but the device owner setup isn't done (Android 16)",
+                "ON, mais la configuration du propriétaire de l'appareil n'est pas faite (Android 16)",
+            )
+        } else {
+            tr(
+                "ON だが「システム設定の変更」が未許可", "ON, but “Modify system settings” isn't allowed",
+                "ON, mais « Modifier les paramètres système » n'est pas autorisé",
+            )
+        }
 }

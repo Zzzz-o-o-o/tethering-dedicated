@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  端末の管理アプリ（デバイスオーナー）の宣言（Android 16 用の版だけ）。端末の制限などの機能は使わない（テザリングの切り替えだけ）
+-->
+<device-admin>
+    <uses-policies />
+</device-admin>

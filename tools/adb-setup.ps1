@@ -43,15 +43,22 @@
   Android 15（API 35）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android15.apk を使う）:
   - スクリプトの扱いは Android 14 と同じ（追加の項目はない）
 
+  Android 16（API 36）の端末（v0.10.0 から。アプリは TetheringDedicated-<版>_android16.apk を使う）:
+  - 「システム設定の変更」ではテザリングを切り替えられない（OS の仕様）ので、-AllowTetherControl は使わない。
+    代わりに、このアプリを端末の管理アプリ（デバイスオーナー）にする … -SetDeviceOwner を付けたときだけ。
+    端末にアカウントがあると失敗する（いったん削除し、管理アプリにしたあと追加し直せる）。
+    やめるのはアプリの設定の「管理アプリをやめる」（-Restore では戻さない。管理アプリのままではアンインストールできない）
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11〜15 の端末には _android11.apk〜_android15.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.0_android10.apk   # Android 11〜16 の端末には _android11.apk〜_android16.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
   .\adb-setup.ps1 -Apply -KeepLocation              # 位置情報は変えない
   .\adb-setup.ps1 -Apply -AllowAutoSwitch           # 自動切り替え（バッテリーセーバー・Doze）の権限も付ける
-  .\adb-setup.ps1 -Apply -AllowTetherControl        # 起動時のテザリング ON・時間帯スケジュールの許可も付ける
+  .\adb-setup.ps1 -Apply -AllowTetherControl        # 起動時のテザリング ON・時間帯スケジュールの許可も付ける（Android 15 まで）
+  .\adb-setup.ps1 -SetDeviceOwner                   # Android 16: 端末の管理アプリにする（起動時のテザリング ON・時間帯スケジュール用）
   .\adb-setup.ps1 -Apply -EnableOffload             # ハードウェアアクセラレーションを有効に戻す（対応端末のみ）
   .\adb-setup.ps1 -Apply -IncludeOta                # システムの自動更新も止める（手動更新が前提）
   .\adb-setup.ps1 -Apply -ScreenOffSec 30           # PIN 等の画面ロックがあっても画面消灯を 30 秒にする
@@ -69,6 +76,7 @@ param(
     [switch]$KeepLocation,
     [switch]$AllowAutoSwitch,
     [switch]$AllowTetherControl,
+    [switch]$SetDeviceOwner,
     [switch]$EnableOffload,
     [ValidateRange(15, 1800)][int]$ScreenOffSec = 30,
     [string]$Serial,
@@ -229,7 +237,7 @@ function Get-AutoRevokeMode {
     return $null
 }
 
-# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用、33 = Android 13 用、34 = Android 14 用、35 = Android 15 用）
+# インストールされているアプリの targetSdk（29 = Android 10 用の APK、30 = Android 11 用、31 = Android 12 用、33 = Android 13 用、34 = Android 14 用、35 = Android 15 用、36 = Android 16 用）
 function Get-AppTargetSdk {
     $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'package', $Package) -AllowFail
     if ($d -match 'targetSdk=(\d+)') { return [int]$Matches[1] }
@@ -243,9 +251,25 @@ function Get-AndroidMajor([int]$Sdk) {
     return $Sdk - 20
 }
 
-# この端末に合う APK の Android のバージョン（APK は Android 10〜15 用がある。16 以降には 15 用）
+# この端末に合う APK の Android のバージョン（APK は Android 10〜16 用がある。17 以降には 16 用）
 function Get-BestApkMajor([int]$Sdk) {
-    return [Math]::Max(10, [Math]::Min(15, (Get-AndroidMajor $Sdk)))
+    return [Math]::Max(10, [Math]::Min(16, (Get-AndroidMajor $Sdk)))
+}
+
+# このアプリが端末の管理アプリ（デバイスオーナー）か（Android 16 から、テザリングの切り替えに要る）
+function Test-DeviceOwner {
+    $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'device_policy') -AllowFail
+    return ($d -match ('Device Owner:\s*\n\s*admin=ComponentInfo\{' + [regex]::Escape($Package) + '/'))
+}
+
+# 端末のアカウントの数（管理アプリにできるのは、アカウントが 1 つもないときだけ）。読めなければ $null
+function Get-AccountCount {
+    $d = Invoke-Adb -Arguments @('shell', 'dumpsys', 'account') -AllowFail
+    $m = [regex]::Matches($d, 'Accounts:\s*(\d+)')
+    if ($m.Count -eq 0) { return $null }
+    $n = 0
+    foreach ($x in $m) { $n += [int]$x.Groups[1].Value }
+    return $n
 }
 
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
@@ -352,15 +376,15 @@ $sdk = [int](Invoke-Adb -Arguments @('shell', 'getprop', 'ro.build.version.sdk')
 $sn = $script:DeviceSerial
 Write-Host (T "端末: $model（$sn） / Android API $sdk" "Phone: $model ($sn) / Android API $sdk" "Téléphone : $model ($sn) / Android API $sdk")
 Write-Host "adb : $($script:AdbPath)"
-if ($sdk -lt 29 -or $sdk -gt 35) {
-    Write-Warning (T "このアプリと設定は Android 10〜15（API 29〜35）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 to 15 (API 29 to 35). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 à 15 (API 29 à 35). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
+if ($sdk -lt 29 -or $sdk -gt 36) {
+    Write-Warning (T "このアプリと設定は Android 10〜16（API 29〜36）向けです。別のバージョンでは効かない項目があります。" "This app and these settings are for Android 10 to 16 (API 29 to 36). Some items may not work on other versions." "Cette application et ces réglages sont prévus pour Android 10 à 16 (API 29 à 36). Certains éléments peuvent ne pas fonctionner sur d'autres versions.")
 }
 $phoneMajor = Get-AndroidMajor $sdk
 $bestMajor = Get-BestApkMajor $sdk
 
 if ($Install) {
     if (-not (Test-Path $Install)) { throw (T "APK が見つかりません: $Install" "APK not found: $Install" "APK introuvable : $Install") }
-    # APK は Android のバージョンごとに分かれている（_android10 〜 _android15。それより古い端末には入らない）
+    # APK は Android のバージョンごとに分かれている（_android10 〜 _android16。それより古い端末には入らない）
     $leaf = Split-Path $Install -Leaf
     if ($leaf -match '_android(\d+)') {
         $apkMajor = [int]$Matches[1]
@@ -424,6 +448,31 @@ $safeSerial = ($script:DeviceSerial -replace '[^A-Za-z0-9._-]', '_')
 $backupPath = Join-Path $BackupDir "adb-setup-backup-$safeSerial.json"
 $userApps = Get-UserApps
 
+if ($SetDeviceOwner) {
+    # Android 16 から、テザリングを切り替えられるのは端末の管理アプリだけ。アプリの受け口は Android 16 用の APK だけにある
+    if ($sdk -lt 36) {
+        Write-Warning (T "-SetDeviceOwner は Android 16（API 36）以降の端末用です。この端末では -AllowTetherControl を使ってください（変更していません）。" "-SetDeviceOwner is for Android 16 (API 36) and later. On this phone, use -AllowTetherControl (nothing was changed)." "-SetDeviceOwner est prévu pour Android 16 (API 36) et ultérieur. Sur ce téléphone, utilisez -AllowTetherControl (rien n'a été modifié).")
+    } elseif (-not $installed) {
+        Write-Warning (T "アプリが未インストールのため、管理アプリにできません（-Install を先に）。" "The app isn't installed, so it can't be made the device owner (use -Install first)." "L'application n'est pas installée : elle ne peut pas devenir propriétaire de l'appareil (utilisez d'abord -Install).")
+    } elseif ((Get-AppTargetSdk) -lt 36) {
+        Write-Warning (T "インストールされている APK は Android 16 用ではないため、管理アプリにできません。_android16.apk を入れてから実行してください。" "The installed APK isn't the Android 16 one, so it can't be made the device owner. Install the _android16.apk first." "L'APK installé n'est pas celui pour Android 16 : il ne peut pas devenir propriétaire de l'appareil. Installez d'abord le fichier _android16.apk.")
+    } elseif (Test-DeviceOwner) {
+        Write-Host (T "このアプリはすでに端末の管理アプリです。" "The app is already the device owner." "L'application est déjà propriétaire de l'appareil.")
+    } else {
+        $accounts = Get-AccountCount
+        if ($accounts -gt 0) {
+            Write-Warning (T "端末にアカウントが $accounts 件あるため、管理アプリにできません。端末の設定の「パスワードとアカウント」でいったん削除してから、もう一度実行してください（管理アプリにしたあと、追加し直せます）。" "The phone has $accounts account(s), so the app can't be made the device owner. Remove them under Passwords and accounts in the phone's settings, then run this again (you can add them back afterwards)." "Le téléphone a $accounts compte(s) : l'application ne peut pas devenir propriétaire de l'appareil. Supprimez-les dans Mots de passe et comptes des paramètres du téléphone, puis relancez (vous pourrez les rajouter ensuite).")
+        } else {
+            $r = Invoke-Adb -Arguments @('shell', 'dpm', 'set-device-owner', "$Package/.AdminReceiver") -AllowFail
+            if (Test-DeviceOwner) {
+                Write-Host (T "このアプリを端末の管理アプリにしました。アプリの設定の「テザリング」で、アクセスポイントの名前とパスワードを端末の設定と同じに入れてください。やめるのはアプリの設定の「管理アプリをやめる」です（-Restore では戻りません）。" "The app is now the device owner. In the app's Settings, under Tethering, enter the hotspot name and password, the same as in the phone's settings. To undo, use Stop being the device owner in the app's Settings (-Restore doesn't undo it)." "L'application est maintenant propriétaire de l'appareil. Dans les paramètres de l'application, sous Partage de connexion, saisissez le nom et le mot de passe du point d'accès, les mêmes que dans les paramètres du téléphone. Pour annuler, utilisez Ne plus être propriétaire de l'appareil dans les paramètres de l'application (-Restore ne l'annule pas).")
+            } else {
+                Write-Warning (T "管理アプリにできませんでした: $r" "Couldn't make the app the device owner: $r" "Impossible de rendre l'application propriétaire de l'appareil : $r")
+            }
+        }
+    }
+}
+
 if ($Restore) {
     if (-not (Test-Path $backupPath)) { throw (T "この端末の保存データがありません: $backupPath" "No saved data for this phone: $backupPath" "Aucune donnée enregistrée pour ce téléphone : $backupPath") }
     $b = Get-Content -Path $backupPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -483,6 +532,10 @@ if ($Restore) {
     if ((Get-Setting 'global' 'device_idle_constants') -eq $DozeEarly) {
         Set-Setting 'global' 'device_idle_constants' $null
         Write-Host (T "戻しました: Doze の設定（アプリが早めたまま残っていたもの）" "Restored: Doze settings (left 'earlier' by the app)" "Rétabli : réglages Doze (laissés avancés par l'application)")
+    }
+    if ($installed -and $sdk -ge 36 -and (Test-DeviceOwner)) {
+        # 管理アプリをやめるのはアプリから（アプリにしかできない）
+        Write-Host (T "端末の管理アプリはそのままです（やめるのは、アプリの設定の「管理アプリをやめる」）。" "The app is still the device owner (to undo it, use Stop being the device owner in the app's Settings)." "L'application reste propriétaire de l'appareil (pour l'annuler, utilisez Ne plus être propriétaire de l'appareil dans les paramètres de l'application).")
     }
     $done = Join-Path $BackupDir ("adb-setup-backup-$safeSerial.restored-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.json')
     Move-Item -Path $backupPath -Destination $done
@@ -569,7 +622,9 @@ if ($Apply) {
             $g = Invoke-Adb -Arguments @('shell', 'pm', 'grant', $Package, 'android.permission.WRITE_SECURE_SETTINGS') -AllowFail
             if ($g) { Write-Warning (T "設定変更の権限を付けられませんでした: $g（アプリが v0.4.0 以降か確認してください）" "Couldn't grant the settings permission: $g (check that the app is v0.4.0 or later)" "Impossible d'accorder l'autorisation de modifier les paramètres : $g (vérifiez que l'application est en v0.4.0 ou ultérieure)") }
         }
-        if ($AllowTetherControl) {
+        if ($AllowTetherControl -and $sdk -ge 36) {
+            Write-Warning (T "Android 16 では「システム設定の変更」でテザリングを切り替えられないため、許可していません。-SetDeviceOwner を使ってください。" "On Android 16, Modify system settings can't switch the hotspot, so it wasn't allowed. Use -SetDeviceOwner instead." "Sur Android 16, Modifier les paramètres système ne permet pas de commander le point d'accès : l'autorisation n'a pas été accordée. Utilisez -SetDeviceOwner.")
+        } elseif ($AllowTetherControl) {
             # 起動時のテザリング ON と時間帯スケジュール（テザリングの停止・再開）。アプリの設定で ON にしたときだけ使う
             $g = Invoke-Adb -Arguments @('shell', 'cmd', 'appops', 'set', $Package, 'WRITE_SETTINGS', 'allow') -AllowFail
             if ($g) { Write-Warning (T "システム設定の変更を許可できませんでした: $g（アプリが v0.5.0 以降か確認してください）" "Couldn't allow Modify system settings: $g (check that the app is v0.5.0 or later)" "Impossible d'autoriser Modifier les paramètres système : $g (vérifiez que l'application est en v0.5.0 ou ultérieure)") }
@@ -625,7 +680,7 @@ if ($installed) {
                 Current = $(if ($ntNow) { $allowed } else { $notAllowed }); Want = $allowed; Status = $(if ($ntNow) { $ok } else { $change })
             }
         }
-        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用、33 = 13 用、34 = 14 用、35 = 15 用）が入っているか
+        # 端末に合う APK（targetSdk 29 = Android 10 用、30 = 11 用、31 = 12 用、33 = 13 用、34 = 14 用、35 = 15 用、36 = 16 用）が入っているか
         $tsdk = Get-AppTargetSdk
         if ($null -ne $tsdk -and $tsdk -ge 29) {
             $appMajor = Get-AndroidMajor $tsdk
@@ -640,11 +695,21 @@ if ($installed) {
         Current = $(if ($sg) { T "付与" "Granted" "Accordée" } else { T "なし" "None" "Non" }); Want = $optional
         Status = $(if ($sg) { $ok } else { T "-AllowAutoSwitch で付与" "Grant with -AllowAutoSwitch" "Accorder avec -AllowAutoSwitch" })
     }
-    $wm = Get-WriteSettingsMode
-    $rows = @($rows) + [pscustomobject]@{
-        Name = (T "システム設定の変更（起動時のテザリング ON・時間帯スケジュール用・任意）" "Modify system settings (hotspot on at startup, quiet-hours schedule, optional)" "Modifier les paramètres système (activation au démarrage, planification, facultatif)")
-        Current = $(if ($wm -eq 'allow') { $allowed } else { $notAllowed }); Want = $optional
-        Status = $(if ($wm -eq 'allow') { $ok } else { T "-AllowTetherControl で許可" "Allow with -AllowTetherControl" "Autoriser avec -AllowTetherControl" })
+    if ($sdk -ge 36) {
+        # Android 16 から、テザリングの切り替えには「システム設定の変更」ではなく端末の管理アプリが要る
+        $do = Test-DeviceOwner
+        $rows = @($rows) + [pscustomobject]@{
+            Name = (T "端末の管理アプリ（起動時のテザリング ON・時間帯スケジュール用・任意・Android 16 以降）" "Device owner (hotspot on at startup, quiet-hours schedule, optional, Android 16+)" "Propriétaire de l'appareil (activation au démarrage, planification, facultatif, Android 16+)")
+            Current = $(if ($do) { T "はい" "Yes" "Oui" } else { T "いいえ" "No" "Non" }); Want = $optional
+            Status = $(if ($do) { $ok } else { T "-SetDeviceOwner で設定" "Set with -SetDeviceOwner" "Définir avec -SetDeviceOwner" })
+        }
+    } else {
+        $wm = Get-WriteSettingsMode
+        $rows = @($rows) + [pscustomobject]@{
+            Name = (T "システム設定の変更（起動時のテザリング ON・時間帯スケジュール用・任意）" "Modify system settings (hotspot on at startup, quiet-hours schedule, optional)" "Modifier les paramètres système (activation au démarrage, planification, facultatif)")
+            Current = $(if ($wm -eq 'allow') { $allowed } else { $notAllowed }); Want = $optional
+            Status = $(if ($wm -eq 'allow') { $ok } else { T "-AllowTetherControl で許可" "Allow with -AllowTetherControl" "Autoriser avec -AllowTetherControl" })
+        }
     }
 } else {
     Write-Host (T "アプリは未インストールです（-Install でインストールできます）。" "The app isn't installed (install it with -Install)." "L'application n'est pas installée (installez-la avec -Install).")
@@ -697,4 +762,4 @@ if ($Install) {
     elseif ($sdk -ge 33) { Write-Host (T "アプリを起動しました。端末の画面で「電話」と「通知」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone and Notifications permissions and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et « Notifications », ainsi que l'exemption d'optimisation de la batterie.") }
     else { Write-Host (T "アプリを起動しました。端末の画面で「電話」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone permission and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et l'exemption d'optimisation de la batterie.") }
 }
-if (-not $Apply -and -not $Install) { Write-Host (T "確認のみです（変更していません）。適用は -Apply、元に戻すのは -Restore。" "Check only (nothing was changed). Apply with -Apply, undo with -Restore." "Vérification seulement (rien n'a été modifié). Appliquez avec -Apply, annulez avec -Restore.") }
+if (-not $Apply -and -not $Install -and -not $SetDeviceOwner) { Write-Host (T "確認のみです（変更していません）。適用は -Apply、元に戻すのは -Restore。" "Check only (nothing was changed). Apply with -Apply, undo with -Restore." "Vérification seulement (rien n'a été modifié). Appliquez avec -Apply, annulez avec -Restore.") }

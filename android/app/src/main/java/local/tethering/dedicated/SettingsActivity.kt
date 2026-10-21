@@ -58,10 +58,16 @@ class SettingsActivity : Activity() {
             page, tr("インターネット到達確認", "Internet reachability check", "Test d'accès à Internet"),
             listOf(Defs.EXPECT_CODE), bools = listOf(Defs.HTTP), texts = listOf(Defs.URL), boolsFirst = true,
         )
-        section(page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(), bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.DEVICE_LIST, Defs.TETHER_ON_BOOT)).also { c ->
+        // Android 16 は、管理アプリとしてテザリングを ON にするときのアクセスポイントの名前とパスワードも入れる
+        val apTexts = if (DeviceOwner.required) listOf(Defs.AP_SSID, Defs.AP_PASS) else emptyList()
+        section(
+            page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(),
+            bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.DEVICE_LIST, Defs.TETHER_ON_BOOT), texts = apTexts, boolsFirst = true,
+        ).also { c ->
             Ui.spacer(c, 4)
             bootStatus = Ui.small(c, "")
             tetherControlButtons(c)
+            if (DeviceOwner.required) releaseOwnerButton(c)
         }
         section(
             page, tr("温度・電池の警告", "Temperature and battery alerts", "Alertes de température et de batterie"),
@@ -254,12 +260,7 @@ class SettingsActivity : Activity() {
             lines.add(tr("いま止めています（$back に再開）", "Off now (back on $back)", "Arrêté actuellement (réactivation le $back)"))
         }
         if (prefs.bool(Defs.DATA_CAP_STOP) && !TetherControl.permitted(this)) {
-            lines.add(
-                SettingsCodec.issue(
-                    tr("「システム設定の変更」", "“Modify system settings”", "« Modifier les paramètres système »"),
-                    tr("未許可（止めるのに必要）", "not allowed (needed to turn it off)", "non autorisé (nécessaire pour l'arrêter)"),
-                ),
-            )
+            lines.add(switchStatus(tr("未許可（止めるのに必要）", "not allowed (needed to turn it off)", "non autorisé (nécessaire pour l'arrêter)")))
         }
         return lines.joinToString("\n")
     }
@@ -286,15 +287,28 @@ class SettingsActivity : Activity() {
         tetherControlButtons(c)
     }
 
-    /** 「システム設定の変更」の許可と、切り替えられるかの確認（起動時の ON と時間帯スケジュールで共通） */
+    /**
+     * 「システム設定の変更」の許可と、切り替えられるかの確認（起動時の ON と時間帯スケジュールで共通）。
+     * Android 16 は、許可の代わりに端末の管理アプリの手順（はじめの設定の 3）を開く
+     */
     private fun tetherControlButtons(c: LinearLayout) {
-        Ui.button(
-            c,
-            tr(
-                "「システム設定の変更」を許可する（OS の画面）", "Allow “Modify system settings” (system screen)",
-                "Autoriser « Modifier les paramètres système » (écran du système)",
-            ),
-        ) { SystemScreens.writeSettings(this) }
+        if (DeviceOwner.required) {
+            Ui.button(
+                c,
+                tr(
+                    "端末の管理アプリにする手順（はじめの設定の 3）", "How to make this app the device owner (Initial setup step 3)",
+                    "Comment faire de l'application le propriétaire de l'appareil (étape 3 de la configuration initiale)",
+                ),
+            ) { TetherControl.openFix(this) }
+        } else {
+            Ui.button(
+                c,
+                tr(
+                    "「システム設定の変更」を許可する（OS の画面）", "Allow “Modify system settings” (system screen)",
+                    "Autoriser « Modifier les paramètres système » (écran du système)",
+                ),
+            ) { SystemScreens.writeSettings(this) }
+        }
         Ui.button(
             c,
             tr(
@@ -324,6 +338,71 @@ class SettingsActivity : Activity() {
                 .setPositiveButton("OK", null)
                 .show()
         }
+    }
+
+    /**
+     * Android 16：端末の管理アプリをやめる（管理アプリのままではアンインストールできない）。
+     * やめると、テザリングの切り替え（起動時の ON・時間帯スケジュール・上限で止める・タイル）は使えなくなる
+     */
+    private fun releaseOwnerButton(c: LinearLayout) {
+        Ui.button(
+            c,
+            tr(
+                "管理アプリをやめる（アンインストールの前に）", "Stop being the device owner (before uninstalling)",
+                "Ne plus être propriétaire de l'appareil (avant la désinstallation)",
+            ),
+        ) {
+            if (!DeviceOwner.isOwner(this)) {
+                Toast.makeText(this, tr("このアプリは管理アプリではありません", "This app isn't the device owner", "Cette application n'est pas propriétaire de l'appareil"), Toast.LENGTH_SHORT).show()
+                return@button
+            }
+            AlertDialog.Builder(this)
+                .setTitle(tr("管理アプリをやめますか？", "Stop being the device owner?", "Ne plus être propriétaire de l'appareil ?"))
+                .setMessage(
+                    tr(
+                        "やめると、このアプリはテザリングを切り替えられなくなります（起動時の ON・時間帯スケジュール・上限で止める・タイル）。監視・通知はこれまでどおり続きます。管理アプリに戻すには、PC からもう一度設定します。",
+                        "The app will no longer be able to switch the hotspot (at startup, quiet-hours schedule, data cap, tile). Monitoring and alerts continue as before. To make it the device owner again, set it up from a PC again.",
+                        "L'application ne pourra plus commander le point d'accès (au démarrage, planification, plafond de données, vignette). La surveillance et les alertes continuent. Pour la refaire propriétaire de l'appareil, recommencez depuis un PC.",
+                    ),
+                )
+                .setPositiveButton(tr("やめる", "Stop", "Arrêter")) { _, _ ->
+                    val ok = DeviceOwner.release(this)
+                    LogStore.write(
+                        this, Ev.SETTINGS, StateStore.state,
+                        result = if (ok) tr("管理アプリをやめた", "Stopped being the device owner", "N'est plus propriétaire de l'appareil") else tr("管理アプリをやめられなかった", "Couldn't stop being the device owner", "Impossible de ne plus être propriétaire de l'appareil"),
+                    )
+                    Toast.makeText(
+                        this,
+                        if (ok) tr("管理アプリをやめました。アンインストールできます", "Done. The app can now be uninstalled", "Fait. L'application peut maintenant être désinstallée") else tr("やめられませんでした", "Couldn't stop it", "Échec"),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    refreshPhase4()
+                }
+                .setNegativeButton(Ui.cancel(), null)
+                .show()
+        }
+    }
+
+    /**
+     * 切り替えに要るものの状態（起動時の ON・時間帯スケジュール・上限で止める で共通）。[need] は、足りないときの説明。
+     * Android 16 は、端末の管理アプリと、アクセスポイントの名前とパスワード
+     */
+    private fun switchStatus(need: String): String {
+        if (!DeviceOwner.required) {
+            val allowed = tr("許可済み", "allowed", "autorisé")
+            return SettingsCodec.issue(TetherControl.requirement(), if (TetherControl.permitted(this)) allowed else need)
+        }
+        // Android 15 以前用の版を Android 16 に入れた（管理アプリになれない）
+        if (!DeviceOwner.isOwner(this) && !DeviceOwner.supported(this)) return TetherControl.Reason.WRONG_APK.label
+        val owner = SettingsCodec.issue(
+            tr("端末の管理アプリ", "Device owner", "Propriétaire de l'appareil"),
+            if (DeviceOwner.isOwner(this)) tr("済み", "yes", "oui") else tr("まだ（PC から。はじめの設定の 3）", "not yet (from a PC, Initial setup step 3)", "pas encore (depuis un PC, étape 3 de la configuration initiale)"),
+        )
+        val config = SettingsCodec.issue(
+            tr("アクセスポイントの名前とパスワード", "Hotspot name and password", "Nom et mot de passe du point d'accès"),
+            if (HotspotConfig.load(this).valid) tr("設定済み", "set", "définis") else tr("まだ（上で入れて保存）", "not yet (enter them above and save)", "pas encore (saisissez-les ci-dessus et enregistrez)"),
+        )
+        return "$owner\n$config"
     }
 
     /** スマートプラグ（仕様 F-45） */
@@ -433,23 +512,13 @@ class SettingsActivity : Activity() {
     private fun refreshPhase4() {
         if (!::schedStatus.isInitialized) return
         val s = StateStore.state
-        val permitted = TetherControl.permitted(this)
-        val permName = tr("「システム設定の変更」", "“Modify system settings”", "« Modifier les paramètres système »")
-        val allowed = tr("許可済み", "allowed", "autorisé")
-        val bootPerm = if (permitted) {
-            allowed
-        } else {
-            tr("未許可（起動時の ON には許可が必要）", "not allowed (required to turn it on at startup)", "non autorisé (nécessaire pour l'activation au démarrage)")
-        }
         capStatus.text = capStatusText()
-        bootStatus.text = SettingsCodec.issue(permName, bootPerm) +
-            (BootTether.lastResult(this)?.let { "\n" + tr("前回の起動時: $it", "Last startup: $it", "Dernier démarrage : $it") } ?: "")
-        val perm = if (permitted) {
-            allowed
-        } else {
-            tr("未許可（時間帯スケジュールには許可が必要）", "not allowed (required for the quiet-hours schedule)", "non autorisé (nécessaire pour la planification)")
-        }
-        schedStatus.text = SettingsCodec.issue(permName, perm) +
+        bootStatus.text = switchStatus(
+            tr("未許可（起動時の ON には許可が必要）", "not allowed (required to turn it on at startup)", "non autorisé (nécessaire pour l'activation au démarrage)"),
+        ) + (BootTether.lastResult(this)?.let { "\n" + tr("前回の起動時: $it", "Last startup: $it", "Dernier démarrage : $it") } ?: "")
+        schedStatus.text = switchStatus(
+            tr("未許可（時間帯スケジュールには許可が必要）", "not allowed (required for the quiet-hours schedule)", "non autorisé (nécessaire pour la planification)"),
+        ) +
             (s.sched?.stoppedUntil?.let { "\n" + tr("いま止めています（$it に再開）", "Off now (back on at $it)", "Arrêté actuellement (réactivation à $it)") } ?: "") +
             (s.sched?.note?.let { "\n$it" } ?: "")
         plugStatus.text = s.plug?.let { p ->

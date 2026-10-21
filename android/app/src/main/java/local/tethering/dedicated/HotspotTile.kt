@@ -30,14 +30,19 @@ object HotspotTile {
         TetherInfo.AP_FAILED -> View(Tile.STATE_INACTIVE, tr("起動に失敗", "Failed to start", "Échec du démarrage"))
         else -> View(
             Tile.STATE_INACTIVE,
-            if (permitted) "OFF" else tr("OFF・許可が必要", "Permission needed", "Autorisation requise"),
+            when {
+                permitted -> "OFF"
+                // Android 16 は、許可ではなく端末の管理アプリの設定（はじめの設定の 3）
+                DeviceOwner.required -> tr("OFF・設定が必要", "Setup needed", "Configuration requise")
+                else -> tr("OFF・許可が必要", "Permission needed", "Autorisation requise")
+            },
         )
     }
 }
 
 /**
- * クイック設定のタイル（v0.10.0）。テザリングの状態と接続台数を出し、タップで ON・OFF する（「システム設定の変更」の許可が必要。
- * なければ、はじめの設定を開く）。画面ロック中は、ロックを解除してから切り替える（他の人がロック画面から切り替えられないように）。
+ * クイック設定のタイル（v0.10.0）。テザリングの状態と接続台数を出し、タップで ON・OFF する（「システム設定の変更」の許可、
+ * Android 16 は端末の管理アプリの設定が必要。なければ、はじめの設定を開く）。画面ロック中は、ロックを解除してから切り替える（他の人がロック画面から切り替えられないように）。
  * タイルから OFF にしたときは、意図した停止なので、テザリング停止の異常として知らせない（ON になったら解除）
  */
 class HotspotTileService : TileService() {

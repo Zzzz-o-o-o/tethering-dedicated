@@ -296,14 +296,20 @@ object BootTether {
             }
             Act.NO_PERMISSION -> if (!reported) {
                 markReported()
-                addResult(
-                    ctx,
-                    tr(
-                        "テザリングを ON にできません（「システム設定の変更」が許可されていません）",
-                        "Can't turn on the hotspot (“Modify system settings” isn't allowed)",
-                        "Impossible d'activer le point d'accès (« Modifier les paramètres système » n'est pas autorisé)",
-                    ),
-                )
+                if (DeviceOwner.required) {
+                    // Android 16 から：端末の管理アプリ・アクセスポイントの名前とパスワードのうち、足りないもの
+                    val why = (TetherControl.missing(ctx) ?: TetherControl.Reason.NOT_OWNER).label
+                    addResult(ctx, tr("テザリングを ON にできません（$why）", "Can't turn on the hotspot ($why)", "Impossible d'activer le point d'accès ($why)"))
+                } else {
+                    addResult(
+                        ctx,
+                        tr(
+                            "テザリングを ON にできません（「システム設定の変更」が許可されていません）",
+                            "Can't turn on the hotspot (“Modify system settings” isn't allowed)",
+                            "Impossible d'activer le point d'accès (« Modifier les paramètres système » n'est pas autorisé)",
+                        ),
+                    )
+                }
             }
             Act.GIVE_UP -> if (!reported) {
                 markReported()
@@ -335,8 +341,8 @@ object BootTether {
                         schedule(ctx, VERIFY_SEC * 1000L)
                     } else {
                         sp.edit().putString(KEY_ERROR, r.text).commit()
-                        // 許可の問題は、やり直しても直らない
-                        if (r.reason == TetherControl.Reason.NO_PERMISSION) {
+                        // 許可・設定の問題は、やり直しても直らない
+                        if (r.reason?.permanent == true) {
                             cancel(ctx)
                             if (!sp.getBoolean(KEY_REPORTED, false)) {
                                 markReported()

@@ -1,8 +1,8 @@
-# Tethering Dedicated for Android 10 to 15
+# Tethering Dedicated for Android 10 to 16
 
 [![CI](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzzz-o-o-o/tethering-dedicated/actions/workflows/ci.yml)
 
-Turn a spare phone running Android 10 to 15 into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
+Turn a spare phone running Android 10 to 16 into a dedicated, long-running Wi-Fi hotspot — like a pocket Wi-Fi router.
 The app keeps an eye on the hotspot, the mobile line, the internet connection, the battery and the temperature,
 alerts you when something goes wrong, keeps a log, and helps you reduce power consumption.
 
@@ -18,8 +18,8 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 | | |
 |---|---|
-| Phone | Android 10, 11, 12 (12L included), 13, 14 or 15, with a SIM/plan that allows tethering. **That's all you need** |
-| PC (optional) | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)) and a USB cable — only for the extra setup from a PC (see below) |
+| Phone | Android 10, 11, 12 (12L included), 13, 14, 15 or 16, with a SIM/plan that allows tethering. **That's all you need** (on Android 16, the features that switch the hotspot also need a one-time setup from a PC — see [Android 16](#android-16)) |
+| PC (optional) | Windows with **ADB** ([Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)) and a USB cable — only for the extra setup from a PC (see below) and, on Android 16, for making the app the device owner |
 
 ## Files
 
@@ -31,6 +31,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 | `TetheringDedicated-v0.10.0_android13.apk` | The app for **Android 13** (see [Android 13](#android-13)) |
 | `TetheringDedicated-v0.10.0_android14.apk` | The app for **Android 14** (see [Android 14](#android-14)) |
 | `TetheringDedicated-v0.10.0_android15.apk` | The app for **Android 15** (see [Android 15](#android-15)) |
+| `TetheringDedicated-v0.10.0_android16.apk` | The app for **Android 16** (see [Android 16](#android-16)) |
 | `tools\adb-setup.bat` | Optional PC script: install, apply recommended phone settings, grant permissions, undo |
 | `tools\backup\` | Phone settings saved by the script before it changes anything (one file per phone) |
 | `developer-memo.md` | Developer notes in Japanese (design, test records, build) |
@@ -41,12 +42,12 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 ## Quick start (phone only)
 
-1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap the APK for your Android version — `TetheringDedicated-v0.10.0_android10.apk` for Android 10, `TetheringDedicated-v0.10.0_android11.apk` for Android 11, `TetheringDedicated-v0.10.0_android12.apk` for Android 12, `TetheringDedicated-v0.10.0_android13.apk` for Android 13, `TetheringDedicated-v0.10.0_android14.apk` for Android 14, `TetheringDedicated-v0.10.0_android15.apk` for Android 15 (Settings → About phone → Android version). An APK for a newer Android doesn't install on an older one.
+1. **Download the app on the phone**: open https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest in the phone's browser and tap the APK for your Android version — `TetheringDedicated-v0.10.0_android10.apk` for Android 10, `TetheringDedicated-v0.10.0_android11.apk` for Android 11, `TetheringDedicated-v0.10.0_android12.apk` for Android 12, `TetheringDedicated-v0.10.0_android13.apk` for Android 13, `TetheringDedicated-v0.10.0_android14.apk` for Android 14, `TetheringDedicated-v0.10.0_android15.apk` for Android 15, `TetheringDedicated-v0.10.0_android16.apk` for Android 16 (Settings → About phone → Android version). An APK for a newer Android doesn't install on an older one.
 2. **Install it**: open the downloaded file. If Android asks, allow your browser (or Files app) to **install unknown apps**. If Google Play Protect warns that the app is unknown, choose to install it anyway (the app is not on Google Play).
 3. **Open the app**. The **Initial setup** screen opens. Tap the buttons from the top; when a system screen opens, allow there and press Back:
-   1. **Phone** permission (on Android 13 and later, **Phone** and **Notifications**) — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS. Notifications are how the app alerts you. On Android 11, also tap **Keep it** and turn off "Remove permissions if app isn't used" under *Permissions* — otherwise Android removes the permission when the app isn't opened for a few months. On Android 12, the switch is "Remove permissions and free up space" under *Unused apps* (on Android 13 and 14, "Pause app activity if unused" under *Unused app settings*; on Android 15, "Manage app if unused"); it also stops Android from putting the app to sleep.
+   1. **Phone** permission (on Android 13 and later, **Phone** and **Notifications**) — reads the network type and signal. Android calls it "make and manage phone calls", but the app never makes calls or sends SMS. Notifications are how the app alerts you. On Android 11, also tap **Keep it** and turn off "Remove permissions if app isn't used" under *Permissions* — otherwise Android removes the permission when the app isn't opened for a few months. On Android 12, the switch is "Remove permissions and free up space" under *Unused apps* (on Android 13 and 14, "Pause app activity if unused" under *Unused app settings*; on Android 15 and 16, "Manage app if unused"); it also stops Android from putting the app to sleep.
    2. **Battery optimization** — exclude the app so that checks are not delayed while the screen is off (on Android 14 and later, this also lets the app use exact alarms).
-   3. **Modify system settings** — lets the app turn the hotspot on and off (at startup, quiet-hours schedule, data cap).
+   3. **Modify system settings** — lets the app turn the hotspot on and off (at startup, quiet-hours schedule, data cap). On Android 16, this step is **Make this app the device owner** instead, done once from a PC (see [Android 16](#android-16)); without it, everything else still works.
    4. **Hotspot auto turn-off** — turn it off so the hotspot doesn't stop when nobody is connected. The hotspot name and password are on the same screen. On Android 11 and later the app can't check this setting: make sure "Turn off hotspot automatically" (under *Advanced*) is off.
    5. **Turn on the Wi-Fi hotspot at startup** — turns it back on automatically after every reboot.
    6. **Turn on the Wi-Fi hotspot** — turns it on now.
@@ -56,7 +57,7 @@ alerts you when something goes wrong, keeps a log, and helps you reduce power co
 
 If the phone has a PIN, pattern or password lock, monitoring starts only after you unlock the phone once after a reboot (an Android restriction). Turning the hotspot on at startup works even before you unlock.
 
-**Nothing is lost without a PC.** Every feature works with the APK alone, except the automatic Battery Saver/Doze switching on battery (its permission can only be granted with ADB). The power-saving system settings that the PC script changes in one go can also be changed one by one from the app's **Setup guide**.
+**Nothing is lost without a PC** (up to Android 15). Every feature works with the APK alone, except the automatic Battery Saver/Doze switching on battery (its permission can only be granted with ADB). On Android 16, the features that switch the hotspot also need the app to be made the device owner from a PC once (see [Android 16](#android-16)). The power-saving system settings that the PC script changes in one go can also be changed one by one from the app's **Setup guide**.
 
 ### Optional: setup from a PC
 
@@ -67,7 +68,7 @@ The PC script applies the recommended system settings in one go, can undo them, 
    ```
    tools\adb-setup.bat -Install TetheringDedicated-v0.10.0_android10.apk -Apply
    ```
-   (on an Android 11 phone, use `TetheringDedicated-v0.10.0_android11.apk`; on Android 12, `TetheringDedicated-v0.10.0_android12.apk`; on Android 13, `TetheringDedicated-v0.10.0_android13.apk`; on Android 14, `TetheringDedicated-v0.10.0_android14.apk`; on Android 15, `TetheringDedicated-v0.10.0_android15.apk`)
+   (on an Android 11 phone, use `TetheringDedicated-v0.10.0_android11.apk`; on Android 12, `TetheringDedicated-v0.10.0_android12.apk`; on Android 13, `TetheringDedicated-v0.10.0_android13.apk`; on Android 14, `TetheringDedicated-v0.10.0_android14.apk`; on Android 15, `TetheringDedicated-v0.10.0_android15.apk`; on Android 16, `TetheringDedicated-v0.10.0_android16.apk`, and add `-SetDeviceOwner` to make the app the device owner, see [Android 16](#android-16))
    This installs the app, saves your current phone settings, applies the recommended settings, grants the app's permissions, and starts the app. If the app is already installed, leave out `-Install …`. See [The PC script](#the-pc-script-toolsadb-setupbat) for the other options.
 
 ---
@@ -136,7 +137,7 @@ Turn the hotspot on or off from the quick settings panel (swipe down from the to
 1. **Add the tile once**: open the quick settings panel fully (swipe down twice), tap the pencil (edit) icon, and drag **Tethering Dedicated** into the panel.
 2. The tile shows whether the hotspot is on and how many devices are connected (for example "ON · 2 device(s)"). **Tap it** to turn the hotspot on or off.
 
-- It needs **Modify system settings** (Initial setup step 3). Without it, the tile shows "Permission needed" and a tap opens Initial setup.
+- It needs **Modify system settings** (Initial setup step 3; on Android 16, the device owner setup). Without it, the tile shows "Permission needed" (on Android 16, "Setup needed") and a tap opens Initial setup.
 - After a restart, the tile works once you have unlocked the phone (if it has a screen lock).
 - When the phone is locked, Android asks you to unlock it first, so nobody can switch the hotspot from the lock screen.
 - Turning the hotspot off from the tile is not reported as a problem. It stays off until you turn it on again (with **Turn on the hotspot at startup**, it also comes back on at the next startup). Both actions are written in the log and **Recent events**.
@@ -157,7 +158,7 @@ Android always starts with the hotspot off after a reboot. With this option, the
 
 Settings → **Tethering**:
 
-1. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`.
+1. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`. On Android 16, make the app the device owner and enter the hotspot name and password instead (see [Android 16](#android-16)).
 2. Tap **Check that switching works** to check that your phone accepts it (the hotspot is not turned off).
 3. Turn on **Turn on the Wi-Fi hotspot at startup** and tap **Save**.
 
@@ -186,7 +187,7 @@ For plans with a monthly data allowance. Settings → **Monthly data cap**:
 
 1. Allow **Usage access** with the button below the section (the app reads this month's mobile data from the system's records — the same count as Settings → Network & internet → Data usage, hotspot traffic included).
 2. Turn on **Use a monthly data cap**, enter the **Monthly cap** in GB (1 GB = 1024 MB) and the day your plan's count starts (**Count from this day each month**, 1 if it resets at the start of the month), and tap **Save**.
-3. Optionally turn on **Turn off the hotspot when the cap is exceeded** (needs "Modify system settings").
+3. Optionally turn on **Turn off the hotspot when the cap is exceeded** (needs "Modify system settings"; on Android 16, the device owner setup).
 
 What it does:
 
@@ -199,7 +200,7 @@ What it does:
 Settings → **Quiet hours (traffic alerts, hotspot off)**:
 
 1. Enter the hours you don't use the hotspot in **Quiet hours**, for example `1-6`, `23-5` or `1:30-6:00` (24-hour clock; the end time is not included).
-2. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`.
+2. Allow **Modify system settings** with the button **Allow "Modify system settings"**, or from the PC with `tools\adb-setup.bat -Apply -AllowTetherControl`. On Android 16, make the app the device owner and enter the hotspot name and password instead (see [Android 16](#android-16)).
 3. Tap **Check that switching works** to check that your phone accepts it (the hotspot is not turned off).
 4. Turn on **Turn off the hotspot during quiet hours** and tap **Save**.
 
@@ -270,7 +271,8 @@ Run it from the project folder with the phone connected by USB.
 | `… -Install <apk>` | Installs or updates the app (with `-Apply`, grants permissions first and then starts the app) |
 | `… -Apply -RestrictApps` | Also restricts background activity of your other installed apps. Exclude apps with `-KeepApps com.example.app,…` |
 | `… -Apply -AllowAutoSwitch` | Also allows the Battery Saver / Doze switching |
-| `… -Apply -AllowTetherControl` | Also allows turning the hotspot on at startup and the quiet-hours schedule ("Modify system settings") |
+| `… -Apply -AllowTetherControl` | Also allows turning the hotspot on at startup and the quiet-hours schedule ("Modify system settings"; Android 10 to 15) |
+| `… -SetDeviceOwner` | Android 16: makes the app the device owner, which it needs to switch the hotspot (the phone must have no accounts at that moment). Undo it in the app (Settings → Tethering → **Stop being the device owner**); `-Restore` doesn't undo it |
 | `… -Apply -EnableOffload` | Also re-enables tethering hardware acceleration, only if the phone supports it |
 | `… -Apply -IncludeOta` | Also turns off automatic system updates (update by hand regularly) |
 | `… -Apply -KeepLocation` | Leaves Location as it is |
@@ -280,7 +282,7 @@ Run it from the project folder with the phone connected by USB.
 
 `-Apply` changes only settings that save power and keep the hotspot running: hotspot auto turn-off, Wi-Fi/Bluetooth background scanning, "stay awake while charging", screen timeout (30 s, only on phones without a screen lock), screen wake-ups (ambient display, lift/tap to wake), Location, "mobile data always active", and the app's own permissions (battery optimization exemption, Phone, usage access, and Notifications on Android 13 and later). It never touches carrier tethering settings, airplane mode, Data Saver or system apps.
 The script also shows the hotspot band (2.4/5 GHz) and whether the phone supports tethering hardware acceleration — the app itself cannot read these.
-On Android 11 and later, the script leaves the hotspot auto turn-off alone (it can't be changed with ADB any more; turn it off on the phone), and `-Apply` also turns off "Remove permissions if app isn't used" for this app (`-Restore` turns it back on). With `-Install`, it warns if the APK doesn't match the phone's Android version.
+On Android 11 and later, the script leaves the hotspot auto turn-off alone (it can't be changed with ADB any more; turn it off on the phone), and `-Apply` also turns off "Remove permissions if app isn't used" for this app (`-Restore` turns it back on). With `-Install`, it warns if the APK doesn't match the phone's Android version. On Android 16, `-AllowTetherControl` has no effect (use `-SetDeviceOwner`), and the check shows whether the app is the device owner.
 
 ---
 
@@ -369,6 +371,36 @@ On Android 15, use `TetheringDedicated-v0.10.0_android15.apk` (built for target 
 - The `_android14.apk` also works on Android 15, but the `_android15.apk` is made for it: install it over the old one (settings, permissions and logs are kept).
 - Android 15 support has been tested on the Android 15 emulator, not yet on a real Android 15 phone.
 
+## Android 16
+
+On Android 16, use `TetheringDedicated-v0.10.0_android16.apk` (built for target API 36). Everything in [Android 15](#android-15) applies too, with one big change:
+
+**Turning the hotspot on and off needs a one-time setup from a PC.** Android 16 no longer lets apps switch the hotspot with "Modify system settings" — this applies to every app, and to the older APKs too. The only way left for an app like this one is to be the phone's **device owner**, a role meant for device-management apps. Monitoring, alerts, the log and everything else work without it. Only the features that switch the hotspot need it: **Turn on the hotspot at startup**, the **quiet-hours schedule**, **Turn off the hotspot when the cap is exceeded**, the **quick settings tile** and **Turn on now** in Initial setup.
+
+To set it up:
+
+1. Install the `_android16.apk` and open it once.
+2. Remove the accounts from the phone (Settings → Passwords & accounts). Android lets an app become the device owner only while the phone has no accounts. You can add them back right after step 3.
+3. With USB debugging on, run on the PC:
+   ```
+   adb shell dpm set-device-owner local.tethering.dedicated/.AdminReceiver
+   ```
+   or `tools\adb-setup.bat -SetDeviceOwner`, which checks the accounts first. Initial setup step 3 shows the same command, with a **Copy the command** button.
+4. In the app, open Settings → **Tethering**, enter **Hotspot name (Android 16)** and **Hotspot password (Android 16)** — the same as in the phone's hotspot settings — and tap **Save**. Apps can't read the phone's hotspot settings, and Android 16 requires the app to give them when it turns the hotspot on.
+5. Tap **Check that switching works**. Initial setup step 3 now shows "Done".
+
+| | On Android 16 |
+|---|---|
+| Turning the hotspot off | The app can turn off only a hotspot that it turned on itself (at startup, from the tile, or after the schedule or the data cap turned it off). If you turn the hotspot on by hand in the phone's settings, the app can't turn it off, and the schedule and the data cap tell you so. To let the app manage it, turn it on from the tile instead |
+| Hotspot settings | When the app turns the hotspot on, it uses the name and password entered in the app, 2.4 GHz and WPA2, and the hotspot **never turns off by itself** when no device is connected. When you turn it on by hand, the phone's own settings are used |
+| "This device belongs to your organization" | Android shows this, for example at the bottom of the quick settings panel, while an app is the device owner. Here it means this app |
+| Device owner | A powerful role meant for device-management apps. This app uses it only to turn the hotspot on and off: it asks for no device-admin policies, and its source code is in this repository. A device owner app can't be uninstalled: first tap Settings → Tethering → **Stop being the device owner**. To set it again, repeat steps 2 and 3 |
+
+- If you change the hotspot name or password in the phone's settings, change them in the app too; otherwise, devices won't reconnect when the app turns the hotspot on.
+- The `_android10.apk` to `_android15.apk` install on Android 16, but they can't switch the hotspot there and can't become the device owner. Install the `_android16.apk` over them: settings, permissions and logs are kept.
+- On some phones (for example Xiaomi and POCO), the command may also need "USB debugging (Security settings)" turned on in Developer options.
+- Android 16 support has been tested on the Android 16 emulator (including turning the hotspot on at startup before unlocking), not yet on a real Android 16 phone.
+
 ---
 
 ## Privacy
@@ -378,15 +410,16 @@ On Android 15, use `TetheringDedicated-v0.10.0_android15.apk` (built for target 
 - On Android 11 and later, the app reads the list of installed apps only to show the **App list** and the data use per app on the phone.
 - The app's data (logs, settings, device names) is excluded from cloud backups and, on Android 12 and later, also from device-to-device transfers.
 - The app's own network use: one small reachability request per check (`connectivitycheck.gstatic.com/generate_204`, about 1 KB). On Android 13 and later, counting connected devices also sends one 1-byte packet to each address of the hotspot's range (inside the hotspot only). Optionally, notifications to the service you chose and commands to your smart plug.
-- Settings backup files don't include the notification URL or the smart plug address/URLs.
+- Settings backup files don't include the notification URL, the smart plug address/URLs or the hotspot name and password (Android 16).
+- On Android 16, the hotspot name and password you enter stay on the phone — also in the storage that can be read before the first unlock, so that the hotspot can be turned on at startup. They are never written to the log, Diagnostics or the local web page.
 - The local web page has no password; anyone connected to your hotspot can view it. Turn it off in Settings if you don't need it.
 
 ---
 
 ## Limitations
 
-- Made for **Android 10 to 15** (one APK for each). Android 11 to 15 have been tested on the emulator only.
-- On Android 11 and later, the app can't read the hotspot auto turn-off setting (see [Android 11](#android-11)). On Android 12 and later, "Enter Doze sooner on battery" isn't available (see [Android 12](#android-12)). On Android 13 and later, connected devices are found with a probe and can be named only by IP address (see [Android 13](#android-13)). On Android 14 and later, scheduled checks may run a few minutes late unless the app is excluded from battery optimization (see [Android 14](#android-14)).
+- Made for **Android 10 to 16** (one APK for each). Android 11 to 16 have been tested on the emulator only.
+- On Android 11 and later, the app can't read the hotspot auto turn-off setting (see [Android 11](#android-11)). On Android 12 and later, "Enter Doze sooner on battery" isn't available (see [Android 12](#android-12)). On Android 13 and later, connected devices are found with a probe and can be named only by IP address (see [Android 13](#android-13)). On Android 14 and later, scheduled checks may run a few minutes late unless the app is excluded from battery optimization (see [Android 14](#android-14)). On Android 16, switching the hotspot needs the app to be the device owner, and the app can turn off only a hotspot it turned on itself (see [Android 16](#android-16)).
 - Without the optional **Turn on the hotspot at startup**, the hotspot stays off after a reboot until you turn it on; the after-reboot check reminds you.
 - Power consumption and time left are available **only on battery**.
 - The number of connected devices is an estimate and may stay for a few minutes after a device disconnects.
@@ -403,18 +436,21 @@ On Android 15, use `TetheringDedicated-v0.10.0_android15.apk` (built for target 
 | Problem | What to do |
 |---|---|
 | Monitoring doesn't start after a reboot | Unlock the phone once. If it still doesn't start, open the app |
-| The hotspot is off after a reboot | Turn on **Turn on the Wi-Fi hotspot at startup** in Settings → Tethering. If it is on, check that "Modify system settings" is allowed and read the last result below it. While the data cap has the hotspot off, it isn't turned on at startup |
+| The hotspot is off after a reboot | Turn on **Turn on the Wi-Fi hotspot at startup** in Settings → Tethering. If it is on, check that "Modify system settings" is allowed (on Android 16, that the app is the device owner and the hotspot name and password are set) and read the last result below it. While the data cap has the hotspot off, it isn't turned on at startup |
 | The monthly data shows "N/A" | Allow "Usage access" (Settings → Monthly data cap, or Initial setup step 7) |
 | The APK won't install | Allow the browser or Files app to install unknown apps. If Google Play Protect blocks it, choose to install anyway |
 | **Action needed** is shown | Follow the message and its button |
 | "Data used with no devices connected" | The phone's own apps or system are using data (app updates, sync). See **Power analysis** for data per app |
-| The schedule didn't turn the hotspot off | Check that "Modify system settings" is allowed and the check button succeeds. It waits until no device has been connected for 10 minutes |
+| The schedule didn't turn the hotspot off | Check that "Modify system settings" is allowed and the check button succeeds. It waits until no device has been connected for 10 minutes. On Android 16, the app can't turn off a hotspot that was turned on by hand (see [Android 16](#android-16)) |
 | "Can't start/stop charging with the smart plug" | Check the plug's power and Wi-Fi, its address, and the charging cable |
 | The test notification fails | Check the URL. "HTTP 4xx" usually means a wrong URL or token |
-| The quick settings tile shows "Permission needed" | Allow "Modify system settings" (Initial setup step 3) |
+| The quick settings tile shows "Permission needed" or "Setup needed" | Allow "Modify system settings" (Initial setup step 3; on Android 16, make the app the device owner, see [Android 16](#android-16)) |
 | The hotspot stops after about 10 minutes with no devices | Turn off "Turn off hotspot automatically" in the hotspot settings (on Android 11 and later the app can't check it) |
 | No alerts on Android 13 or later | Allow notifications: the **Allow** button on the main screen, or Initial setup step 1 |
-| False "hotspot stopped" alerts on Android 13 or later | Install the APK for your Android version (`_android13.apk`, `_android14.apk` or `_android15.apk`, see [Android 13](#android-13)) |
+| False "hotspot stopped" alerts on Android 13 or later | Install the APK for your Android version (`_android13.apk` to `_android16.apk`, see [Android 13](#android-13)) |
+| Android 16: `dpm set-device-owner` fails with "already some accounts on the device" | Remove all accounts (Settings → Passwords & accounts), run it again, then add the accounts back |
+| Android 16: `dpm set-device-owner` fails with "already several users on the device" | Remove the other users, the guest user and work profiles (also "dual apps" or a secure folder, which some phones keep as a separate user), then run it again |
+| Android 16: the app doesn't uninstall | It is the device owner: tap Settings → Tethering → **Stop being the device owner** first |
 | The quick settings tile is grayed out and does nothing | After a restart, unlock the phone once |
 | Something else | Open **Diagnostics**, then copy or share it (see below) |
 
@@ -427,9 +463,9 @@ Don't paste phone numbers, IMEI, SSIDs, passwords or MAC addresses. Diagnostics 
 
 ## Update and uninstall
 
-- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z_android10.apk` — `_android11` on Android 11, `_android12` on Android 12, `_android13` on Android 13, `_android14` on Android 14, `_android15` on Android 15 — or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
+- **Update:** download the new APK from [Releases](https://github.com/Zzzz-o-o-o/tethering-dedicated/releases/latest) on the phone and install it over the old one (or from a PC: `tools\adb-setup.bat -Install TetheringDedicated-vX.Y.Z_android10.apk` — `_android11` on Android 11, `_android12` on Android 12, `_android13` on Android 13, `_android14` on Android 14, `_android15` on Android 15, `_android16` on Android 16 — or `adb install -r …`). Settings, permissions and logs are kept, and monitoring restarts. Updates must be signed with the same key.
 - **Uninstall:**
-  1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup.
+  1. In Settings, tap **Restore everything changed automatically** if you used the Battery Saver / Doze switching, and turn off the schedule and the smart plug (this turns the hotspot and charging back on). Uninstalling also ends turning the hotspot on at startup. On Android 16, also tap **Stop being the device owner** (Settings → Tethering) — a device owner app can't be uninstalled.
   2. `adb uninstall local.tethering.dedicated`
   3. `tools\adb-setup.bat -Restore` to put back the phone settings changed by `-Apply`.
 

@@ -121,6 +121,7 @@ class Monitor(private val ctx: Context) {
             started = true
             // 起動時のテザリング ON は設定の写し（ロック解除前でも読める領域）を読むので、設定に合わせておく
             BootTether.sync(ctx, prefs.bool(Defs.TETHER_ON_BOOT))
+            HotspotConfig.sync(ctx, prefs)
             StateStore.update { it.copy(running = true) }
             publish()
             val s = StateStore.state
@@ -1481,6 +1482,7 @@ class Monitor(private val ctx: Context) {
 
     fun onSettingsChanged() {
         BootTether.sync(ctx, prefs.bool(Defs.TETHER_ON_BOOT))
+        HotspotConfig.sync(ctx, prefs)
         if (!started || closed) return
         if (!prefs.bool(Defs.TETHER_EXPECTED) && tether.episode != null) {
             tether.reset()
