@@ -130,7 +130,10 @@ class DebugReceiver : BroadcastReceiver() {
                         "exit=${p.exitValue()} out=" + p.inputStream.bufferedReader().readText().replace("\n", " | ").take(600)
                     }.getOrElse { "error=${it.javaClass.simpleName}: ${it.message}" }
                     out("iface=$iface sdk=${android.os.Build.VERSION.SDK_INT} target=${ctx.applicationInfo.targetSdkVersion} ip neigh: $raw")
-                    out("netlink=" + (Netlink.neighbors()?.replace("\n", " | ")?.take(600) ?: "null"))
+                    val nl = Netlink.neighbors()
+                    out("netlink=" + (nl?.replace("\n", " | ")?.take(600) ?: "null"))
+                    // 確かめる前の数と、確かめる先（v0.10.1。切断した端末の古いエントリを数えないための確かめ）
+                    nl?.let { out("raw=${Parsers.countNeigh(it, iface)} targets=${NeighborCheck.targets(Parsers.entries(it, iface))}") }
                     // --ei prefix <長さ> で、範囲の長さを変えて小さな確認を試す（エミュレーターの eth0 は /8 で広すぎるため）
                     val prefix = intent.getIntExtra("prefix", 0)
                     if (prefix > 0 && iface != null) {

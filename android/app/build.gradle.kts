@@ -16,8 +16,8 @@ android {
 
     defaultConfig {
         applicationId = "local.tethering.dedicated"
-        versionCode = 11
-        versionName = "0.10.0"
+        versionCode = 12
+        versionName = "0.10.1"
     }
 
     // 対象の Android のバージョンごとに APK を分ける（TetheringDedicated-<版>_android10.apk / _android11.apk）。

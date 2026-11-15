@@ -201,56 +201,119 @@ object Clients {
     /** [ProbeScan] で数えたときの方法の表示 */
     private fun probeLabel() = tr("応答", "probe", "sondage")
 
+    /** 近隣テーブルの読み方（数えるときは、最初に読めた方法で、確かめたあとも読み直す） */
+    private enum class Source(val label: String) { NETLINK("netlink"), ARP("ARP"), IP_NEIGH("ip neigh") }
+
+    /** 試す順。Android 10 用の版は /proc/net/arp → ip neigh → netlink、Android 11・12 用の版は netlink → /proc/net/arp → ip neigh */
+    private fun sources(): List<Source> =
+        if (netlinkFirst) listOf(Source.NETLINK, Source.ARP, Source.IP_NEIGH) else listOf(Source.ARP, Source.IP_NEIGH, Source.NETLINK)
+
+    /** ip neigh が時間内に答えなかった（ほかの方法は試さずに「応答なし」にする） */
+    private class NoResponse : Exception()
+
     fun count(iface: String?, exclude: Set<String> = emptySet()): Pair<Int?, String> {
         val note = if (exclude.isEmpty()) "" else tr("・プラグを除く", ", plug excluded", ", prise exclue")
         if (way == Way.PROBE) {
             val present = ProbeScan.scan(iface) ?: return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
             return present.count { it !in exclude } to probeLabel() + note
         }
-        if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.countNeigh(it, iface, exclude) to "netlink$note" }
+        val (source, before) = try {
+            readFirst(iface)
+        } catch (_: NoResponse) {
+            return null to Fmt.NA + Fmt.paren(tr("応答なし", "no response", "pas de réponse"))
+        } ?: return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
+        return verifiedCount(source, iface, before, exclude) to source.label + note
+    }
+
+    /**
+     * 切断した端末のエントリを数えないよう、最近の確認がない端末を確かめてから数える（v0.10.1。issue #1。[NeighborCheck]）。
+     * 確かめる端末があるときは、問い合わせが終わるまで待つ（Linux の既定値でふつう 6〜9 秒）。待つのは [NeighborCheck.waitMs] までで、
+     * そのときまだ問い合わせ中なら終わるまで（最大 [NeighborCheck.LIMIT_WAIT_MS]）。/proc/net/arp は終わりが分からないので、いつも waitMs まで
+     */
+    private fun verifiedCount(source: Source, iface: String?, before: List<Parsers.Entry>, exclude: Set<String>): Int {
+        val targets = NeighborCheck.targets(before, exclude)
+        val failed = NeighborCheck.poke(targets)
+        val sent = targets.toSet() - failed
+        var after = before
+        val start = SystemClock.elapsedRealtime()
+        val until = start + NeighborCheck.waitMs(iface)
         try {
-            return Parsers.countArp(File("/proc/net/arp").readLines(), iface, exclude) to "ARP$note"
-        } catch (_: Exception) {
-            // Android 10 では読めない機種がある → 次の方法へ
-        }
-        try {
-            val p = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
-            if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                p.destroy()
-                return null to Fmt.NA + Fmt.paren(tr("応答なし", "no response", "pas de réponse"))
+            while (sent.isNotEmpty()) {
+                // 予定の時間を過ぎても、カーネルが問い合わせている途中なら終わるまで待つ（上限あり）
+                val now = SystemClock.elapsedRealtime()
+                if (now >= start + NeighborCheck.LIMIT_WAIT_MS || (now >= until && !NeighborCheck.probing(after, sent))) break
+                Thread.sleep(NeighborCheck.POLL_MS)
+                // 読めなくなったら、最後に読めたもので数える（確かめられなかった端末は数える）
+                after = readOrNull(source, iface) ?: break
+                if (NeighborCheck.settled(after, sent)) break
             }
-            val out = p.inputStream.bufferedReader().use { it.readText() }
-            if (p.exitValue() == 0) return Parsers.countNeigh(out, iface, exclude) to "ip neigh$note"
-        } catch (_: Exception) {
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         }
-        if (!netlinkFirst) Netlink.neighbors()?.let { return Parsers.countNeigh(it, iface, exclude) to "netlink$note" }
-        return null to Fmt.NA + Fmt.paren(tr("OSの制限", "system restriction", "restriction du système"))
+        return NeighborCheck.count(before, after, sent, failed, exclude)
     }
 
     /**
      * 接続端末の一覧（v0.9.0。テザリングの詳細の画面で、開いている間だけ読む。記録しない）。読めなければ null。UI スレッド以外で呼ぶ。
-     * [Way.PROBE] では MAC アドレスが分からない（mac は空）
+     * [Way.PROBE] では MAC アドレスが分からない（mac は空）。最近の確認がない端末は確かめさせる（待たない。画面は 5 秒ごとに読み直すので、
+     * 答えれば「接続中」になり、答えなければ一覧から消える）
      */
     fun list(iface: String?): List<Parsers.Neighbor>? {
         if (way == Way.PROBE) return ProbeScan.scan(iface)?.map { Parsers.Neighbor(it, "", Parsers.Neighbor.State.REACHABLE) }
-        if (netlinkFirst) Netlink.neighbors()?.let { return Parsers.neighbors(it, iface) }
-        try {
-            return Parsers.arpNeighbors(File("/proc/net/arp").readLines(), iface)
-        } catch (_: Exception) {
-            // Android 10 では読めない機種がある → 次の方法へ
-        }
-        try {
-            val p = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
-            if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                p.destroy()
-                return null
-            }
-            val out = p.inputStream.bufferedReader().use { it.readText() }
-            if (p.exitValue() == 0) return Parsers.neighbors(out, iface)
-        } catch (_: Exception) {
-        }
-        if (!netlinkFirst) Netlink.neighbors()?.let { return Parsers.neighbors(it, iface) }
+        val entries = readOrNull(iface) ?: return null
+        NeighborCheck.poke(NeighborCheck.targets(entries))
+        return Parsers.neighborsOf(entries)
+    }
+
+    /** 最初に読めた方法と、そのエントリ。どれでも読めなければ null（ip neigh が答えなければ [NoResponse]） */
+    private fun readFirst(iface: String?): Pair<Source, List<Parsers.Entry>>? {
+        for (s in sources()) read(s, iface)?.let { return s to it }
         return null
+    }
+
+    private fun readOrNull(iface: String?): List<Parsers.Entry>? = try {
+        readFirst(iface)?.second
+    } catch (_: NoResponse) {
+        null
+    }
+
+    private fun readOrNull(source: Source, iface: String?): List<Parsers.Entry>? = try {
+        read(source, iface)
+    } catch (_: NoResponse) {
+        null
+    }
+
+    /** [source] で読む。読めなければ null */
+    private fun read(source: Source, iface: String?): List<Parsers.Entry>? = when (source) {
+        Source.NETLINK -> Netlink.neighbors()?.let { Parsers.entries(it, iface) }
+        // Android 10 では読めない機種がある
+        Source.ARP -> runCatching { Parsers.arpEntries(File("/proc/net/arp").readLines(), iface) }.getOrNull()
+        Source.IP_NEIGH -> ipNeigh()?.let { Parsers.entries(it, iface) }
+    }
+
+    /** `ip neigh show` の出力。失敗したら null。3 秒で答えなければ [NoResponse] */
+    private fun ipNeigh(): String? {
+        val p = try {
+            ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
+        } catch (_: Exception) {
+            return null
+        }
+        val done = try {
+            p.waitFor(3, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            p.destroy()
+            return null
+        }
+        if (!done) {
+            p.destroy()
+            throw NoResponse()
+        }
+        return try {
+            p.inputStream.bufferedReader().use { it.readText() }.takeIf { p.exitValue() == 0 }
+        } catch (_: Exception) {
+            null
+        }
     }
 }
 

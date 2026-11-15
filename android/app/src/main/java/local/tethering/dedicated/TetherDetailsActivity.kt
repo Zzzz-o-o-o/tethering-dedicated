@@ -227,7 +227,8 @@ class TetherDetailsActivity : Activity() {
                     Ui.text(listBox, name ?: tr("名前なし", "No name", "Sans nom"), 15f, if (name == null) R.color.text_secondary else R.color.text_primary, bold = name != null)
                     val state = when (d.state) {
                         Parsers.Neighbor.State.REACHABLE -> tr("接続中", "Connected", "Connecté")
-                        Parsers.Neighbor.State.IDLE -> tr("接続中（しばらく通信なし）", "Connected (idle)", "Connecté (inactif)")
+                        // 答えるか確かめている途中（v0.10.1。答えれば「接続中」、答えなければ一覧から消える）
+                        Parsers.Neighbor.State.IDLE -> tr("確認中（しばらく通信なし）", "Checking (idle)", "Vérification (inactif)")
                         Parsers.Neighbor.State.GONE -> tr("離れた（応答なし）", "Left (no response)", "Parti (pas de réponse)")
                     }
                     val plug = if (d.ip in exclude) Fmt.paren(tr("スマートプラグ・数えない", "smart plug, not counted", "prise connectée, non comptée")) else ""
