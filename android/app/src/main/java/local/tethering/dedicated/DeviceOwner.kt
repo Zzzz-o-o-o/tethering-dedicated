@@ -56,26 +56,33 @@ object DeviceOwner {
  * 名前・パスワードは、ログ・設定のファイル保存・診断情報・管理画面には出さない
  */
 object HotspotConfig {
-    class Config(val ssid: String, val pass: String) {
+    /** [maxClients] は同時接続台数の上限（v0.11.0。0 = 制限しない） */
+    class Config(val ssid: String, val pass: String, val maxClients: Int = 0) {
         val valid: Boolean get() = check(ssid, pass) == null
     }
 
     private const val FILE = "hotspot_config"
     private const val KEY_SSID = "ssid"
     private const val KEY_PASS = "pass"
+    private const val KEY_MAX_CLIENTS = "max_clients"
 
     private fun store(ctx: Context) = ctx.applicationContext.createDeviceProtectedStorageContext().getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     /** 写しを読む（ロック解除前でも読める） */
-    fun load(ctx: Context): Config = store(ctx).let { Config(it.getString(KEY_SSID, "").orEmpty(), it.getString(KEY_PASS, "").orEmpty()) }
+    fun load(ctx: Context): Config = store(ctx).let {
+        Config(it.getString(KEY_SSID, "").orEmpty(), it.getString(KEY_PASS, "").orEmpty(), it.getInt(KEY_MAX_CLIENTS, 0))
+    }
 
     /** 設定の値を写す（設定を保存したとき・監視を始めたとき）。すぐ再起動しても読めるよう、すぐにファイルへ書く */
     @SuppressLint("ApplySharedPref")
     fun sync(ctx: Context, prefs: Prefs) {
         val ssid = prefs.text(Defs.AP_SSID)
         val pass = prefs.text(Defs.AP_PASS)
+        val max = prefs.int(Defs.AP_MAX_CLIENTS)
         val sp = store(ctx)
-        if (sp.getString(KEY_SSID, "") != ssid || sp.getString(KEY_PASS, "") != pass) sp.edit().putString(KEY_SSID, ssid).putString(KEY_PASS, pass).commit()
+        if (sp.getString(KEY_SSID, "") != ssid || sp.getString(KEY_PASS, "") != pass || sp.getInt(KEY_MAX_CLIENTS, 0) != max) {
+            sp.edit().putString(KEY_SSID, ssid).putString(KEY_PASS, pass).putInt(KEY_MAX_CLIENTS, max).commit()
+        }
     }
 
     /** 名前の誤り（正しければ null）。1〜32 バイト（UTF-8） */

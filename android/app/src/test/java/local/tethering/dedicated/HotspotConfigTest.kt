@@ -40,6 +40,16 @@ class HotspotConfigTest {
     }
 
     @Test
+    fun maxClientsIsAnOrdinarySetting() {
+        // 同時接続台数の上限（v0.11.0）。0 は制限しない（OS の既定のまま）
+        assertEquals(0, Defs.AP_MAX_CLIENTS.def)
+        assertEquals(0..32, Defs.AP_MAX_CLIENTS.min..Defs.AP_MAX_CLIENTS.max)
+        assertTrue(Defs.ints.contains(Defs.AP_MAX_CLIENTS))
+        assertFalse("秘密ではないので、設定のファイル保存に含める", Defs.secretKeys.contains(Defs.AP_MAX_CLIENTS.key))
+        assertEquals("写しにないときは制限しない", 0, HotspotConfig.Config("TD", "12345678").maxClients)
+    }
+
+    @Test
     fun settingsAllowEmptyAndStaySecret() {
         // 設定画面では空にできる（Android 15 以前では使わない）。入れたら確かめる
         assertNull(Defs.AP_SSID.check(""))

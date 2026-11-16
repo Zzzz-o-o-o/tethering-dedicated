@@ -235,6 +235,8 @@ object TetherControl {
             k.getMethod("setPassphrase", String::class.java, Int::class.javaPrimitiveType).invoke(b, c.pass, SECURITY_TYPE_WPA2_PSK)
             // テザリング専用機なので、接続がないときの自動 OFF はしない
             k.getMethod("setAutoShutdownEnabled", Boolean::class.javaPrimitiveType).invoke(b, false)
+            // 同時接続台数の上限（v0.11.0。0 は OS の既定＝制限しない）。付けられなくても、上限なしでテザリングは始める
+            if (c.maxClients > 0) runCatching { k.getMethod("setMaxNumberOfClients", Int::class.javaPrimitiveType).invoke(b, c.maxClients) }
         }
         return TetheringManager.TetheringRequest.Builder(TetheringManager.TETHERING_WIFI).setSoftApConfiguration(b.build()).build()
     }

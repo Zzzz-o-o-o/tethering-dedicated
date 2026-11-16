@@ -49,9 +49,16 @@
     端末にアカウントがあると失敗する（いったん削除し、管理アプリにしたあと追加し直せる）。
     やめるのはアプリの設定の「管理アプリをやめる」（-Restore では戻さない。管理アプリのままではアンインストールできない）
 
+  同時接続台数の上限（v0.11.0。Android 11（API 30）以降。Android 10 にはこの設定がない）:
+  - OS のアクセスポイントの設定（保存されたもの）の同時接続台数の上限を変える … -MaxClients <台数> を付けたときだけ（0 で制限なし）。
+    通常のアプリは変えられないので、補助プログラム（softap\td-softap.dex）を端末に一時的に送り、ADB のシェルの権限で動かす（終わったら消す）。
+    手で ON にしたテザリングにも効き、再起動しても残る。変更前の値を保存し、-Restore で戻す。Android 16 でこのアプリが ON にするときは、アプリの設定の値を使う。
+    Wi-Fi が接続端末の強制切断に対応していない端末では、OS が上限を外す（そのときは知らせる）
+  - 確認だけの実行でも、今の上限を表示する（そのため補助プログラムを一時的に送る）
+
 .EXAMPLE
   .\adb-setup.ps1                                   # 確認だけ（変更しない） / check only
-  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.10.1_android10.apk   # Android 11〜16 の端末には _android11.apk〜_android16.apk
+  .\adb-setup.ps1 -Install ..\TetheringDedicated-v0.11.0_android10.apk   # Android 11〜16 の端末には _android11.apk〜_android16.apk
   .\adb-setup.ps1 -Apply                            # 推奨値を適用（変更前の値を保存）
   .\adb-setup.ps1 -Apply -RestrictApps              # ほかのユーザーアプリもまとめてバックグラウンド制限
   .\adb-setup.ps1 -Apply -RestrictApps -KeepApps com.example.vpn,com.example.remote
@@ -59,6 +66,7 @@
   .\adb-setup.ps1 -Apply -AllowAutoSwitch           # 自動切り替え（バッテリーセーバー・Doze）の権限も付ける
   .\adb-setup.ps1 -Apply -AllowTetherControl        # 起動時のテザリング ON・時間帯スケジュールの許可も付ける（Android 15 まで）
   .\adb-setup.ps1 -SetDeviceOwner                   # Android 16: 端末の管理アプリにする（起動時のテザリング ON・時間帯スケジュール用）
+  .\adb-setup.ps1 -MaxClients 5                     # 同時接続台数の上限を 5 台にする（Android 11 以降。0 で制限なし）
   .\adb-setup.ps1 -Apply -EnableOffload             # ハードウェアアクセラレーションを有効に戻す（対応端末のみ）
   .\adb-setup.ps1 -Apply -IncludeOta                # システムの自動更新も止める（手動更新が前提）
   .\adb-setup.ps1 -Apply -ScreenOffSec 30           # PIN 等の画面ロックがあっても画面消灯を 30 秒にする
@@ -77,6 +85,7 @@ param(
     [switch]$AllowAutoSwitch,
     [switch]$AllowTetherControl,
     [switch]$SetDeviceOwner,
+    [ValidateRange(0, 32)][int]$MaxClients,
     [switch]$EnableOffload,
     [ValidateRange(15, 1800)][int]$ScreenOffSec = 30,
     [string]$Serial,
@@ -270,6 +279,48 @@ function Get-AccountCount {
     $n = 0
     foreach ($x in $m) { $n += [int]$x.Groups[1].Value }
     return $n
+}
+
+# 同時接続台数の上限（v0.11.0。Android 11 以降）。OS のアクセスポイントの設定（保存されたもの）を、ADB のシェルの権限で読み書きする。
+# 通常のアプリは変えられないので、補助プログラムを端末に一時的に送り、app_process で動かす（終わったら消す）
+$SoftApDex = Join-Path $PSScriptRoot 'softap\td-softap.dex'
+$SoftApRemote = '/data/local/tmp/td-softap.dex'
+
+# 補助プログラムを動かす（get / set <台数>）。結果は maxClients・result・error の表
+function Invoke-SoftApTool([string[]]$ToolArgs) {
+    if (-not (Test-Path $SoftApDex)) {
+        return @{ error = (T "補助プログラムがありません: $SoftApDex" "Helper not found: $SoftApDex" "Programme d'aide introuvable : $SoftApDex") }
+    }
+    $pushed = Invoke-Adb -Arguments @('push', $SoftApDex, $SoftApRemote) -AllowFail
+    try {
+        $out = Invoke-Adb -Arguments (@('shell', "CLASSPATH=$SoftApRemote", 'app_process', '/system/bin', 'local.tethering.dedicated.tools.SoftApTool') + $ToolArgs) -AllowFail
+    } finally {
+        Invoke-Adb -Arguments @('shell', 'rm', '-f', $SoftApRemote) -AllowFail | Out-Null
+    }
+    $r = @{}
+    foreach ($line in ($out -split "`n")) {
+        if ($line -match '^\s*(maxClients|result|error)=(.*)$') { $r[$Matches[1]] = $Matches[2].Trim() }
+    }
+    if ($r.Count -eq 0) { $r['error'] = (($pushed, $out) -join ' ').Trim() }
+    return $r
+}
+
+function Format-MaxClients($n) {
+    if ([int]$n -eq 0) { return (T "制限なし" "no limit" "aucune limite") }
+    return (T "$n 台" "$n device(s)" "$n appareil(s)")
+}
+
+# 保存データ（-Restore で戻す値）に 1 つ足す。すでにあれば最初の値を残す。保存データがなければ作る
+function Save-BackupValue([string]$Name, $Value) {
+    $b = $null
+    if (Test-Path $backupPath) { $b = Get-Content -Path $backupPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    if ($b -and $b.PSObject.Properties.Name -contains $Name -and $null -ne $b.$Name) { return }
+    if (-not $b) {
+        $b = [pscustomobject]@{ createdAt = (Get-Date).ToString('s'); serial = $script:DeviceSerial; model = $model; sdk = $sdk; settings = @(); apps = @() }
+    }
+    $b | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
+    $b | ConvertTo-Json -Depth 5 | Set-Content -Path $backupPath -Encoding UTF8
 }
 
 # テザリングのハードウェアアクセラレーション（オフロード）の HAL があるか（第 4 段階）。
@@ -473,6 +524,35 @@ if ($SetDeviceOwner) {
     }
 }
 
+if ($PSBoundParameters.ContainsKey('MaxClients')) {
+    if ($sdk -lt 30) {
+        Write-Warning (T "-MaxClients は Android 11（API 30）以降の端末用です（Android 10 にはこの設定がありません）。変更していません。" "-MaxClients is for Android 11 (API 30) and later (Android 10 has no such setting). Nothing was changed." "-MaxClients est prévu pour Android 11 (API 30) et ultérieur (Android 10 n'a pas ce réglage). Rien n'a été modifié.")
+    } else {
+        $before = Invoke-SoftApTool @('get')
+        if ($before.error) {
+            Write-Warning (T "同時接続台数の上限を読めませんでした（変更していません）: $($before.error)" "Couldn't read the maximum number of connected devices (nothing was changed): $($before.error)" "Impossible de lire le nombre maximal d'appareils connectés (rien n'a été modifié) : $($before.error)")
+        } else {
+            # 変更前の値を保存する（-Restore で戻す。2 回目以降も最初の値を残す）
+            Save-BackupValue 'softApMaxClients' ([int]$before.maxClients)
+            $r = Invoke-SoftApTool @('set', "$MaxClients")
+            $want = Format-MaxClients $MaxClients
+            if ($r.error) {
+                Write-Warning (T "同時接続台数の上限を変えられませんでした: $($r.error)" "Couldn't change the maximum number of connected devices: $($r.error)" "Impossible de modifier le nombre maximal d'appareils connectés : $($r.error)")
+            } elseif ($r.result -ne 'true') {
+                Write-Warning (T "OS が同時接続台数の上限の変更を受け付けませんでした（result=$($r.result)）。" "The system didn't accept the change (result=$($r.result))." "Le système n'a pas accepté la modification (result=$($r.result)).")
+            } elseif ([int]$r.maxClients -ne $MaxClients) {
+                $got = Format-MaxClients $r.maxClients
+                Write-Warning (T "OS が同時接続台数の上限を「$got」にしました（この端末の Wi-Fi が接続端末の強制切断に対応していないか、上限が大きすぎます）。" "The system set the maximum number of connected devices to $got (this phone's Wi-Fi may not support disconnecting devices, or the number is too large)." "Le système a réglé le nombre maximal d'appareils connectés sur $got (le Wi-Fi de ce téléphone ne permet peut-être pas de déconnecter les appareils, ou le nombre est trop grand).")
+            } else {
+                Write-Host (T "同時接続台数の上限を「$want」にしました（手で ON にしたテザリングにも効き、再起動しても残ります。戻すのは -Restore）。" "The maximum number of connected devices is now: $want (it also applies when you turn the hotspot on by hand, and stays after a reboot; undo with -Restore)." "Le nombre maximal d'appareils connectés est maintenant : $want (s'applique aussi au point d'accès activé à la main et reste après un redémarrage ; annulez avec -Restore).")
+                if ($sdk -ge 36) {
+                    Write-Host (T "Android 16 でこのアプリがテザリングを ON にするときは、アプリの設定の「同時接続台数の上限（Android 16）」を使います。" "On Android 16, when this app turns the hotspot on, it uses Maximum connected devices (Android 16) in the app's Settings." "Sur Android 16, quand l'application active le point d'accès, elle utilise Nombre maximal d'appareils connectés (Android 16) dans ses paramètres.")
+                }
+            }
+        }
+    }
+}
+
 if ($Restore) {
     if (-not (Test-Path $backupPath)) { throw (T "この端末の保存データがありません: $backupPath" "No saved data for this phone: $backupPath" "Aucune donnée enregistrée pour ce téléphone : $backupPath") }
     $b = Get-Content -Path $backupPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -533,6 +613,15 @@ if ($Restore) {
         Set-Setting 'global' 'device_idle_constants' $null
         Write-Host (T "戻しました: Doze の設定（アプリが早めたまま残っていたもの）" "Restored: Doze settings (left 'earlier' by the app)" "Rétabli : réglages Doze (laissés avancés par l'application)")
     }
+    if ($sdk -ge 30 -and $b.PSObject.Properties.Name -contains 'softApMaxClients' -and $null -ne $b.softApMaxClients) {
+        $r = Invoke-SoftApTool @('set', "$($b.softApMaxClients)")
+        $v = Format-MaxClients $b.softApMaxClients
+        if ($r.error -or $r.result -ne 'true') {
+            Write-Warning (T "同時接続台数の上限を戻せませんでした: $($r.error)" "Couldn't restore the maximum number of connected devices: $($r.error)" "Impossible de rétablir le nombre maximal d'appareils connectés : $($r.error)")
+        } else {
+            Write-Host (T "戻しました: 同時接続台数の上限（$v）" "Restored: maximum number of connected devices ($v)" "Rétabli : nombre maximal d'appareils connectés ($v)")
+        }
+    }
     if ($installed -and $sdk -ge 36 -and (Test-DeviceOwner)) {
         # 管理アプリをやめるのはアプリから（アプリにしかできない）
         Write-Host (T "端末の管理アプリはそのままです（やめるのは、アプリの設定の「管理アプリをやめる」）。" "The app is still the device owner (to undo it, use Stop being the device owner in the app's Settings)." "L'application reste propriétaire de l'appareil (pour l'annuler, utilisez Ne plus être propriétaire de l'appareil dans les paramètres de l'application).")
@@ -590,6 +679,8 @@ if ($Apply) {
         writeSettingsMode     = $ws
         autoRevokeMode        = $ar
         notifyGranted         = $nt
+        # -MaxClients で保存した値（v0.11.0）は引き継ぐ
+        softApMaxClients      = if ($old -and $old.PSObject.Properties.Name -contains 'softApMaxClients') { $old.softApMaxClients } else { $null }
     }
     New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
     $backup | ConvertTo-Json -Depth 5 | Set-Content -Path $backupPath -Encoding UTF8
@@ -730,6 +821,11 @@ $hal = if ($offloadHal) {
 Write-Host (T "  ハードウェアアクセラレーション: $accel（tether_offload_disabled = $raw） / オフロードの HAL: $hal" "  Hardware acceleration: $accel (tether_offload_disabled = $raw) / offload HAL: $hal" "  Accélération matérielle : $accel (tether_offload_disabled = $raw) / HAL de délestage : $hal")
 $bandText = if ($band) { $band } else { T "取得不可（アクセスポイントが OFF のときは読めません）" "N/A (can't be read while the hotspot is off)" "indisponible (illisible quand le point d'accès est arrêté)" }
 Write-Host (T "  アクセスポイントの帯域: $bandText（消費の差はアプリの比較テストで確かめられます）" "  Hotspot band: $bandText (compare power use with the app's comparison test)" "  Bande du point d'accès : $bandText (comparez la consommation avec le test comparatif de l'application)")
+if ($sdk -ge 30) {
+    $mc = Invoke-SoftApTool @('get')
+    $mcText = if ($mc.error) { T "読めません（$($mc.error)）" "N/A ($($mc.error))" "indisponible ($($mc.error))" } else { Format-MaxClients $mc.maxClients }
+    Write-Host (T "  同時接続台数の上限（OS の設定）: $mcText（変えるのは -MaxClients <台数>。0 で制限なし）" "  Maximum connected devices (system setting): $mcText (change it with -MaxClients <number>; 0 for no limit)" "  Nombre maximal d'appareils connectés (réglage du système) : $mcText (modifiez-le avec -MaxClients <nombre> ; 0 pour aucune limite)")
+}
 Write-Host ''
 
 if ($userApps.Count -gt 0) {
@@ -762,4 +858,4 @@ if ($Install) {
     elseif ($sdk -ge 33) { Write-Host (T "アプリを起動しました。端末の画面で「電話」と「通知」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone and Notifications permissions and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et « Notifications », ainsi que l'exemption d'optimisation de la batterie.") }
     else { Write-Host (T "アプリを起動しました。端末の画面で「電話」の権限と、電池の最適化からの除外を許可してください。" "App started. On the phone, allow the Phone permission and the battery optimization exemption." "Application démarrée. Sur le téléphone, autorisez « Téléphone » et l'exemption d'optimisation de la batterie.") }
 }
-if (-not $Apply -and -not $Install -and -not $SetDeviceOwner) { Write-Host (T "確認のみです（変更していません）。適用は -Apply、元に戻すのは -Restore。" "Check only (nothing was changed). Apply with -Apply, undo with -Restore." "Vérification seulement (rien n'a été modifié). Appliquez avec -Apply, annulez avec -Restore.") }
+if (-not $Apply -and -not $Install -and -not $SetDeviceOwner -and -not $PSBoundParameters.ContainsKey('MaxClients')) { Write-Host (T "確認のみです（変更していません）。適用は -Apply、元に戻すのは -Restore。" "Check only (nothing was changed). Apply with -Apply, undo with -Restore." "Vérification seulement (rien n'a été modifié). Appliquez avec -Apply, annulez avec -Restore.") }

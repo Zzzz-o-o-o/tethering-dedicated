@@ -11,6 +11,7 @@ import android.content.pm.ApplicationInfo
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.nfc.NfcAdapter
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -200,6 +201,9 @@ class GuideActivity : Activity() {
     } else {
         tr(ja, " $en", " $fr")
     }
+
+    /** 同時接続台数の上限の表示（0 は制限しない） */
+    private fun limitText(n: Int) = if (n == 0) tr("制限なし", "no limit", "aucune limite") else tr("${n}台", "$n device(s)", "$n appareil(s)")
 
     /** Android 16 のときだけ説明に足す文（英語・フランス語は前に空白を入れてつなぐ） */
     private fun only16(ja: String, en: String, fr: String) = if (DeviceOwner.required) tr(ja, " $en", " $fr") else ""
@@ -736,6 +740,43 @@ class GuideActivity : Activity() {
                     openExperiment() to { a -> a.startActivity(Intent(a, ExperimentActivity::class.java)) },
                 ),
                 "adb shell dumpsys wifi | findstr apBand\n" + tr("（0 = 2.4GHz、1 = 5GHz、-1 = 自動）", "(0 = 2.4 GHz, 1 = 5 GHz, -1 = auto)", "(0 = 2,4 GHz, 1 = 5 GHz, -1 = auto)"),
+            ),
+            Item(
+                tr("同時接続台数の上限（Android 11 以降）", "Maximum connected devices (Android 11+)", "Nombre maximal d'appareils connectés (Android 11+)"),
+                if (DeviceOwner.required) tags(apk(), adbSetup()) else tags(adbSetup()),
+                { c ->
+                    when {
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> tr("Android 10 にはこの設定がありません", "Not available on Android 10", "Indisponible sur Android 10") to Level.INFO
+                        DeviceOwner.required -> limitText(Prefs(c).int(Defs.AP_MAX_CLIENTS)).let {
+                            tr("このアプリが ON にするとき: $it", "When this app turns it on: $it", "Quand l'application l'active : $it")
+                        } to Level.INFO
+                        else -> tr(
+                            "アプリからは読めません（PC の tools\\adb-setup.bat で表示・設定します）", "Can't be read by the app (shown and set by tools\\adb-setup.bat on a PC)",
+                            "Illisible par l'application (affiché et réglé par tools\\adb-setup.bat sur un PC)",
+                        ) to Level.INFO
+                    }
+                },
+                tr("使う端末の数に合わせる（任意）", "Match the number of devices you use (optional)", "Selon le nombre d'appareils utilisés (facultatif)"),
+                tr(
+                    "同時につなげる端末の数を制限すると、知らない端末がつないでも、通信量と消費が増えすぎません。超えた端末はつながりません。" +
+                        "Android 11〜15 では、アプリから OS の設定を変えられないので、PC の tools\\adb-setup.bat -MaxClients で OS のアクセスポイントの設定に書き込みます（再起動しても残り、手で ON にしたときも効きます）。" +
+                        "Android 16 では、このアプリが ON にするときは設定の「テザリング」の値、手で ON にするときは PC で書き込んだ値を使います。" +
+                        "Wi-Fi が接続端末の強制切断に対応していない端末では、OS が上限を外します（PC のスクリプトが知らせます）。",
+                    "Limiting how many devices can connect at the same time keeps data use and power from growing if other devices join. Extra devices can't connect. " +
+                        "On Android 11 to 15, the app can't change the system setting, so tools\\adb-setup.bat -MaxClients on a PC writes it into the system's hotspot settings (it stays after a reboot and also applies when you turn the hotspot on by hand). " +
+                        "On Android 16, the value under “Tethering” in Settings is used when this app turns the hotspot on, and the value written from the PC when you turn it on by hand. " +
+                        "On phones whose Wi-Fi can't disconnect devices, the system removes the limit (the PC script tells you).",
+                    "Limiter le nombre d'appareils connectés en même temps évite que la consommation de données et d'énergie augmente si d'autres appareils se connectent. Les appareils en trop ne peuvent pas se connecter. " +
+                        "Sur Android 11 à 15, l'application ne peut pas modifier le réglage du système : tools\\adb-setup.bat -MaxClients sur un PC l'écrit dans les paramètres du point d'accès du système (il reste après un redémarrage et s'applique aussi quand vous activez le point d'accès à la main). " +
+                        "Sur Android 16, la valeur de « Partage de connexion » dans les paramètres sert quand l'application active le point d'accès, et la valeur écrite depuis le PC quand vous l'activez à la main. " +
+                        "Sur les téléphones dont le Wi-Fi ne peut pas déconnecter les appareils, le système retire la limite (le script PC vous le signale).",
+                ),
+                if (DeviceOwner.required) {
+                    listOf(openSettingsApp() to { a -> a.startActivity(Intent(a, SettingsActivity::class.java)) })
+                } else {
+                    listOf(tr("アクセスポイントの設定を開く", "Open hotspot settings", "Ouvrir les paramètres du point d'accès") to { a -> SystemScreens.hotspot(a) })
+                },
+                "tools\\adb-setup.bat -MaxClients 5\n" + tr("（0 で制限なし。戻す: -Restore）", "(0 for no limit; undo: -Restore)", "(0 pour aucune limite ; annuler : -Restore)"),
             ),
             Item(
                 tr("テザリングのハードウェアアクセラレーション", "Tethering hardware acceleration", "Accélération matérielle du partage de connexion"), tags(manual(), adbSetup(), verify()),

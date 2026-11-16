@@ -64,6 +64,20 @@ class SettingsActivity : Activity() {
             page, tr("テザリング", "Tethering", "Partage de connexion"), emptyList(),
             bools = listOf(Defs.TETHER_EXPECTED, Defs.CLIENTS, Defs.DEVICE_LIST, Defs.TETHER_ON_BOOT), texts = apTexts, boolsFirst = true,
         ).also { c ->
+            // 同時接続台数の上限（v0.11.0）。Android 16 は、このアプリが ON にするときに付ける（名前とパスワードのあと）。
+            // Android 11〜15 はアプリから OS に反映できないので、PC から設定する方法を案内する
+            if (DeviceOwner.required) {
+                addInt(c, Defs.AP_MAX_CLIENTS)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Ui.small(
+                    c,
+                    tr(
+                        "同時接続台数の上限は、Android 11〜15 ではアプリから設定できません（OS の設定を変えられるのはシステムの権限だけのため）。PC の tools\\adb-setup.bat -MaxClients <台数> で設定します（0 で制限なし）。",
+                        "On Android 11 to 15, the maximum number of connected devices can't be set from the app (only system permissions can change that setting). Set it from a PC with tools\\adb-setup.bat -MaxClients <number> (0 for no limit).",
+                        "Sur Android 11 à 15, le nombre maximal d'appareils connectés ne peut pas être réglé depuis l'application (seules les autorisations du système peuvent modifier ce réglage). Réglez-le depuis un PC avec tools\\adb-setup.bat -MaxClients <nombre> (0 pour aucune limite).",
+                    ),
+                )
+            }
             Ui.spacer(c, 4)
             bootStatus = Ui.small(c, "")
             tetherControlButtons(c)

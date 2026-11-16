@@ -1,4 +1,4 @@
-# テザリング専用化（Android 10〜16 用） v0.10.1
+# テザリング専用化（Android 10〜16 用） v0.11.0
 
 Android 10 のスマホを、304ZT のような「テザリング専用機」として長期運用するための監視・管理アプリです。
 OS 標準のテザリング機能はそのまま使い、**状態の見える化・異常の早期検知・記録・設定の案内**を行います（仕様: `Android_テザリング専用化_機能一覧.md`）。
@@ -8,15 +8,16 @@ root 化は不要です。キャリアの設定には手を加えません。OS 
 
 | パス | 内容 |
 |---|---|
-| `TetheringDedicated-v0.10.1_android10.apk` | Android 10 用のインストール用（署名済み・約 740 KB・targetSdk 29。日本語・英語・フランス語）。GitHub の Releases にも置く |
-| `TetheringDedicated-v0.10.1_android11.apk` | Android 11 用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 30。Android 10 には入らない）。→「Android 11 用の版」 |
-| `TetheringDedicated-v0.10.1_android12.apk` | Android 12（12L も）用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 31。Android 11 以前には入らない）。→「Android 12 用の版」 |
-| `TetheringDedicated-v0.10.1_android13.apk` | Android 13 用のインストール用（署名済み・約 730 KB・minSdk／targetSdk 33。Android 12L 以前には入らない）。→「Android 13 用の版」 |
-| `TetheringDedicated-v0.10.1_android14.apk` | Android 14 用のインストール用（署名済み・約 730 KB・minSdk／targetSdk 34。Android 13 以前には入らない）。→「Android 14 用の版」 |
-| `TetheringDedicated-v0.10.1_android15.apk` | Android 15 用のインストール用（署名済み・約 730 KB・minSdk／targetSdk 35。Android 14 以前には入らない）。→「Android 15 用の版」 |
-| `TetheringDedicated-v0.10.1_android16.apk` | Android 16 用のインストール用（署名済み・約 720 KB・minSdk／targetSdk 36。Android 15 以前には入らない）。→「Android 16 用の版」 |
+| `TetheringDedicated-v0.11.0_android10.apk` | Android 10 用のインストール用（署名済み・約 750 KB・targetSdk 29。日本語・英語・フランス語）。GitHub の Releases にも置く |
+| `TetheringDedicated-v0.11.0_android11.apk` | Android 11 用のインストール用（署名済み・約 750 KB・minSdk／targetSdk 30。Android 10 には入らない）。→「Android 11 用の版」 |
+| `TetheringDedicated-v0.11.0_android12.apk` | Android 12（12L も）用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 31。Android 11 以前には入らない）。→「Android 12 用の版」 |
+| `TetheringDedicated-v0.11.0_android13.apk` | Android 13 用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 33。Android 12L 以前には入らない）。→「Android 13 用の版」 |
+| `TetheringDedicated-v0.11.0_android14.apk` | Android 14 用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 34。Android 13 以前には入らない）。→「Android 14 用の版」 |
+| `TetheringDedicated-v0.11.0_android15.apk` | Android 15 用のインストール用（署名済み・約 740 KB・minSdk／targetSdk 35。Android 14 以前には入らない）。→「Android 15 用の版」 |
+| `TetheringDedicated-v0.11.0_android16.apk` | Android 16 用のインストール用（署名済み・約 730 KB・minSdk／targetSdk 36。Android 15 以前には入らない）。→「Android 16 用の版」 |
 | `tools/adb-setup.bat` / `adb-setup.ps1` | ADB 事前設定（確認・適用・元に戻す・インストール） |
 | `tools/backup/` | ADB 事前設定を適用する前の値（端末ごとに保存） |
+| `tools/softap/` | PC のスクリプトが端末で動かす補助プログラム（同時接続台数の上限。`SoftApTool.java` と、それを dex にした `td-softap.dex`、作るための `build-dex.ps1`） |
 | `android/` | ソース（Kotlin・外部ライブラリなし）と単体テスト |
 | `.github/` | GitHub Actions の自動テスト（`workflows/ci.yml`）と不具合の報告のひな形（`ISSUE_TEMPLATE/`） |
 | `LICENSE` | MIT License |
@@ -39,7 +40,7 @@ APK だけでも、機能は減りません（Android 15 まで）。PC の ADB 
 1. スマホで「USB デバッグ」を有効にして PC に接続します。
 2. PC で次を実行します（インストール → ADB 事前設定 → アプリ起動）。
    ```
-   tools\adb-setup.bat -Install TetheringDedicated-v0.10.1_android10.apk -Apply
+   tools\adb-setup.bat -Install TetheringDedicated-v0.11.0_android10.apk -Apply
    ```
    （Android 11 の端末には `_android11.apk`、Android 12 には `_android12.apk`、Android 13 には `_android13.apk`、Android 14 には `_android14.apk`、Android 15 には `_android15.apk`、Android 16 には `_android16.apk`。合わない組み合わせはスクリプトが知らせます）
    ほかのユーザーアプリもまとめて制限する場合は `-RestrictApps`、バッテリー駆動中の自動切り替えを使う場合は `-AllowAutoSwitch`、起動時のテザリング ON・時間帯スケジュール・通信量の上限で止めるのを使う場合は `-AllowTetherControl`（Android 16 では代わりに `-SetDeviceOwner`）を付けます（→「ADB 事前設定」）。
@@ -299,6 +300,16 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 - **一覧**：最近の確認がない端末は、画面を開いている間（5 秒ごと）に同じく確かめさせる（待たない）。その間は「確認中（しばらく通信なし）」（これまでの「接続中（しばらく通信なし）」）と出し、答えれば「接続中」、答えなければ一覧から消える。IPv6 の古いエントリしかない端末は出さない。
 - 数えるのはチェックのとき（定期・状態の変化。タイルや管理画面は最後のチェックの値）なので、チェックが確かめの分（ふつう 6〜9 秒）だけ長くなる（チェックは別のスレッドで、画面は止まらない）。
 
+### 同時接続台数の上限（v0.11.0）
+
+利用者の依頼で、Android 11〜16 に同時接続台数の上限（`SoftApConfiguration.Builder.setMaxNumberOfClients()`）を付けられるようにしました（Android 10 にはこの設定がない）。
+
+- **アプリだけでは Android 11〜15 に反映できない**：上限を OS に反映する方法は、OS のアクセスポイントの設定に保存する（`WifiManager.setSoftApConfiguration()`。システムの権限 NETWORK_SETTINGS か OVERRIDE_WIFI_CONFIG が要る）か、テザリングを始める依頼に設定を付ける（Android 16 から）かの 2 つ。通常のアプリが使えるのは後者だけで、それも Android 16 の端末の管理アプリの方式に限る。利用者に示し、利用者の選択で「Android 16 はアプリ、Android 11〜15 は PC」にした。
+- **Android 16（アプリ）**：設定の「テザリング」に「同時接続台数の上限（Android 16）」（`ap_max_clients`。0〜32、0 = 制限しない）を足した。このアプリが ON にするときの `SoftApConfiguration` に `setMaxNumberOfClients` を付ける（リフレクション。付けられなくても、上限なしで ON にする）。起動時の ON のため、名前・パスワードと同じく端末暗号化の領域の写し（`hotspot_config`）にも置く。秘密ではないので、設定のファイル保存には含める。
+- **Android 11〜16（PC）**：ADB のシェル（`com.android.shell`）は NETWORK_SETTINGS を持つ（AOSP の Shell のマニフェストで確認）。`cmd wifi` には上限を変える命令がない（アクセスポイントの命令は root だけ）ので、補助プログラム `tools/softap/SoftApTool.java`（dex にしたものが `td-softap.dex`。`build-dex.ps1` で作る）を端末に一時的に送り、`app_process` でシェルの権限で動かす。OS の内部の仕組み（`IWifiManager` の `getSoftApConfiguration`・`setSoftApConfiguration`）をリフレクションで呼び、保存された設定のコピーに上限だけを付けて保存する（名前・パスワードなどは変えず、表示もしない）。手で ON にしたテザリングにも効き、再起動しても残り、ON のままでもすぐ反映される。PC のスクリプトの `-MaxClients <台数>` で使い、変更前の値を保存データ（`softApMaxClients`）に残して `-Restore` で戻す。確認だけの実行でも今の上限を出す（そのため補助プログラムを一時的に送り、終わったら消す）。
+- **対応していない端末**：Wi-Fi が接続端末の強制切断に対応していない端末（と、メーカーの設定で戻す端末）では、OS が上限を 0 に戻す（AOSP の `WifiApConfigStore.resetToDefaultForUnsupportedConfig`）。アプリからは対応しているか分からない（`cmd wifi get-softap-supported-features` は、エミュレーターでは何も出さなかった）。PC のスクリプトは、書き込んだあと読み直して違えば知らせる。
+- 設定ガイドに「同時接続台数の上限（Android 11 以降）」を足した（Android 16 はアプリの値、Android 11〜15 は PC の命令の案内）。Android 11〜15 の設定の「テザリング」にも、PC での設定方法を出す。
+
 ## 初期値（仕様「9. 実装前に決めること」への回答）
 
 どれも「設定」画面で変更できます。
@@ -343,6 +354,7 @@ Android は再起動のあと、テザリングを必ず OFF で始めます。�
 | `adb-setup.bat -Apply -RestrictApps` | 上に加えて、このアプリ以外のユーザーアプリをバックグラウンド制限（F-40）。`-KeepApps パッケージ名,…` で除外 |
 | `adb-setup.bat -Apply -AllowAutoSwitch` | 上に加えて、このアプリに「設定変更の権限」（WRITE_SECURE_SETTINGS）を付ける（F-42 の自動切り替え用） |
 | `adb-setup.bat -Apply -AllowTetherControl` | 上に加えて、このアプリに「システム設定の変更」（WRITE_SETTINGS）を許可する（起動時のテザリング ON と F-37 の時間帯スケジュール用。端末の設定画面からも許可できます。Android 15 まで） |
+| `adb-setup.bat -MaxClients <台数>` | Android 11 以降：OS のアクセスポイントの設定の同時接続台数の上限を変える（0 で制限なし。補助プログラム `tools/softap/td-softap.dex` を一時的に送って、ADB のシェルの権限で動かす。変更前の値を保存し、`-Restore` で戻す） |
 | `adb-setup.bat -SetDeviceOwner` | Android 16：このアプリを端末の管理アプリにする（テザリングの切り替えに要る。アカウントが 0 件のときだけ実行する。やめるのはアプリの設定の「管理アプリをやめる」で、`-Restore` では戻さない） |
 | `adb-setup.bat -Apply -EnableOffload` | 上に加えて、テザリングのハードウェアアクセラレーションを有効に戻す（`tether_offload_disabled=0`。オフロードの HAL がある端末だけ） |
 | `adb-setup.bat -Lang en`（`fr`・`ja`） | 表示の言語を指定する（既定は PC の表示言語。日本語・フランス語以外は英語）。どの組み合わせにも付けられます |
@@ -802,6 +814,21 @@ Android 13 エミュレーター（API 33）。近隣テーブルに、いない
 
 単体テストは各版 158 件（確かめる先の決め方・終わりの判定・数え方・待つ時間・一覧の 12 件を足した）。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く）。
 
+### v0.11.0（同時接続台数の上限）の確認（2026-11-16）
+
+Android 11（API 30）と Android 16（API 36）のエミュレーター。**実機ではまだ確かめていません**（端末を実際に何台もつないで、上限を超えた端末が断られることも、まだ確かめていません）。
+
+| 項目 | 結果 |
+|---|---|
+| 補助プログラム（ADB のシェルの権限・root なし） | ✓ Android 11・16 とも、読み取り（`maxClients=0`）・書き込み（`set` → `result=true`・読み直して同じ値）ができた |
+| 手で ON にしたテザリング | ✓ Android 16 は `dumpsys wifi` の動作中の設定・保存された設定とも MaxClient = 3。Android 11 は SoftApManager の記録に MaxClient=2。どちらも OS が 0 に戻した回数は 0（エミュレーターのハードウェアの上限は 16 台） |
+| ON のまま変える | ✓ Android 11 で、テザリングを止めずに 5 → 2 がすぐ反映された |
+| PC のスクリプト | ✓ `-MaxClients 4`（Android 16・日本語）・`-MaxClients 5`（Android 11・フランス語）で変更と表示。`-Restore` で変更前の値（3・2）に戻った。`-Apply -MaxClients 0` でも、変更前の値が保存データに引き継がれた |
+| Android 16 のアプリ | ✓ 端末の管理アプリにし、設定の上限を 2 にしてアプリから ON → 動作中の設定が MaxClient = 2（名前・自動 OFF なしもアプリの設定どおり）。設定画面の「Maximum connected devices (Android 16)」はパスワードの下に出た |
+| Android 11 のアプリ | ✓ 設定の「テザリング」に PC での設定方法の案内、設定ガイドに「同時接続台数の上限（Android 11 以降）」（ADB事前設定・アプリからは読めない） |
+
+単体テストは各版 159 件。lint のエラー・警告なし（Gradle・compileSdk の新版案内を除く）。
+
 ## 受け入れテスト（仕様 8 章）
 
 - [x] 画面を消灯しても Wi-Fi テザリングが維持される — 実機で、画面ロック中もテザリング ON のまま監視が続くことを確認（アプリはテザリングに触れない）
@@ -923,8 +950,16 @@ Android 13 エミュレーター（API 33）。近隣テーブルに、いない
 - [x] Android 13 以降の小さな確認でも、切断した端末を 1 回目から数えない — エミュレーター
 - [ ] 実機（Android 10。UMIDIGI A9 Pro）で、端末が離れたあとの台数を確かめる（まだ）
 
+### 同時接続台数の上限（v0.11.0。この README で決めた確認項目）
+
+- [x] Android 16 で、このアプリが ON にするテザリングに上限が付く（起動時の ON も同じ依頼を使う。上限は写しにも置く） — エミュレーター（アプリから ON）
+- [x] Android 11〜16 で、PC から OS のアクセスポイントの設定に上限を書き込め、手で ON にしたテザリングに効く。変更前の値を保存して `-Restore` で戻せる — エミュレーター
+- [x] 対応していない端末では知らせる（書き込んだあと読み直して違えば警告） — PC のスクリプト（エミュレーターは対応していたので、警告の表示は未確認）
+- [ ] 実機で、上限を超えた端末が断られることを確かめる（まだ）
+
 ## 既知の制約
 
+- **同時接続台数の上限**（v0.11.0）は、Android 11〜15 では PC からしか設定できません（アプリには OS の権限がないため）。PC のスクリプトは OS の内部の仕組み（IWifiManager）を使うので、将来の Android で使えなくなることがあります。Wi-Fi が接続端末の強制切断に対応していない端末では、OS が上限を外します。Android 16 では、手で ON にしたテザリングは PC で書き込んだ値、このアプリが ON にしたものはアプリの設定の値を使います。
 - **Android 16 用の版も、エミュレーターでしか確かめていません**（Android 16 の実機がないため）。Android 16 では、テザリングを切り替える機能（起動時の ON・時間帯スケジュール・上限で止める・タイル・「今すぐ ON にする」）は、このアプリを端末の管理アプリにしないと使えません（PC から 1 回。そのとき端末にアカウントがないことが条件。メーカーによっては、Xiaomi の「USB デバッグ（セキュリティ設定）」のような設定も要ることがあります）。止められるのはアプリが ON にしたテザリングだけで、アプリが ON にするときは、アプリに入れた名前とパスワード・2.4GHz・WPA2 になります（OS の帯域やセキュリティの設定は読めないため）。名前とパスワードは、起動時の ON のために、ロック解除前にも読める端末暗号化の領域にも置きます（アプリの中だけ）。管理アプリは強い役割なので（このアプリが使うのはテザリングの切り替えだけ）、使うかどうかは利用者が決めます。
 - **Android 15 用の版も、エミュレーターでしか確かめていません**（Android 15 の実機がないため）。Android 15 では、使わないアプリをアーカイブする仕組みも加わったので、「使用していないアプリを管理する」を OFF にしてください（「はじめの設定」の 1）。画面の端から端までの表示への対処は、すべての画面で共通の部品（`Ui.page`）で行っています（メーカーの改変でバーの形が違う端末は未確認）。
 - **Android 14 用の版も、エミュレーターでしか確かめていません**（Android 14 の実機がないため）。Android 14 では、電池の最適化の対象外にしないと正確なアラームが使えず、定期チェックや起動時の ON のやり直しが数分遅れることがあります（「はじめの設定」の 2、または PC の `-Apply` で対象外にすれば使える）。常駐の通知は利用者が消せます（監視は続く）。
@@ -966,7 +1001,7 @@ Android 13 エミュレーター（API 33）。近隣テーブルに、いない
 - **更新**：`adb install -r <新しい apk>`。同じ署名鍵が必要です：`android/keystore/release.jks` と `android/keystore.properties` を必ず保管してください（`.gitignore` 済み。GitHub などに上げないこと）。
   - Android CLI の `android install` で入れた場合、アプリが「停止状態」になり、更新後の自動再開と**再起動後の自動開始が働かない**ことがありました。そのときはアプリを一度開いてください（`adb shell am start -n local.tethering.dedicated/.MainActivity`）。
 - **アンインストール**：`adb uninstall local.tethering.dedicated` のあと、必要なら `tools\adb-setup.bat -Restore` で ADB 事前設定を戻します。
-- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 7 つあり、`app/build/outputs/apk/android10/release/`〜`…/android16/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android16.apk` に名前を変えて置く。v0.10.1 では 7 つとも、接続端末の数え方の修正（issue #1）の時点で作り直した。v0.10.0 の APK は GitHub の Releases の v0.10.0 に残る）。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid16DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid16Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用・14 用・15 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58・626077c・d12d264 の時点で作ったものです（Android 12〜15 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する）。Android 15 用の版で足した画面の重なりへの対処・案内・診断情報の表示は、Android 15 以降でだけ働く。Android 16 用の版で足した端末の管理アプリの処理・Android 16 の画面の文・Android 15 以前用の版を Android 16 に入れたときの案内は、Android 16 でだけ働く。ただし Android 10〜15 用の APK は作り直していないので、配布中の Android 15 以前用の APK を Android 16 に入れると、案内は出ず、切り替えは「OS がテザリングの開始を断りました」で失敗する）。
+- **ビルド**：`android` フォルダで `gradlew assembleRelease`（JDK 21・Android SDK 36）。v0.10.0 から版が 7 つあり、`app/build/outputs/apk/android10/release/`〜`…/android16/release/` にできます（それぞれ `TetheringDedicated-<版>_android10.apk`〜`_android16.apk` に名前を変えて置く。v0.10.1 では 7 つとも、接続端末の数え方の修正（issue #1）の時点で作り直した。v0.10.0 の APK は GitHub の Releases の v0.10.0 に残る。v0.11.0 でも、同時接続台数の上限を足した時点で 7 つとも作り直した）。PC のスクリプトの補助プログラム `tools/softap/td-softap.dex` は、`tools/softap/build-dex.ps1`（JDK の javac と build-tools の d8）で作り直せます。単体テストは `gradlew testAndroid10DebugUnitTest` 〜 `testAndroid16DebugUnitTest`、lint は `gradlew lintAndroid10Debug` 〜 `lintAndroid16Debug`（版ごとにタスクが分かれる）。GitHub に push すると、GitHub Actions がすべての版の単体テスト・lint・debug ビルドを行います（v0.10.0。結果はリポジトリの Actions タブ）。Android 10 用・11 用・12 用・13 用・14 用・15 用の APK は、それぞれコミット 9caccdb・7181fa5・4bc6c3f・55bfa58・626077c・d12d264 の時点で作ったものです（Android 12〜15 用の版で足した処理は、ほとんどが新しい Android だけで働く。Android 13 用の版で足した「通知が OFF です」の「要確認」と、直した「要確認」の表示の不具合は、どの Android でも働くが、Android 10〜12 用の APK は作り直していないので入っていない。Android 14 用の版で直した、正確なアラームが使えないときの起動時の ON のやり直しも、Android 10〜13 用の APK には入っていない（Android 13 用の APK を Android 14 で、電池の最適化の対象のまま使うときだけ影響する）。Android 15 用の版で足した画面の重なりへの対処・案内・診断情報の表示は、Android 15 以降でだけ働く。Android 16 用の版で足した端末の管理アプリの処理・Android 16 の画面の文・Android 15 以前用の版を Android 16 に入れたときの案内は、Android 16 でだけ働く。ただし Android 10〜15 用の APK は作り直していないので、配布中の Android 15 以前用の APK を Android 16 に入れると、案内は出ず、切り替えは「OS がテザリングの開始を断りました」で失敗する）。
   - debug ビルドだけに、検証用の `DebugReceiver` が入ります（PC から `adb shell am broadcast -n local.tethering.dedicated/.DebugReceiver -a tether_probe` などで機能を直接呼ぶ。リリース版の APK には入りません）。v0.10.0 で、接続端末の読み取り方を確かめる `clients`（`--es iface <名前>` で数えるインターフェースを変えられる）、見えるアプリの数を出す `pkgs`、アプリが使う OS の設定値を 1 つずつ読めるか確かめる `settings_read` を足しました。Android 13 用の版で、`clients` に `--ei prefix <長さ>`（範囲の長さを変えて小さな確認を試す。エミュレーターの eth0 は /8 で広すぎるため）と、通知を出せるかを読む `notify_state` を足しました。Android 14 用の版で、アクセスポイントの状態を OS に直接尋ねる `ap_state` を足しました。Android 16 用の版で、管理アプリの状態を出す `owner` を足し、`set_pref` ではアクセスポイントの名前とパスワードの写しも作るようにしました。`DebugReceiver` はロック解除前にも呼べます（`directBootAware`）。v0.10.1 で、`clients` に確かめる前の数（`raw`）と確かめる先（`targets`）を足しました。
 
 ## この端末で行った ADB 事前設定（2026-10-16）

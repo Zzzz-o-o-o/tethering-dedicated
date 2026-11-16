@@ -57,6 +57,7 @@ private object U {
     val DB = Tx("dB", " dB", " dB")
     val GB = Tx("GB", " GB", " Go")
     val DAY_OF_MONTH = Tx("日", "", "")
+    val DEVICES = Tx("台", " devices", " appareils")
 }
 
 /**
@@ -557,12 +558,27 @@ object Defs {
         { s -> if (s.isEmpty()) null else HotspotConfig.checkPass(s) }, secret = true,
     )
 
+    /** 同時接続台数の上限（v0.11.0。Android 16 で、このアプリがテザリングを ON にするとき。0 = 制限しない） */
+    val AP_MAX_CLIENTS = IntDef(
+        "ap_max_clients",
+        Tx("同時接続台数の上限（Android 16）", "Maximum connected devices (Android 16)", "Nombre maximal d'appareils connectés (Android 16)"),
+        0, 0, 32, U.DEVICES,
+        Tx(
+            "このアプリがテザリングを ON にするとき、同時につなげる端末の数を制限します（0 = 制限しない）。超えた端末はつながりません。" +
+                "Wi-Fi が対応していない端末では、OS が制限を外します。手で ON にするときの上限は、PC の tools\\adb-setup.bat -MaxClients で設定します",
+            "Limits how many devices can connect at the same time when this app turns the hotspot on (0 = no limit). Extra devices can't connect. " +
+                "On phones whose Wi-Fi doesn't support it, the system removes the limit. For a hotspot turned on by hand, set the limit from a PC with tools\\adb-setup.bat -MaxClients",
+            "Limite le nombre d'appareils connectés en même temps quand l'application active le point d'accès (0 = aucune limite). Les appareils en trop ne peuvent pas se connecter. " +
+                "Sur les téléphones dont le Wi-Fi ne le prend pas en charge, le système retire la limite. Pour un point d'accès activé à la main, réglez la limite depuis un PC avec tools\\adb-setup.bat -MaxClients",
+        ),
+    )
+
     val ints = listOf(
         INTERVAL_NORMAL, INTERVAL_SAVER, TIMEOUT, EXPECT_CODE, TEMP_WARN, TEMP_CRIT, THERMAL_WARN, BATT_LOW, BOOT_DELAY, LOG_DAYS, LOG_MB,
         BATT_CAPACITY, RUNTIME_ALERT, EXP_PHASE, EXP_REPEATS, EXP_MIN_GAIN,
         SIGNAL_WEAK_RSRP, SIGNAL_DROP_DB, IDLE_TRAFFIC_MB, QUIET_TRAFFIC_MB, WEB_PORT,
         AUTO_SAVER_PCT, IDLE_INTERVAL, IDLE_BATT,
-        PLUG_LOW, PLUG_HIGH, PLUG_HOT, PLUG_FLIPBACK, DATA_CAP_GB, DATA_CAP_DAY,
+        PLUG_LOW, PLUG_HIGH, PLUG_HOT, PLUG_FLIPBACK, DATA_CAP_GB, DATA_CAP_DAY, AP_MAX_CLIENTS,
     )
     val bools = listOf(
         HTTP, TETHER_EXPECTED, CLIENTS, NOTIFY_ALERT, NOTIFY_RECOVERY, NOTIFY_BOOT, SIGNAL_ALERT, WEB, AUTO_SAVER, AUTO_DOZE, SKIP_PROBE,
